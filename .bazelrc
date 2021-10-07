@@ -1,0 +1,9 @@
+# Default to C++17
+build --cxxopt=--std=c++17
+build --verbose_failures
+
+# Default all tests to show errors
+test --test_output=errors
+
+# User-specific .bazelrc
+try-import user.bazelrc

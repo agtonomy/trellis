@@ -1,0 +1,3 @@
+
+examples:
+  pubsub_topic: "hello_world_protobuf"

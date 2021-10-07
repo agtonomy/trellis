@@ -1,0 +1,65 @@
+This project includes software developed by
+Agtonomy (https://www.agtonomy.com/)
+
+Licensed under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License. You may obtain a copy of the License at:
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on
+an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied. See the License for the
+specific language governing permissions and limitations
+under the License.
+
+
+This project depends on the following libraries:
+
+eCAL
+  - Copyright (C) 2016 - 2019 Continental Corporation
+  - URL: https://github.com/continental/ecal
+  - License: Apache License Version 2.0 - https://github.com/continental/ecal/blob/master/LICENSE.txt
+
+fmt
+  - Copyright (c) 2012 - present, Victor Zverovich
+  - URL: https://github.com/fmtlib/fmt
+  - License: https://github.com/fmtlib/fmt/blob/master/LICENSE.rst
+
+yaml-cpp
+  - Copyright (c) 2008-2015 Jesse Beder.
+  - URL: https://github.com/jbeder/yaml-cpp
+  - License: MIT License - https://github.com/jbeder/yaml-cpp/blob/master/LICENSE
+
+cxxopts
+  - Copyright (c) 2014 Jarryd Beck
+  - URL: https://github.com/jarro2783/cxxopts
+  - License: MIT License - https://github.com/jarro2783/cxxopts/blob/master/LICENSE
+
+tclap
+  - Copyright (c) 2003 Michael E. Smoot
+  - Copyright (c) 2004 Daniel Aarno
+  - Copyright (c) 2017 Google Inc.
+  - URL: http://tclap.sourceforge.net
+  - License: MIT License - https://opensource.org/licenses/mit-license.php
+
+asio
+  - Copyright © 2003-2018 Christopher M. Kohlhoff
+  - URL: https://think-async.com
+  - License: Boost Software License - http://www.boost.org/LICENSE_1_0.txt
+
+GoogleTest
+  - Copyright 2008 Google Inc.
+  - URL: https://github.com/google/googletest
+  - License: BSD 3-Clause License - https://github.com/google/googletest/blob/master/LICENSE.txt
+
+Google Protouf
+  - Copyright 2008 Google Inc.
+  - URL: https://developers.google.com/protocol-buffers
+  - License: https://github.com/google/protobuf/blob/master/LICENSE
+
+SimpleIni
+  - Copyright (c) 2006-2013 Brodie Thiesfield
+  - URL: https://github.com/brofield/simpleini
+  - License: MIT License - https://github.com/brofield/simpleini/blob/master/LICENCE.txt

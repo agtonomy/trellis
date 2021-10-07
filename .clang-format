@@ -1,0 +1,16 @@
+# All settings available from:
+# https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+---
+# See https://google.github.io/styleguide/cppguide.html
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 120
+Standard: c++17
+# Force pointers to the type for C++
+DerivePointerAlignment: false
+---
+# See https://developers.google.com/protocol-buffers/docs/style
+Language: Proto
+BasedOnStyle: Google
+ColumnLimit: 120
+...
