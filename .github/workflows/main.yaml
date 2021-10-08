@@ -19,9 +19,7 @@ jobs:
       - name: Cache Docker layers
         uses: actions/cache@v2
         with:
-          path: |
-            /tmp/.buildx-cache
-            /home/runner/work/_temp/_github_home/.cache/bazel
+          path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildx-
@@ -43,6 +41,13 @@ jobs:
       - name: clang-format step
         id: clangformat
         uses: ./.github/actions/clang-format
+      - name: Cache Bazel
+        uses: actions/cache@v2
+        with:
+          path: /home/runner/work/_temp/_github_home/.cache/bazel
+          key: ${{ runner.os }}-bazel-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-cache-
       - name: Build step
         id: build
         uses: ./.github/actions/bazel-build
