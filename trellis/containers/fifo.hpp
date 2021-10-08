@@ -23,6 +23,7 @@
 
 namespace trellis {
 namespace containers {
+
 template <typename T, typename MUTEX_T = std::mutex, size_t MAX_SIZE = 1U>
 class Fifo {
  public:

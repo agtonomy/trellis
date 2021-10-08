@@ -4,18 +4,15 @@ option cc_generic_services = true;
 
 package trellis.examples;
 
-message AdditionRequest
-{
-  uint32 arg1        = 1;
-  uint32 arg2        = 2;
+message AdditionRequest {
+  uint32 arg1 = 1;
+  uint32 arg2 = 2;
 }
 
-message AdditionResponse
-{
-  uint32 sum         = 1;
+message AdditionResponse {
+  uint32 sum = 1;
 }
 
-service AdditionService
-{
-  rpc Add (AdditionRequest) returns (AdditionResponse);
+service AdditionService {
+  rpc Add(AdditionRequest) returns (AdditionResponse);
 }

@@ -152,6 +152,7 @@ class UDPReceiver {
   UDP udp_;
   Callback callback_;
 };
+
 }  // namespace network
 }  // namespace trellis
 

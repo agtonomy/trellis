@@ -95,6 +95,7 @@ class MessageConsumer {
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
 };
+
 }  // namespace core
 }  // namespace trellis
 

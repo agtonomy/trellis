@@ -24,6 +24,7 @@
 
 namespace trellis {
 namespace core {
+
 template <typename RPC_T>
 class ServiceClientImpl {
  public:
@@ -54,6 +55,7 @@ class ServiceClientImpl {
 
 template <typename RPC_T>
 using ServiceClient = std::shared_ptr<ServiceClientImpl<RPC_T>>;
+
 }  // namespace core
 }  // namespace trellis
 

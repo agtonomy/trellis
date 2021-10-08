@@ -56,6 +56,7 @@ class ServiceHandler : public SERVICE_T {
  private:
   HandlerFunction handler_;
 };
+
 }  // namespace
 
 template <typename SERVICE_T>
@@ -73,6 +74,7 @@ ServiceServer<SERVICE_T> CreateServiceServer(
     typename ServiceHandler<SERVICE_T, REQ_T, RESP_T>::HandlerFunction handle_fn) {
   return ServiceServer<SERVICE_T>(std::make_shared<ServiceHandler<SERVICE_T, REQ_T, RESP_T>>(handle_fn));
 }
+
 }  // namespace core
 }  // namespace trellis
 

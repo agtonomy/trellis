@@ -10,8 +10,7 @@ state indirectly through the passing of messages.
 See: https://en.wikipedia.org/wiki/Actor_model
 
 ## eCAL Core
-At the core, Trellis is built on top of Continental's eCAL library. This
-brings in a core set of functionality:
+At the core, Trellis is built on top of [https://github.com/continental/ecal](Continental's enhanced Communication Abstraction Layer) (eCAL) library. This brings in a core set of functionality:
 
 1. Dynamic service discovery
 1. Inter-process messaging patterns (pubsub and rpc)
@@ -57,8 +56,8 @@ with threading issues such as data access synchronization.
 Trellis creates an event loop managed by `asio` to eventually handle all user
 callbacks.
 
-At the time of writing the `MessageConsumer` and `Timer` callbacks are invoked
-on the event loop.
+At the time of writing the `MessageConsumer` callbacks are invoked on this single
+thread. In the near future, timer callbacks will also be invoked on this thread.
 
 ## Examples
 See `examples` directory for some code examples for publishing, subscribing, calling

@@ -23,8 +23,10 @@
 
 namespace trellis {
 namespace core {
+
 using error_code = asio::error_code;
 using error = asio::error::basic_errors;
+
 }  // namespace core
 }  // namespace trellis
 

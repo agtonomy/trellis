@@ -23,8 +23,10 @@
 namespace trellis {
 namespace core {
 namespace time {
+
 using TimePoint = std::chrono::time_point<eCAL::Time::ecal_clock>;
 inline TimePoint now() { return eCAL::Time::ecal_clock::now(); }
+
 }  // namespace time
 }  // namespace core
 }  // namespace trellis

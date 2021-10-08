@@ -25,6 +25,7 @@
 
 namespace trellis {
 namespace core {
+
 class TimerImpl {
  public:
   using Callback = std::function<void(void)>;
@@ -77,6 +78,7 @@ class TimerImpl {
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
+
 }  // namespace core
 }  // namespace trellis
 

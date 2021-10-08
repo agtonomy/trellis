@@ -37,6 +37,7 @@
 
 namespace trellis {
 namespace core {
+
 class Node {
  public:
   Node(std::string name);
@@ -104,6 +105,7 @@ class Node {
   const std::string name_;
   EventLoop ev_loop_;
 };
+
 }  // namespace core
 }  // namespace trellis
 

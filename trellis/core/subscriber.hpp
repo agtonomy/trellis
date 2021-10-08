@@ -23,6 +23,7 @@
 
 namespace trellis {
 namespace core {
+
 template <typename T>
 using SubscriberClass = eCAL::protobuf::CSubscriber<T>;
 
@@ -31,6 +32,7 @@ using Subscriber = std::shared_ptr<SubscriberClass<T>>;
 
 using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
+
 }  // namespace core
 }  // namespace trellis
 

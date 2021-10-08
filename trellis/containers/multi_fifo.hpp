@@ -94,6 +94,7 @@ class MultiFifo {
   }
   fifotupletype fifos_;
 };
+
 }  // namespace containers
 }  // namespace trellis
 
