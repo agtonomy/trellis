@@ -57,7 +57,7 @@ Trellis creates an event loop managed by `asio` to eventually handle all user
 callbacks.
 
 At the time of writing the `MessageConsumer` callbacks are invoked on this single
-thread. In the near future, timer callbacks will also be invoked on this thread.
+thread.
 
 ## Examples
 See `examples` directory for some code examples for publishing, subscribing, calling
