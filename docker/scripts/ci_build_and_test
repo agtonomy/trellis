@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# This script is meant to be invoked by CI's "build everything" step
+
+set -ex
+
+# Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
+bazel test ...
+

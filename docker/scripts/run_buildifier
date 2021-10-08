@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -ex
+
+# Linting BUILD files
+find . -iname BUILD -print0 | xargs --null buildifier -lint=warn

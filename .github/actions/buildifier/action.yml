@@ -1,0 +1,7 @@
+name: 'buildifier'
+description: 'Bazel BUILD file linter'
+runs:
+  using: 'docker'
+  image: 'agtonomy/trellis-runtime:latest'
+  args:
+    - run_buildifier

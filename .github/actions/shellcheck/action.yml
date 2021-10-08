@@ -1,0 +1,7 @@
+name: 'shellcheck'
+description: 'Bash script linter'
+runs:
+  using: 'docker'
+  image: 'agtonomy/trellis-runtime:latest'
+  args:
+    - run_shellcheck

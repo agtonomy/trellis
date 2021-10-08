@@ -1,0 +1,10 @@
+name: 'Bazel build ...'
+description: 'Build all targets'
+runs:
+  using: 'docker'
+  image: 'agtonomy/trellis-runtime:latest'
+  env:
+    BAZEL_CACHE_SECRET: ${{ inputs.secret_input }}
+    DOCKER_BUILDKIT: 1
+  args:
+    - ci_build_and_test

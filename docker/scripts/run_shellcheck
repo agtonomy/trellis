@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -ex
+
+# Linting shell scripts
+find . -iname "*.sh" | grep -v "flutter_controller" | xargs shellcheck
