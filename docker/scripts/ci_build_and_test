@@ -5,5 +5,4 @@
 set -ex
 
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
-bazel test ...
-
+bazel test --repository_cache=/github/home/.cache/bazel ...

@@ -41,11 +41,16 @@ jobs:
       - name: clang-format step
         id: clangformat
         uses: ./.github/actions/clang-format
+      - name: Cache Bazel
+        uses: actions/cache@v2
+        with:
+          path: /home/runner/work/_temp/_github_home/.cache/bazel
+          key: ${{ runner.os }}-bazel-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-cache-
       - name: Build step
         id: build
         uses: ./.github/actions/bazel-build
-        with:
-          secret_input: ${{ secrets.BAZEL_CACHE_STORAGE }}
         # This ugly bit is necessary if you don't want your cache to grow forever
         # till it hits GitHub's limit of 5GB.
         # Temp fix
