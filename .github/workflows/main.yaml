@@ -19,7 +19,9 @@ jobs:
       - name: Cache Docker layers
         uses: actions/cache@v2
         with:
-          path: /tmp/.buildx-cache
+          path: |
+            /tmp/.buildx-cache
+            /home/runner/work/_temp/_github_home/.cache/bazel
           key: ${{ runner.os }}-buildx-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildx-
