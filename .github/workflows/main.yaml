@@ -46,8 +46,6 @@ jobs:
       - name: Build step
         id: build
         uses: ./.github/actions/bazel-build
-        with:
-          secret_input: ${{ secrets.BAZEL_CACHE_STORAGE }}
         # This ugly bit is necessary if you don't want your cache to grow forever
         # till it hits GitHub's limit of 5GB.
         # Temp fix
