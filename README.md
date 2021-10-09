@@ -10,8 +10,7 @@ state indirectly through the passing of messages.
 See: https://en.wikipedia.org/wiki/Actor_model
 
 ## eCAL Core
-At the core, Trellis is built on top of Continental's eCAL library. This
-brings in a core set of functionality:
+At the core, Trellis is built on top of [https://github.com/continental/ecal](Continental's enhanced Communication Abstraction Layer) (eCAL) library. This brings in a core set of functionality:
 
 1. Dynamic service discovery
 1. Inter-process messaging patterns (pubsub and rpc)

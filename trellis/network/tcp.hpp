@@ -180,6 +180,7 @@ class TCPServer {
   asio::ip::tcp::acceptor acceptor_;
   NewConnectionHandler connection_callback_;
 };
+
 }  // namespace network
 }  // namespace trellis
 

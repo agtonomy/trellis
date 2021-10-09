@@ -54,6 +54,7 @@ inline void Debug(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   eCAL::Logging::Log(log_level_debug1, "[DEBUG] " + msg);
 }
+
 }  // namespace Log
 }  // namespace core
 }  // namespace trellis

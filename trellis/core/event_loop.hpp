@@ -22,10 +22,12 @@
 
 namespace trellis {
 namespace core {
+
 using EventLoopImpl = asio::io_context;
 using EventLoop = std::shared_ptr<EventLoopImpl>;
 
 inline EventLoop CreateEventLoop() { return std::make_shared<asio::io_context>(); }
+
 }  // namespace core
 }  // namespace trellis
 

@@ -19,6 +19,8 @@
 
 namespace trellis {
 namespace core {
+
 Config LoadFromFile(std::string filename) { return YAML::LoadFile(filename); }
+
 }  // namespace core
 }  // namespace trellis

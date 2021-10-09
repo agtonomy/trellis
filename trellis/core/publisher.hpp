@@ -22,6 +22,7 @@
 
 namespace trellis {
 namespace core {
+
 template <typename T>
 using PublisherClass = eCAL::protobuf::CPublisher<T>;
 
@@ -102,6 +103,7 @@ class DynamicPublisherImpl : public eCAL::CMsgPublisher<google::protobuf::Messag
 };
 
 using DynamicPublisher = std::shared_ptr<DynamicPublisherImpl>;
+
 }  // namespace core
 }  // namespace trellis
 
