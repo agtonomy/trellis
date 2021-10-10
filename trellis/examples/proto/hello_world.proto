@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package trellis.examples;
+package trellis.examples.proto;
 
 message HelloWorld {
   string name = 1;

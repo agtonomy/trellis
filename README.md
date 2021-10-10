@@ -76,3 +76,29 @@ on the event loop.
 ## Examples
 See `examples` directory for some code examples for publishing, subscribing, calling
 a service, and hosting a service.
+
+### Quick Start
+
+#### With Docker
+You can use the provided Docker image, which has all the build/runtime dependencies
+```bash
+# Build the image (only needs to be done once)
+./docker/build.sh
+
+# Run the examples in the docker environment
+./docker/shell.sh bazel run //trellis/examples/publisher
+./docker/shell.sh bazel run //trellis/examples/subscriber
+./docker/shell.sh bazel run //trellis/examples/service_server
+./docker/shell.sh bazel run //trellis/examples/service_client
+```
+
+Alternatively, you can run `./docker/shell.sh` without any arguments to drop into a bash shell within the Docker environment.
+
+#### Without Docker
+You can simply run bazel natively, assuming all system dependencies are met. See the `Dockerfile` to understand the system dependencies.
+```bash
+bazel run //trellis/examples/publisher
+bazel run //trellis/examples/subscriber
+bazel run //trellis/examples/service_server
+bazel run //trellis/examples/service_client
+```

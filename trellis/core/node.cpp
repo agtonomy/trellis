@@ -28,6 +28,7 @@ Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()} {
 
 int Node::Run() {
   Log::Info("{} node running...", name_);
+  auto word_guard = asio::make_work_guard(*ev_loop_);
   while (eCAL::Ok()) {
     ev_loop_->run_for(std::chrono::milliseconds(500));
     // If the event loop was stopped, run_for will return immediately, so
@@ -36,6 +37,7 @@ int Node::Run() {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
   }
+  ev_loop_->stop();
   eCAL::Finalize();
   return 0;
 }

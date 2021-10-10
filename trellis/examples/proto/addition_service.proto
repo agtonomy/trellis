@@ -2,7 +2,7 @@ syntax = "proto3";
 
 option cc_generic_services = true;
 
-package trellis.examples;
+package trellis.examples.proto;
 
 message AdditionRequest {
   uint32 arg1 = 1;
