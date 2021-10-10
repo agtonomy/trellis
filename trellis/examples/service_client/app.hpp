@@ -1,7 +1,6 @@
 #ifndef TRELLIS_EXAMPLES_SERVICE_CLIENT_APP_HPP
 #define TRELLIS_EXAMPLES_SERVICE_CLIENT_APP_HPP
 
-#include "trellis/core/message_consumer.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/examples/proto/addition_service.pb.h"
 

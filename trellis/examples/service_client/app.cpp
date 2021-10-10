@@ -21,8 +21,9 @@ void App::HandleResponse(const AdditionResponse* resp) {
 }
 
 void App::Tick() {
-  AdditionRequest req;
+  ++request_count_;
 
+  AdditionRequest req;
   unsigned arg1 = request_count_ * 2;
   unsigned arg2 = request_count_ * 3;
 
@@ -34,8 +35,6 @@ void App::Tick() {
   arg2 += 3;
   client_->CallAsync<AdditionRequest, AdditionResponse>("Add", req,
                                                         [this](const AdditionResponse* resp) { HandleResponse(resp); });
-
-  ++request_count_;
 }
 
 }  // namespace service_client
