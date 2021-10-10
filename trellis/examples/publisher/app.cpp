@@ -9,8 +9,7 @@ using namespace trellis::core;
 App::App(const Node& node, const Config& config)
     : publisher_{node.CreatePublisher<trellis::examples::proto::HelloWorld>(
           config["examples"]["publisher"]["topic"].as<std::string>())},
-      timer_{node.CreateTimer(config["examples"]["publisher"]["interval_ms"].as<unsigned>(),
-                              [this]() { Tick(); })} {}
+      timer_{node.CreateTimer(config["examples"]["publisher"]["interval_ms"].as<unsigned>(), [this]() { Tick(); })} {}
 
 void App::Tick() {
   Log::Info("Publishing message number {}", send_count_);
