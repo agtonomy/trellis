@@ -16,7 +16,7 @@ class App {
  private:
   void Tick();
 
-  trellis::core::MessageConsumer<1, trellis::examples::HelloWorld> inputs_;
+  trellis::core::MessageConsumer<1, trellis::examples::proto::HelloWorld> inputs_;
 };
 
 }  // namespace subscriber

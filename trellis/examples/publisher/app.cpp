@@ -7,7 +7,7 @@ namespace publisher {
 using namespace trellis::core;
 
 App::App(const Node& node, const Config& config)
-    : publisher_{node.CreatePublisher<trellis::examples::HelloWorld>(
+    : publisher_{node.CreatePublisher<trellis::examples::proto::HelloWorld>(
           config["examples"]["publisher"]["topic"].as<std::string>())},
       timer_{node.CreateTimer(config["examples"]["publisher"]["interval_ms"].as<unsigned>(),
                               [this]() { Tick(); })} {}
@@ -15,7 +15,7 @@ App::App(const Node& node, const Config& config)
 void App::Tick() {
   Log::Info("Publishing message number {}", send_count_);
 
-  trellis::examples::HelloWorld msg;
+  trellis::examples::proto::HelloWorld msg;
   msg.set_name("Publisher Example");
   msg.set_msg("Hello World!");
   msg.set_id(++send_count_);
