@@ -13,7 +13,7 @@ class App {
   App(const trellis::core::Node& node, const trellis::core::Config& config);
 
  private:
-  void SendMessageTimer();
+  void Tick();
   trellis::core::Publisher<trellis::examples::HelloWorld> publisher_;
   trellis::core::Timer timer_;
 
