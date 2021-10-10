@@ -1,7 +1,20 @@
 # Trellis
-Trellis is a general-purpose middleware library developed by Agtonomy. It is
-being designed for embedded robotics & autonomy software, but it can be used
-for other applications as well.
+
+`/ˈtrelis/`
+_noun_
+
+1. a frame or structure of latticework; lattice.
+2. a framework of this kind used as a support for growing vines or plants.
+3. a middleware framework for distributed applications using the actor model
+
+Trellis is primarily developed for use in robotics in an embedded Linux environment, however the project aims to be suited for general purpose.
+
+**NOTE**: This project is in its early stages and is being actively developed.
+
+## Language & OS Support
+Trellis is C++-only at the time of writing although additional language support is anticipated in the future.
+
+Additionally, Trellis is only supported on Linux. At the moment there are no plans of supporting other platforms.
 
 ## Actor Model
 Trellis is based on the actor model, in which actors can only effect each other's
@@ -24,7 +37,7 @@ In addition to the functionality provided by eCAL, Trellis aims to provide
 the following:
 
 1. Configuration and parameter management framework
-1. A framework for developing applications which behave deterministically
+1. A framework for developing applications that behave deterministically
 1. Data visualization tools
 1. An integration testing framework
 1. An abstraction layer for common forms of I/O
@@ -37,6 +50,7 @@ Trellis provides the following core primitives
 1. Subscriber - for receiving messages
 1. Service Client - for initiating remote procedures
 1. Service Server - for providing remotely callable procedures
+1. Timer - for invoking callbacks at fixed time intervals
 
 ### Services (RPC)
 Services are implemented using protobuf's RPC syntax, which declares a method
@@ -46,7 +60,7 @@ name, input message type, and output message type. See `examples` for more detai
 eCAL's threading model is documented here: https://continental.github.io/ecal/advanced/threading_model.html
 
 ### Single-threaded approach
-Trellis aims to be as single-threaded as possible with respect to user callbacks.
+Trellis aims to hide eCAL's threading from the user by invoking all user callbacks from a single event-loop thread (managed by asio).
 
 This means that user callbacks provided to Trellis should all get called on the
 same thread. This removes the burden on the application developer from dealing
