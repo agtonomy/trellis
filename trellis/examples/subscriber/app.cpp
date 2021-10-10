@@ -11,7 +11,7 @@ App::App(const Node& node, const Config& config)
 
 void App::Tick() {
   const auto& msg = inputs_.Newest<trellis::examples::proto::HelloWorld>().message;
-  Log::Warn("Received message from {} with content {} and message number {}", msg.name(), msg.msg(), msg.id());
+  Log::Info("Received message from {} with content {} and message number {}", msg.name(), msg.msg(), msg.id());
 }
 
 }  // namespace subscriber
