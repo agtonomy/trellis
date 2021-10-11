@@ -4,10 +4,12 @@
 
 set -ex
 
-du -sh /github/workspace/.cache/bazel
+BAZEL_CACHE_DIR="/github/workspace/.cache/bazel"
+
+du -sh "$BAZEL_CACHE_DIR"
 
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
-bazel test --repository_cache=/github/workspace/.cache/bazel ...
+bazel test --repository_cache="$BAZEL_CACHE_DIR/repository" --disk_cache="$BAZEL_CACHE_DIR/disk" ...
 
 # Since this script is running inside of a container (as root) the bazel cache
 # is owned by root. However, the host system (Github's ubuntu-latest vm)
@@ -16,4 +18,4 @@ bazel test --repository_cache=/github/workspace/.cache/bazel ...
 # container so that there aren't permission failures.
 # XXX(bsirang) ideally we can retrieve this UID via an environment variable
 echo "Resetting permissions of bazel cache..."
-chown -R 1001:1001 /github/workspace/.cache/bazel
+chown -R 1001:1001 "$BAZEL_CACHE_DIR"
