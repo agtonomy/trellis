@@ -6,7 +6,11 @@ set -ex
 
 BAZEL_CACHE_DIR="/github/workspace/.cache/bazel"
 
-du -sh "$BAZEL_CACHE_DIR"
+if [ -d "$BAZEL_CACHE_DIR" ]; then
+  du -sh "$BAZEL_CACHE_DIR"
+else
+  echo "Bazel cache directory $BAZEL_CACHE_DIR does not exist."
+fi
 
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
 bazel test --repository_cache="$BAZEL_CACHE_DIR/repository" --disk_cache="$BAZEL_CACHE_DIR/disk" ...
