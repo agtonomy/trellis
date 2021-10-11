@@ -73,6 +73,31 @@ on the event loop.
 ## Bazel
 Trellis is built on Google's [Bazel](https://bazel.build/) build system.
 
+### Depending on trellis
+
+Add to your WORKSPACE file:
+
+```
+TRELLIS_COMMIT = "XXXX"
+
+http_archive(
+    name = "com_github_agtonomy_trellis",
+    strip_prefix = "trellis-" + TRELLIS_COMMIT,
+    url = "https://github.com/agtonomy/trellis/archive/" + TRELLIS_COMMIT + ".tar.gz",
+    # Make sure to add the correct sha256 corresponding to this commit.
+    # sha256 = "blah",
+)
+
+load("@com_github_agtonomy_trellis//third_party:repositories.bzl", "trellis_deps")
+
+trellis_deps()
+
+# Required transitive loader for protobuf dependencies.
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
+```
+
 ## Examples
 See `examples` directory for some code examples for publishing, subscribing, calling
 a service, and hosting a service.
