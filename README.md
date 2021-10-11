@@ -5,7 +5,7 @@ _noun_
 
 1. a frame or structure of latticework; lattice.
 2. a framework of this kind used as a support for growing vines or plants.
-3. a middleware framework for distributed applications using the actor model
+3. a middleware framework for distributed applications using the actor model.
 
 Trellis is primarily developed for use in robotics in an embedded Linux environment, however the project aims to be suited for general purpose.
 
@@ -23,7 +23,7 @@ state indirectly through the passing of messages.
 See: https://en.wikipedia.org/wiki/Actor_model
 
 ## eCAL Core
-At the core, Trellis is built on top of [https://github.com/continental/ecal](Continental's enhanced Communication Abstraction Layer) (eCAL) library. This brings in a core set of functionality:
+At the core, Trellis is built on top of [Continental's enhanced Communication Abstraction Layer](https://github.com/continental/ecal) (eCAL) library. This brings in a core set of functionality:
 
 1. Dynamic service discovery
 1. Inter-process messaging patterns (pubsub and rpc)
@@ -51,27 +51,27 @@ Trellis provides the following core primitives
 1. Service Client - for initiating remote procedures
 1. Service Server - for providing remotely callable procedures
 1. Timer - for invoking callbacks at fixed time intervals
+1. MessageConsumer - for receiving messages from many publishers in a thread-safe way with minimal boilerplate
 
 ### Services (RPC)
-Services are implemented using protobuf's RPC syntax, which declares a method
+Services are implemented using Protobuf's RPC syntax, which declares a method
 name, input message type, and output message type. See `examples` for more detail.
 
 ## Threading
 eCAL's threading model is documented here: https://continental.github.io/ecal/advanced/threading_model.html
 
 ### Single-threaded approach
-Trellis aims to hide eCAL's threading from the user by invoking all user callbacks from a single event-loop thread (managed by asio).
+Trellis aims to hide eCAL's threading from the user by invoking all user callbacks from a single event-loop thread, which is managed by [Asio](https://think-async.com/Asio/).
 
 This means that user callbacks provided to Trellis should all get called on the
 same thread. This removes the burden on the application developer from dealing
-with threading issues such as data access synchronization.
-
-#### ASIO
-Trellis creates an event loop managed by `asio` to eventually handle all user
-callbacks.
+with thread-safety.
 
 At the time of writing the `MessageConsumer` and `Timer` callbacks are invoked
 on the event loop.
+
+## Bazel
+Trellis is built on Google's [Bazel](https://bazel.build/) build system.
 
 ## Examples
 See `examples` directory for some code examples for publishing, subscribing, calling
