@@ -8,4 +8,11 @@ set -ex
 bazel test --repository_cache=/github/home/.cache/bazel ...
 
 echo "Resetting permissions of bazel cache..."
+
+# Since this script is running inside of a container (as root) the bazel cache
+# is owned by root. However, the host system (Github's ubuntu-latest vm)
+# is going to attempt to archive the cache to restore it later.
+# We can change ownership here to the UID in use outside of the
+# container so that there aren't permission failures.
+# XXX(bsirang) ideally we can retrieve this UID via an environment variable
 chown -R 1001:1001 /github/home/.cache/bazel
