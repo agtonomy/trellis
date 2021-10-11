@@ -8,4 +8,8 @@ set -ex
 bazel test --repository_cache=/github/home/.cache/bazel ...
 
 echo "Resetting permissions of bazel cache..."
+chown -R 1000:1000 /github/home/.cache/bazel/_bazel_root
 chown -R 1000:1000 /github/home/.cache/bazel
+
+
+find /github/home/.cache/bazel | xargs ls -l
