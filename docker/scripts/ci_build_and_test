@@ -4,10 +4,10 @@
 
 set -ex
 
+du -sh /github/workspace/.cache/bazel
+
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
 bazel test --repository_cache=/github/workspace/.cache/bazel ...
-
-echo "Resetting permissions of bazel cache..."
 
 # Since this script is running inside of a container (as root) the bazel cache
 # is owned by root. However, the host system (Github's ubuntu-latest vm)
@@ -15,4 +15,5 @@ echo "Resetting permissions of bazel cache..."
 # We can change ownership here to the UID in use outside of the
 # container so that there aren't permission failures.
 # XXX(bsirang) ideally we can retrieve this UID via an environment variable
+echo "Resetting permissions of bazel cache..."
 chown -R 1001:1001 /github/workspace/.cache/bazel
