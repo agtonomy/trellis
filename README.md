@@ -78,12 +78,14 @@ Trellis is built on Google's [Bazel](https://bazel.build/) build system.
 Add to your WORKSPACE file:
 
 ```
-TRELLIS_COMMIT = "e1dba6fa50c953697dc71ad09f0679085e7f19f4"
+TRELLIS_COMMIT = "XXXX"
 
 http_archive(
     name = "com_github_agtonomy_trellis",
     strip_prefix = "trellis-" + TRELLIS_COMMIT,
     url = "https://github.com/agtonomy/trellis/archive/" + TRELLIS_COMMIT + ".tar.gz",
+    # Make sure to add the correct sha256 corresponding to this commit.
+    # sha256 = "blah",
 )
 
 load("@com_github_agtonomy_trellis//third_party:repositories.bzl", "trellis_deps")
