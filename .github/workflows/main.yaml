@@ -44,7 +44,7 @@ jobs:
       - name: Cache Bazel
         uses: actions/cache@v2
         with:
-          path: /home/runner/work/_temp/_github_home/.cache/bazel
+          path: /home/runner/work/trellis/trellis/.cache/bazel
           key: ${{ runner.os }}-bazel-cache-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-bazel-cache-
