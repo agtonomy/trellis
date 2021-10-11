@@ -6,3 +6,6 @@ set -ex
 
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
 bazel test --repository_cache=/github/home/.cache/bazel ...
+
+echo "Resetting permissions of bazel cache..."
+chown -R 1000:1000 /github/home/.cache/bazel
