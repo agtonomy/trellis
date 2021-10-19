@@ -72,11 +72,8 @@ int topic_publish_main(int argc, char* argv[]) {
   eCAL::protobuf::CProtoDynDecoder decoder;
   std::string error_s;
 
-  // XXX(bsirang) we don't own the memory to the message returned by GetProtoMessageFromDescriptorSet
-  // however we need a shared pointer to comply with the dynamic publisher API, so we create a
-  // wrapper here with a dummy deleter function. This is a slight abuse.
   std::shared_ptr<google::protobuf::Message> message{
-      decoder.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s), [](google::protobuf::Message*) {}};
+      decoder.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
 
   if (error_s.size() > 0 || message == nullptr) {
     std::cerr << "Could not get proto message from descriptor set. " << error_s << std::endl;
