@@ -129,6 +129,16 @@ void MonitorUtil::PrintNodes() const {
   PrintEntries<eCAL::pb::Process>(nodes);
 }
 
+void MonitorUtil::PrintHosts() const {
+  const auto& hosts = snapshot_.hosts();
+  PrintEntries<eCAL::pb::Host>(hosts);
+}
+
+void MonitorUtil::PrintServices() const {
+  const auto& services = snapshot_.services();
+  PrintEntries<eCAL::pb::Service>(services);
+}
+
 }  // namespace cli
 }  // namespace tools
 }  // namespace trellis

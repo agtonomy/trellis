@@ -46,6 +46,8 @@ class MonitorUtil {
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
   void PrintTopics() const;
   void PrintNodes() const;
+  void PrintHosts() const;
+  void PrintServices() const;
 
  private:
   template <typename T>

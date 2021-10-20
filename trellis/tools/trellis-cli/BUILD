@@ -7,6 +7,8 @@ cc_binary(
         "monitoring_utils.hpp",
         "node/node_main.cpp",
         "node/node_list_main.cpp",
+        "service/service_main.cpp",
+        "service/service_list_main.cpp",
         "topic/topic_main.cpp",
         "topic/topic_echo_main.cpp",
         "topic/topic_publish_main.cpp",

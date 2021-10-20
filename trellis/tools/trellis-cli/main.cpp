@@ -25,6 +25,7 @@ int main(int argc, char* argv[]) {
   cli::HandlersMap handlers{
       {"topic", {"analyze pub/sub topics", [argc, argv]() { return cli::topic_main(argc, argv); }}},
       {"node", {"analyze nodes", [argc, argv]() { return cli::node_main(argc, argv); }}},
+      {"service", {"analyze rpc services", [argc, argv]() { return cli::service_main(argc, argv); }}},
   };
 
   if (command.empty()) {
