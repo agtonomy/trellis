@@ -15,36 +15,25 @@
  *
  */
 
-#include <cxxopts.hpp>
-#include <thread>
-
+#include "trellis/tools/trellis-cli/command_handlers.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
-#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
 namespace tools {
 namespace cli {
 
-int node_list_main(int argc, char* argv[]) {
-  cxxopts::Options options(node_list_command.data(), node_list_command_desc.data());
-  options.add_options()("h,help", "print usage");
-
-  auto result = options.parse(argc, argv);
-  if (result.count("help")) {
-    std::cout << options.help() << std::endl;
-    return 1;
+int service_main(int argc, char* argv[]) {
+  const std::string subcommand = cli::ShiftCommand(argc, argv);
+  HandlersMap handlers{
+      {"list", {service_list_command_desc.data(), [argc, argv]() { return cli::service_list_main(argc, argv); }}},
+      {"info", {service_info_command_desc.data(), [argc, argv]() { return cli::service_info_main(argc, argv); }}},
+  };
+  if (subcommand.empty()) {
+    std::cout << "Must specify a subcommand... " << std::endl;
+    cli::PrintCommandsHelp("service", handlers);
+    return 0;
   }
-
-  eCAL::Initialize(0, nullptr, root_command.data(), eCAL::Init::All);
-
-  // Delay to give time for discovery
-  std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
-
-  MonitorUtil mutil;
-  mutil.PrintNodes();
-
-  eCAL::Finalize();
-  return 0;
+  return cli::RunCommand("service", subcommand, handlers);
 }
 
 }  // namespace cli

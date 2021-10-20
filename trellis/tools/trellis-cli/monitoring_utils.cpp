@@ -57,6 +57,31 @@ std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Process& node) {
   return ostream;
 }
 
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Host& host) {
+  ostream << "hname        : " << host.hname() << std::endl;
+  ostream << "os.osname    : " << host.os().osname() << std::endl;
+  return ostream;
+}
+
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Service& service) {
+  ostream << "rclock     : " << service.rclock() << std::endl;
+  ostream << "hname      : " << service.hname() << std::endl;
+  ostream << "pname      : " << service.pname() << std::endl;
+  ostream << "uname      : " << service.uname() << std::endl;
+  ostream << "pid        : " << service.pid() << std::endl;
+  ostream << "sname      : " << service.sname() << std::endl;
+  ostream << "tcp_port   : " << service.tcp_port() << std::endl;
+  return ostream;
+}
+
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Method& method) {
+  ostream << "mname          : " << method.mname() << std::endl;
+  ostream << "req_type       : " << method.req_type() << std::endl;
+  ostream << "resp_type      : " << method.resp_type() << std::endl;
+  ostream << "call_count     : " << method.call_count() << std::endl;
+  return ostream;
+}
+
 MonitorUtil::MonitorUtil() { static_cast<void>(UpdateSnapshot()); }
 
 const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {
@@ -110,6 +135,41 @@ void MonitorUtil::PrintTopics() const {
 void MonitorUtil::PrintNodes() const {
   const auto& nodes = snapshot_.processes();
   PrintEntries<eCAL::pb::Process>(nodes);
+}
+
+void MonitorUtil::PrintHosts() const {
+  const auto& hosts = snapshot_.hosts();
+  PrintEntries<eCAL::pb::Host>(hosts);
+}
+
+void MonitorUtil::PrintServices() const {
+  const auto& services = snapshot_.services();
+  PrintEntries<eCAL::pb::Service>(services);
+}
+
+void MonitorUtil::PrintServiceInfo(const std::string service_name) const {
+  const auto& services = snapshot_.services();
+  auto filter = [service_name](const eCAL::pb::Service& service) { return service.sname() == service_name; };
+  auto it = GetFilteredIterator<eCAL::pb::Service>(services, filter);
+  if (it == services.end()) {
+    std::cerr << "Didn't find any service with the name " << service_name << std::endl;
+    return;
+  }
+
+  // We expect only one match, but we'll iterate over everything that came out
+  // of the filter regardless
+  while (it != services.end()) {
+    const auto& service = *it;
+    std::cout << "=============================================================" << std::endl;
+    std::cout << service;
+    std::cout << std::endl << std::endl;
+    std::cout << "Methods:" << std::endl;
+    const auto& methods = service.methods();
+    for (const auto& method : methods) {
+      std::cout << method;
+    }
+    ++it;
+  }
 }
 
 }  // namespace cli

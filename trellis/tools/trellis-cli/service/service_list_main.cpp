@@ -25,8 +25,8 @@ namespace trellis {
 namespace tools {
 namespace cli {
 
-int node_list_main(int argc, char* argv[]) {
-  cxxopts::Options options(node_list_command.data(), node_list_command_desc.data());
+int service_list_main(int argc, char* argv[]) {
+  cxxopts::Options options(service_list_command.data(), service_list_command_desc.data());
   options.add_options()("h,help", "print usage");
 
   auto result = options.parse(argc, argv);
@@ -41,7 +41,7 @@ int node_list_main(int argc, char* argv[]) {
   std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
 
   MonitorUtil mutil;
-  mutil.PrintNodes();
+  mutil.PrintServices();
 
   eCAL::Finalize();
   return 0;
