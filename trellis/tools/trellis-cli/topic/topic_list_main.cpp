@@ -19,25 +19,35 @@
 
 #include <cxxopts.hpp>
 
-#include "trellis/tools/trellis-cli/command_handlers.hpp"
+#include "trellis/core/node.hpp"
+#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
 namespace tools {
 namespace cli {
 
-int topic_main(int argc, char* argv[]) {
-  const std::string subcommand = cli::ShiftCommand(argc, argv);
-  HandlersMap handlers{
-      {"publish", {"publish to a given topic", [argc, argv]() { return cli::topic_publish_main(argc, argv); }}},
-      {"list", {"list available topics", [argc, argv]() { return cli::topic_list_main(argc, argv); }}},
-      {"echo", {"echo from a given topic", [argc, argv]() { return cli::topic_echo_main(argc, argv); }}},
-  };
-  if (subcommand.empty()) {
-    std::cout << "Must specify a subcommand... " << std::endl;
-    cli::PrintCommandsHelp("topic", handlers);
-    return 0;
+using namespace trellis::core;
+
+int topic_list_main(int argc, char* argv[]) {
+  cxxopts::Options options("trellis-cli topic list", "list info about available topics");
+  options.add_options()("h,help", "print usage");
+
+  auto result = options.parse(argc, argv);
+  if (result.count("help")) {
+    std::cout << options.help() << std::endl;
+    return 1;
   }
-  return cli::RunCommand("topic", subcommand, handlers);
+
+  eCAL::Initialize(0, nullptr, "trellis-cli", eCAL::Init::All);
+
+  // Delay to give time for discovery
+  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+  MonitorUtil mutil;
+  mutil.PrintTopics();
+
+  eCAL::Finalize();
+  return 0;
 }
 
 }  // namespace cli

@@ -8,6 +8,7 @@ cc_binary(
         "topic/topic_main.cpp",
         "topic/topic_echo_main.cpp",
         "topic/topic_publish_main.cpp",
+        "topic/topic_list_main.cpp",
     ],
     linkstatic = False,
     deps = [

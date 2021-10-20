@@ -20,7 +20,6 @@
 #include <cxxopts.hpp>
 
 #include "trellis/core/node.hpp"
-#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
 namespace tools {

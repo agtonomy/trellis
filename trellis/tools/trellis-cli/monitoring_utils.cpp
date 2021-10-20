@@ -74,19 +74,23 @@ std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(cons
 void MonitorUtil::PrintTopics(TopicFilterFunction filter) const {
   const auto& topics = snapshot_.topics();
 
+  std::cout << "There are " << topics.size() << " available topics..." << std::endl;
+
   auto it = std::find_if(topics.begin(), topics.end(), filter);
   while (it != topics.end()) {
     // print topic details
     const auto& topic = *it;
+    std::cout << std::endl;
+    std::cout << "=============================================================" << std::endl;
     std::cout << "tname        : " << topic.tname() << std::endl;      // topic name
     std::cout << "ttype        : " << topic.ttype() << std::endl;      // topic type
     std::cout << "direction    : " << topic.direction() << std::endl;  // direction (publisher, subscriber)
     std::cout << "hname        : " << topic.hname() << std::endl;      // host name
     std::cout << "pid          : " << topic.pid() << std::endl;        // process id
     std::cout << "tid          : " << topic.tid() << std::endl;        // topic id
-    std::cout << std::endl;
     ++it;
   }
+  std::cout << "=============================================================" << std::endl;
 }
 
 }  // namespace cli
