@@ -15,35 +15,23 @@
  *
  */
 
-#include <cxxopts.hpp>
-#include <thread>
-
-#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
+#include "trellis/tools/trellis-cli/command_handlers.hpp"
 
 namespace trellis {
 namespace tools {
 namespace cli {
 
-int topic_list_main(int argc, char* argv[]) {
-  cxxopts::Options options("trellis-cli topic list", "list info about available topics");
-  options.add_options()("h,help", "print usage");
-
-  auto result = options.parse(argc, argv);
-  if (result.count("help")) {
-    std::cout << options.help() << std::endl;
-    return 1;
+int node_main(int argc, char* argv[]) {
+  const std::string subcommand = cli::ShiftCommand(argc, argv);
+  HandlersMap handlers{
+      {"list", {"list online nodes", [argc, argv]() { return cli::node_list_main(argc, argv); }}},
+  };
+  if (subcommand.empty()) {
+    std::cout << "Must specify a subcommand... " << std::endl;
+    cli::PrintCommandsHelp("node", handlers);
+    return 0;
   }
-
-  eCAL::Initialize(0, nullptr, "trellis-cli", eCAL::Init::All);
-
-  // Delay to give time for discovery
-  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-  MonitorUtil mutil;
-  mutil.PrintTopics();
-
-  eCAL::Finalize();
-  return 0;
+  return cli::RunCommand("node", subcommand, handlers);
 }
 
 }  // namespace cli

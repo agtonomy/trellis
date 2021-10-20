@@ -24,8 +24,8 @@ namespace trellis {
 namespace tools {
 namespace cli {
 
-int topic_list_main(int argc, char* argv[]) {
-  cxxopts::Options options("trellis-cli topic list", "list info about available topics");
+int node_list_main(int argc, char* argv[]) {
+  cxxopts::Options options("trellis-cli node list", "list online nodes");
   options.add_options()("h,help", "print usage");
 
   auto result = options.parse(argc, argv);
@@ -40,7 +40,7 @@ int topic_list_main(int argc, char* argv[]) {
   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
   MonitorUtil mutil;
-  mutil.PrintTopics();
+  mutil.PrintNodes();
 
   eCAL::Finalize();
   return 0;

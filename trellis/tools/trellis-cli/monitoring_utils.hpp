@@ -21,21 +21,48 @@
 #include <ecal/ecal.h>
 #include <ecal/protobuf/ecal_proto_dyn.h>
 
+#include <ostream>
+
 #include "ecal/pb/monitoring.pb.h"
 
 namespace trellis {
 namespace tools {
 namespace cli {
 
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
+
 class MonitorUtil {
  public:
   using TopicFilterFunction = std::function<bool(const eCAL::pb::Topic&)>;
+  using NodeFilterFunction = std::function<bool(const eCAL::pb::Process&)>;
+
+  template <typename T>
+  using FilterFunction = std::function<bool(const T&)>;
   MonitorUtil();
   const eCAL::pb::Monitoring& UpdateSnapshot();
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
-  void PrintTopics(TopicFilterFunction filter = [](const eCAL::pb::Topic&) { return true; }) const;
+  void PrintTopics() const;
+  void PrintNodes() const;
 
  private:
+  template <typename T>
+  void PrintEntries(
+      const google::protobuf::RepeatedPtrField<T>& entries,
+      FilterFunction<T> filter = [](const T&) { return true; }) const {
+    unsigned entry_count{0};
+    auto it = std::find_if(entries.begin(), entries.end(), filter);
+    while (it != entries.end()) {
+      ++entry_count;
+      const auto& entry = *it;
+      std::cout << std::endl;
+      std::cout << "=============================================================" << std::endl;
+      std::cout << entry;
+      ++it;
+    }
+    std::cout << "=============================================================" << std::endl;
+    std::cout << "Displayed " << entry_count << " entries." << std::endl;
+  }
   eCAL::protobuf::CProtoDynDecoder decoder_;
   std::string snapshot_raw_;
   eCAL::pb::Monitoring snapshot_;

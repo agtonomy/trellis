@@ -26,6 +26,37 @@ namespace trellis {
 namespace tools {
 namespace cli {
 
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Topic& topic) {
+  ostream << "tname        : " << topic.tname() << std::endl;      // topic name
+  ostream << "ttype        : " << topic.ttype() << std::endl;      // topic type
+  ostream << "direction    : " << topic.direction() << std::endl;  // direction (publisher, subscriber)
+  ostream << "hname        : " << topic.hname() << std::endl;      // host name
+  ostream << "pid          : " << topic.pid() << std::endl;        // process id
+  ostream << "tid          : " << topic.tid() << std::endl;        // topic id
+  return ostream;
+}
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Process& node) {
+  ostream << "rclock                 : " << node.rclock() << std::endl;
+  ostream << "hname                  : " << node.hname() << std::endl;
+  ostream << "pid                    : " << node.pid() << std::endl;
+  ostream << "pname                  : " << node.pname() << std::endl;
+  ostream << "uname                  : " << node.uname() << std::endl;
+  ostream << "pparam                 : " << node.pparam() << std::endl;
+  ostream << "pmemory                : " << node.pmemory() << std::endl;
+  ostream << "pcpu                   : " << node.pcpu() << std::endl;
+  ostream << "usrptime               : " << node.usrptime() << std::endl;
+  ostream << "datawrite              : " << node.datawrite() << std::endl;
+  ostream << "dataread               : " << node.dataread() << std::endl;
+
+  // TODO(bsirang) add these if desired
+  // ostream << "state                  :" << node.state() << std::endl;
+  // ostream << "tsync_state            :" << node.tsync_state() << std::endl;
+  // ostream << "tsync_mod_name         :" << node.tsync_mod_name() << std::endl;
+  // ostream << "component_init_state   :" << node.component_init_state() << std::endl;
+  ostream << "component_init_info    :" << node.component_init_info() << std::endl;
+  return ostream;
+}
+
 MonitorUtil::MonitorUtil() { static_cast<void>(UpdateSnapshot()); }
 
 const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {
@@ -71,28 +102,14 @@ std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(cons
   return message;
 }
 
-void MonitorUtil::PrintTopics(TopicFilterFunction filter) const {
+void MonitorUtil::PrintTopics() const {
   const auto& topics = snapshot_.topics();
+  PrintEntries<eCAL::pb::Topic>(topics);
+}
 
-  unsigned entry_count{0};
-
-  auto it = std::find_if(topics.begin(), topics.end(), filter);
-  while (it != topics.end()) {
-    ++entry_count;
-    // print topic details
-    const auto& topic = *it;
-    std::cout << std::endl;
-    std::cout << "=============================================================" << std::endl;
-    std::cout << "tname        : " << topic.tname() << std::endl;      // topic name
-    std::cout << "ttype        : " << topic.ttype() << std::endl;      // topic type
-    std::cout << "direction    : " << topic.direction() << std::endl;  // direction (publisher, subscriber)
-    std::cout << "hname        : " << topic.hname() << std::endl;      // host name
-    std::cout << "pid          : " << topic.pid() << std::endl;        // process id
-    std::cout << "tid          : " << topic.tid() << std::endl;        // topic id
-    ++it;
-  }
-  std::cout << "=============================================================" << std::endl;
-  std::cout << "Displayed " << entry_count << " entries." << std::endl;
+void MonitorUtil::PrintNodes() const {
+  const auto& nodes = snapshot_.processes();
+  PrintEntries<eCAL::pb::Process>(nodes);
 }
 
 }  // namespace cli
