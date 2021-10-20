@@ -5,6 +5,8 @@ cc_binary(
         "main.cpp",
         "monitoring_utils.cpp",
         "monitoring_utils.hpp",
+        "node/node_main.cpp",
+        "node/node_list_main.cpp",
         "topic/topic_main.cpp",
         "topic/topic_echo_main.cpp",
         "topic/topic_publish_main.cpp",

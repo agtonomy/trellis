@@ -65,10 +65,16 @@ inline int RunCommand(const std::string command, const std::string subcommand, c
 }
 
 // add all command handler main function declarations here
+
+// topic subcommand
 int topic_main(int argc, char* argv[]);
 int topic_echo_main(int argc, char* argv[]);
 int topic_publish_main(int argc, char* argv[]);
 int topic_list_main(int argc, char* argv[]);
+
+// node subcommand
+int node_main(int argc, char* argv[]);
+int node_list_main(int argc, char* argv[]);
 
 }  // namespace cli
 }  // namespace tools
