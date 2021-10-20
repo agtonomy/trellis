@@ -18,6 +18,7 @@
 #include <cxxopts.hpp>
 #include <thread>
 
+#include "trellis/tools/trellis-cli/constants.hpp"
 #include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
@@ -25,7 +26,7 @@ namespace tools {
 namespace cli {
 
 int service_list_main(int argc, char* argv[]) {
-  cxxopts::Options options("trellis-cli service list", "list active services");
+  cxxopts::Options options(service_list_command.data(), service_list_command_desc.data());
   options.add_options()("h,help", "print usage");
 
   auto result = options.parse(argc, argv);
@@ -34,10 +35,10 @@ int service_list_main(int argc, char* argv[]) {
     return 1;
   }
 
-  eCAL::Initialize(0, nullptr, "trellis-cli", eCAL::Init::All);
+  eCAL::Initialize(0, nullptr, root_command.data(), eCAL::Init::All);
 
   // Delay to give time for discovery
-  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
 
   MonitorUtil mutil;
   mutil.PrintServices();

@@ -16,6 +16,7 @@
  */
 
 #include "command_handlers.hpp"
+#include "constants.hpp"
 
 using namespace trellis::tools;
 
@@ -23,16 +24,16 @@ int main(int argc, char* argv[]) {
   const std::string command = cli::ShiftCommand(argc, argv);
 
   cli::HandlersMap handlers{
-      {"topic", {"analyze pub/sub topics", [argc, argv]() { return cli::topic_main(argc, argv); }}},
-      {"node", {"analyze nodes", [argc, argv]() { return cli::node_main(argc, argv); }}},
-      {"service", {"analyze rpc services", [argc, argv]() { return cli::service_main(argc, argv); }}},
+      {"topic", {cli::topic_desc.data(), [argc, argv]() { return cli::topic_main(argc, argv); }}},
+      {"node", {cli::node_desc.data(), [argc, argv]() { return cli::node_main(argc, argv); }}},
+      {"service", {cli::service_desc.data(), [argc, argv]() { return cli::service_main(argc, argv); }}},
   };
 
   if (command.empty()) {
     std::cout << "Must specify a command... " << std::endl;
-    cli::PrintCommandsHelp("trellis-cli", handlers);
+    cli::PrintCommandsHelp(cli::root_command.data(), handlers);
     return 0;
   }
 
-  return cli::RunCommand("trellis-cli", command, handlers);
+  return cli::RunCommand(cli::root_command.data(), command, handlers);
 }

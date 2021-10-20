@@ -16,6 +16,7 @@
  */
 
 #include "trellis/tools/trellis-cli/command_handlers.hpp"
+#include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
 namespace tools {
@@ -24,9 +25,9 @@ namespace cli {
 int topic_main(int argc, char* argv[]) {
   const std::string subcommand = cli::ShiftCommand(argc, argv);
   HandlersMap handlers{
-      {"publish", {"publish to a given topic", [argc, argv]() { return cli::topic_publish_main(argc, argv); }}},
-      {"list", {"list available topics", [argc, argv]() { return cli::topic_list_main(argc, argv); }}},
-      {"echo", {"echo from a given topic", [argc, argv]() { return cli::topic_echo_main(argc, argv); }}},
+      {"publish", {topic_publish_command_desc.data(), [argc, argv]() { return cli::topic_publish_main(argc, argv); }}},
+      {"list", {topic_list_command_desc.data(), [argc, argv]() { return cli::topic_list_main(argc, argv); }}},
+      {"echo", {topic_echo_command_desc.data(), [argc, argv]() { return cli::topic_echo_main(argc, argv); }}},
   };
   if (subcommand.empty()) {
     std::cout << "Must specify a subcommand... " << std::endl;

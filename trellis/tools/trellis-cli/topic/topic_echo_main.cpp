@@ -20,6 +20,7 @@
 #include <cxxopts.hpp>
 
 #include "trellis/core/node.hpp"
+#include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
 namespace tools {
@@ -28,7 +29,7 @@ namespace cli {
 using namespace trellis::core;
 
 int topic_echo_main(int argc, char* argv[]) {
-  cxxopts::Options options("trellis-cli topic echo", "echo messages from a given topic");
+  cxxopts::Options options(topic_echo_command.data(), topic_echo_command_desc.data());
   options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())("h,help", "print usage");
 
   auto result = options.parse(argc, argv);
@@ -38,7 +39,7 @@ int topic_echo_main(int argc, char* argv[]) {
   }
   const std::string topic = result["topic"].as<std::string>();
 
-  Node node("trellis-cli");
+  Node node(root_command.data());
   auto sub = node.CreateDynamicSubscriber(topic, [](const google::protobuf::Message& msg) {
     // convert to JSON and print
     std::string json;

@@ -16,6 +16,7 @@
  */
 
 #include "trellis/tools/trellis-cli/command_handlers.hpp"
+#include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
 namespace tools {
@@ -24,7 +25,7 @@ namespace cli {
 int node_main(int argc, char* argv[]) {
   const std::string subcommand = cli::ShiftCommand(argc, argv);
   HandlersMap handlers{
-      {"list", {"list online nodes", [argc, argv]() { return cli::node_list_main(argc, argv); }}},
+      {"list", {node_list_command_desc.data(), [argc, argv]() { return cli::node_list_main(argc, argv); }}},
   };
   if (subcommand.empty()) {
     std::cout << "Must specify a subcommand... " << std::endl;

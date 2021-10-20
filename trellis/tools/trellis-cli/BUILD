@@ -2,6 +2,7 @@ cc_binary(
     name = "trellis-cli",
     srcs = [
         "command_handlers.hpp",
+        "constants.hpp",
         "main.cpp",
         "monitoring_utils.cpp",
         "monitoring_utils.hpp",
