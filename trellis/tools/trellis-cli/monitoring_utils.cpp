@@ -74,10 +74,11 @@ std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(cons
 void MonitorUtil::PrintTopics(TopicFilterFunction filter) const {
   const auto& topics = snapshot_.topics();
 
-  std::cout << "There are " << topics.size() << " available topics..." << std::endl;
+  unsigned entry_count{0};
 
   auto it = std::find_if(topics.begin(), topics.end(), filter);
   while (it != topics.end()) {
+    ++entry_count;
     // print topic details
     const auto& topic = *it;
     std::cout << std::endl;
@@ -91,6 +92,7 @@ void MonitorUtil::PrintTopics(TopicFilterFunction filter) const {
     ++it;
   }
   std::cout << "=============================================================" << std::endl;
+  std::cout << "Displayed " << entry_count << " entries." << std::endl;
 }
 
 }  // namespace cli
