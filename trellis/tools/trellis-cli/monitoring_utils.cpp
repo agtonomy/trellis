@@ -57,6 +57,23 @@ std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Process& node) {
   return ostream;
 }
 
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Host& host) {
+  ostream << "hname        : " << host.hname() << std::endl;
+  ostream << "os.osname    : " << host.os().osname() << std::endl;
+  return ostream;
+}
+
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Service& service) {
+  ostream << "rclock     : " << service.rclock() << std::endl;
+  ostream << "hname      : " << service.hname() << std::endl;
+  ostream << "pname      : " << service.pname() << std::endl;
+  ostream << "uname      : " << service.uname() << std::endl;
+  ostream << "pid        : " << service.pid() << std::endl;
+  ostream << "sname      : " << service.sname() << std::endl;
+  ostream << "tcp_port   : " << service.tcp_port() << std::endl;
+  return ostream;
+}
+
 MonitorUtil::MonitorUtil() { static_cast<void>(UpdateSnapshot()); }
 
 const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {

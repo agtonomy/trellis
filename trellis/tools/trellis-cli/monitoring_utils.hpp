@@ -29,8 +29,10 @@ namespace trellis {
 namespace tools {
 namespace cli {
 
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Host&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Service&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
 
 class MonitorUtil {
  public:
