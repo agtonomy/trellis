@@ -74,6 +74,14 @@ std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Service& service
   return ostream;
 }
 
+std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Method& method) {
+  ostream << "mname          : " << method.mname() << std::endl;
+  ostream << "req_type       : " << method.req_type() << std::endl;
+  ostream << "resp_type      : " << method.resp_type() << std::endl;
+  ostream << "call_count     : " << method.call_count() << std::endl;
+  return ostream;
+}
+
 MonitorUtil::MonitorUtil() { static_cast<void>(UpdateSnapshot()); }
 
 const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {
@@ -137,6 +145,31 @@ void MonitorUtil::PrintHosts() const {
 void MonitorUtil::PrintServices() const {
   const auto& services = snapshot_.services();
   PrintEntries<eCAL::pb::Service>(services);
+}
+
+void MonitorUtil::PrintServiceInfo(const std::string service_name) const {
+  const auto& services = snapshot_.services();
+  auto filter = [service_name](const eCAL::pb::Service& service) { return service.sname() == service_name; };
+  auto it = GetFilteredIterator<eCAL::pb::Service>(services, filter);
+  if (it == services.end()) {
+    std::cerr << "Didn't find any service with the name " << service_name << std::endl;
+    return;
+  }
+
+  // We expect only one match, but we'll iterate over everything that came out
+  // of the filter regardless
+  while (it != services.end()) {
+    const auto& service = *it;
+    std::cout << "=============================================================" << std::endl;
+    std::cout << service;
+    std::cout << std::endl << std::endl;
+    std::cout << "Methods:" << std::endl;
+    const auto& methods = service.methods();
+    for (const auto& method : methods) {
+      std::cout << method;
+    }
+    ++it;
+  }
 }
 
 }  // namespace cli

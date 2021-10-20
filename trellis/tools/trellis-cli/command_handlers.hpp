@@ -79,6 +79,7 @@ int node_list_main(int argc, char* argv[]);
 // service subcommand
 int service_main(int argc, char* argv[]);
 int service_list_main(int argc, char* argv[]);
+int service_info_main(int argc, char* argv[]);
 
 }  // namespace cli
 }  // namespace tools

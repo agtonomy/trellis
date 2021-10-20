@@ -33,6 +33,7 @@ std::ostream& operator<<(std::ostream&, const eCAL::pb::Host&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Service&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Method&);
 
 class MonitorUtil {
  public:
@@ -48,14 +49,19 @@ class MonitorUtil {
   void PrintNodes() const;
   void PrintHosts() const;
   void PrintServices() const;
+  void PrintServiceInfo(const std::string service_name) const;
 
  private:
+  template <typename T>
+  auto GetFilteredIterator(const google::protobuf::RepeatedPtrField<T>& entries, FilterFunction<T> filter) const {
+    return std::find_if(entries.begin(), entries.end(), filter);
+  }
   template <typename T>
   void PrintEntries(
       const google::protobuf::RepeatedPtrField<T>& entries,
       FilterFunction<T> filter = [](const T&) { return true; }) const {
     unsigned entry_count{0};
-    auto it = std::find_if(entries.begin(), entries.end(), filter);
+    auto it = GetFilteredIterator<T>(entries, filter);
     while (it != entries.end()) {
       ++entry_count;
       const auto& entry = *it;

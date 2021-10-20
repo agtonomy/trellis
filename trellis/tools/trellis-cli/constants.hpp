@@ -33,6 +33,7 @@ constexpr std::string_view topic_echo_command{"trellis-cli topic echo"};
 constexpr std::string_view topic_list_command{"trellis-cli topic list"};
 constexpr std::string_view node_list_command{"trellis-cli node list"};
 constexpr std::string_view service_list_command{"trellis-cli service list"};
+constexpr std::string_view service_info_command{"trellis-cli service info"};
 
 // Command descriptions
 constexpr std::string_view topic_desc{"analyze pub/sub topics"};
@@ -43,6 +44,7 @@ constexpr std::string_view topic_echo_command_desc{"echo messages from a given t
 constexpr std::string_view topic_list_command_desc{"list info about available topics"};
 constexpr std::string_view node_list_command_desc{"list online nodes"};
 constexpr std::string_view service_list_command_desc{"list active services"};
+constexpr std::string_view service_info_command_desc{"display info about an rpc service"};
 
 // Delay to allow discovery / monitoring information to propogage
 constexpr unsigned monitor_delay_ms = 1000U;

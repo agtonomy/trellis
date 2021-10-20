@@ -26,6 +26,7 @@ int service_main(int argc, char* argv[]) {
   const std::string subcommand = cli::ShiftCommand(argc, argv);
   HandlersMap handlers{
       {"list", {service_list_command_desc.data(), [argc, argv]() { return cli::service_list_main(argc, argv); }}},
+      {"info", {service_info_command_desc.data(), [argc, argv]() { return cli::service_info_main(argc, argv); }}},
   };
   if (subcommand.empty()) {
     std::cout << "Must specify a subcommand... " << std::endl;
