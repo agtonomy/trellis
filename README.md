@@ -11,6 +11,8 @@ Trellis is primarily developed for use in robotics in an embedded Linux environm
 
 **NOTE**: This project is in its early stages and is being actively developed.
 
+![main](https://github.com/agtonomy/trellis/actions/workflows/main.yaml/badge.svg)
+
 ## Language & OS Support
 Trellis is C++-only at the time of writing although additional language support is anticipated in the future.
 
