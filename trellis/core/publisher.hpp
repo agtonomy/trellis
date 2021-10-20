@@ -35,6 +35,10 @@ using Publisher = std::shared_ptr<PublisherClass<T>>;
  * types determined at runtime
  *
  * This was adapted from eCAL's CPublisher<T>
+ *
+ * TODO(bsirang): this functionality was integrated upstream...
+ * wipe this version and use the upstream implementation after the next
+ * version of eCAL is released.
  */
 class DynamicPublisherImpl : public eCAL::CMsgPublisher<google::protobuf::Message> {
  public:
