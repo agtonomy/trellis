@@ -15,10 +15,6 @@
  *
  */
 
-#include <google/protobuf/util/json_util.h>
-
-#include <cxxopts.hpp>
-
 #include "trellis/tools/trellis-cli/command_handlers.hpp"
 
 namespace trellis {

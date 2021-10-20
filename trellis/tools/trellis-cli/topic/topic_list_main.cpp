@@ -15,8 +15,6 @@
  *
  */
 
-#include <google/protobuf/util/json_util.h>
-
 #include <cxxopts.hpp>
 
 #include "trellis/core/node.hpp"
