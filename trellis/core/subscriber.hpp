@@ -24,14 +24,26 @@
 namespace trellis {
 namespace core {
 
-template <typename T>
-using SubscriberClass = eCAL::protobuf::CSubscriber<T>;
-
-template <typename T>
-using Subscriber = std::shared_ptr<SubscriberClass<T>>;
-
 using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
+
+template <typename T>
+class SubscriberImpl {
+ public:
+  using Callback = std::function<void(const T&)>;
+  SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
+    // XXX(bsirang) consider passing time_ and clock_ to user
+    auto callback_wrapper = [callback](const char* topic_name_, const T& msg_, long long time_, long long clock_,
+                                       long long id_) { callback(msg_); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
+  }
+
+ private:
+  eCAL::protobuf::CSubscriber<T> ecal_sub_;
+};
+
+template <typename T>
+using Subscriber = std::shared_ptr<SubscriberImpl<T>>;
 
 }  // namespace core
 }  // namespace trellis
