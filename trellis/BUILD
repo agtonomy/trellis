@@ -91,3 +91,38 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
+
+proto_library(
+    name = "test_proto_lib",
+    srcs = [
+        "core/test/test.proto",
+    ],
+)
+
+cc_proto_library(
+    name = "test_proto",
+    deps = [":test_proto_lib"],
+)
+
+cc_library(
+    name = "test_fixture",
+    hdrs = [
+        "core/test/test_fixture.hpp",
+    ],
+    deps = [
+        ":trellis_core_ecal",
+        "@gtest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "test_core_ecal",
+    srcs = [
+        "core/test/test_subscriber.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+        ":test_proto",
+    ],
+)
