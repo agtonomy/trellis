@@ -25,7 +25,7 @@
 using namespace trellis::core;
 using namespace trellis::core::test;
 
-TEST_F(TrellisFixture, BasicChecks) {
+TEST_F(TrellisFixture, BasicPubSub) {
   static unsigned receive_count{0};
 
   auto pub = node_.CreatePublisher<test::Test>("test_topic");

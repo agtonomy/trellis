@@ -69,6 +69,8 @@ cc_library(
     ],
 )
 
+######### Test related targets below #########
+
 cc_test(
     name = "test_containers",
     srcs = ["containers/test/test_multi_fifo.cpp"],
@@ -118,7 +120,7 @@ cc_library(
 cc_test(
     name = "test_core_ecal",
     srcs = [
-        "core/test/test_subscriber.cpp",
+        "core/test/test_pubsub.cpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
