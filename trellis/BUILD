@@ -69,6 +69,8 @@ cc_library(
     ],
 )
 
+######### Test related targets below #########
+
 cc_test(
     name = "test_containers",
     srcs = ["containers/test/test_multi_fifo.cpp"],
@@ -89,5 +91,40 @@ cc_test(
     deps = [
         ":trellis_network",
         "@gtest//:gtest_main",
+    ],
+)
+
+proto_library(
+    name = "test_proto_lib",
+    srcs = [
+        "core/test/test.proto",
+    ],
+)
+
+cc_proto_library(
+    name = "test_proto",
+    deps = [":test_proto_lib"],
+)
+
+cc_library(
+    name = "test_fixture",
+    hdrs = [
+        "core/test/test_fixture.hpp",
+    ],
+    deps = [
+        ":trellis_core_ecal",
+        "@gtest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "test_core_ecal",
+    srcs = [
+        "core/test/test_pubsub.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+        ":test_proto",
     ],
 )

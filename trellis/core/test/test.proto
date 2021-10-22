@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package trellis.core.test;
+
+message Test {
+  uint32 id = 1;
+  string msg = 2;
+}

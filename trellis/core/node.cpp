@@ -26,6 +26,8 @@ Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()} {
   eCAL::Initialize(0, nullptr, name_.c_str());
 }
 
+Node::~Node() { Stop(); }
+
 int Node::Run() {
   Log::Info("{} node running...", name_);
   auto word_guard = asio::make_work_guard(*ev_loop_);
@@ -37,17 +39,16 @@ int Node::Run() {
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
   }
-  ev_loop_->stop();
-  eCAL::Finalize();
+  Stop();
   return 0;
 }
 
-bool Node::RunOnce() {
-  const bool ok = eCAL::Ok();
-  if (!ok) {
-    eCAL::Finalize();
+bool Node::RunN(unsigned n) {
+  unsigned count = 0;
+  bool ok;
+  while ((ok = eCAL::Ok()) && count++ < n) {
+    ev_loop_->run_one();
   }
-  ev_loop_->run_one();
   return ok;
 }
 
@@ -58,4 +59,9 @@ Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsi
 
 Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) const {
   return std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+}
+
+void Node::Stop() {
+  ev_loop_->stop();
+  eCAL::Finalize();
 }
