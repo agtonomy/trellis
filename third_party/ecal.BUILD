@@ -13,9 +13,9 @@ cc_library(
             "lib/CustomTclap/src/**",
         ],
         exclude = [
-            #"ecal/core/src/win32/**",
             "ecal/**/win32/**",
             "ecal/**/*iceoryx*/**",
+            "ecal/core/src/ecal_process_stub.cpp",
         ],
     ) + ["ecal/core/include/ecal/ecal_defs.h"],
     hdrs = glob([
@@ -58,28 +58,28 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":ecal_cc_proto",
+        ":ecaltime-localtime",
         "@asio",
         "@simpleini",
         "@tclap",
-        ":ecaltime-localtime",
     ],
 )
 
 cc_library(
-  name = "ecaltime-localtime",
-  srcs = ["libecaltime-localtime.so"],
+    name = "ecaltime-localtime",
+    srcs = ["libecaltime-localtime.so"],
 )
 
 cc_binary(
-  name = "libecaltime-localtime.so",
-  srcs = [
-      "contrib/ecaltime/localtime/src/ecaltime.cpp",
-      "contrib/ecaltime/include/ecaltime.h",
-  ],
-  includes = [
-    "contrib/ecaltime/include",
-  ],
-  linkshared = True,
+    name = "libecaltime-localtime.so",
+    srcs = [
+        "contrib/ecaltime/include/ecaltime.h",
+        "contrib/ecaltime/localtime/src/ecaltime.cpp",
+    ],
+    includes = [
+        "contrib/ecaltime/include",
+    ],
+    linkshared = True,
 )
 
 proto_library(
