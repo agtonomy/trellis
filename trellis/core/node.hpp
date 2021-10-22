@@ -63,12 +63,7 @@ class Node {
 
   template <typename T>
   Subscriber<T> CreateSubscriber(std::string topic, std::function<void(const T&)> callback) const {
-    Subscriber<T> subscriber = std::make_shared<SubscriberClass<T>>(topic.c_str());
-    // TODO(bsirang) consider passing time_ and clock_ to user
-    auto callback_wrapper = [callback](const char* topic_name_, const T& msg_, long long time_, long long clock_,
-                                       long long id_) { callback(msg_); };
-    subscriber->AddReceiveCallback(callback_wrapper);
-    return subscriber;
+    return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback);
   }
 
   DynamicSubscriber CreateDynamicSubscriber(std::string topic,
