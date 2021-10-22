@@ -39,10 +39,10 @@ namespace trellis {
 namespace core {
 
 /**
- * Node Represents an actor process
+ * Node A class to represent each actor in the actor pattern
  *
  * A single instance of this class is intended to be used by each Trellis
- * application. It provides methods for constructing the various trellis
+ * application. It provides methods for constructing the various Trellis
  * primitives. Examples include pub/sub handles and timers.
  *
  * The lifecycle of this class should be coupled to the lifecycle of the
