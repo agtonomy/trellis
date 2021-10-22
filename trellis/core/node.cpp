@@ -31,7 +31,7 @@ Node::~Node() { Stop(); }
 int Node::Run() {
   Log::Info("{} node running...", name_);
   auto word_guard = asio::make_work_guard(*ev_loop_);
-  while (eCAL::Ok()) {
+  while (ShouldRun()) {
     ev_loop_->run_for(std::chrono::milliseconds(500));
     // If the event loop was stopped, run_for will return immediately, so
     // we should sleep in that case.
@@ -46,7 +46,7 @@ int Node::Run() {
 bool Node::RunN(unsigned n) {
   unsigned count = 0;
   bool ok;
-  while ((ok = eCAL::Ok()) && count++ < n) {
+  while ((ok = ShouldRun()) && count++ < n) {
     ev_loop_->run_one();
   }
   return ok;
@@ -62,6 +62,9 @@ Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback ca
 }
 
 void Node::Stop() {
+  should_run_ = false;
   ev_loop_->stop();
   eCAL::Finalize();
 }
+
+bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
