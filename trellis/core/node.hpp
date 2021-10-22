@@ -41,6 +41,7 @@ namespace core {
 class Node {
  public:
   Node(std::string name);
+  ~Node();
 
   // Moving/copying not allowed
   Node(const Node&) = delete;
@@ -92,7 +93,11 @@ class Node {
 
   int Run();
 
-  bool RunOnce();
+  bool RunOnce() { return RunN(1); }
+
+  bool RunN(unsigned n);
+
+  void Stop();
 
   EventLoop GetEventLoop() const { return ev_loop_; }
 
