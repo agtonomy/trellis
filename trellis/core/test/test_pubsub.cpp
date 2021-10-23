@@ -36,6 +36,9 @@ TEST_F(TrellisFixture, BasicPubSub) {
 
   WaitForDiscovery();
 
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
   for (unsigned i = 0; i < 10U; ++i) {
     test::Test test_msg;
     test_msg.set_id(i);
@@ -45,4 +48,62 @@ TEST_F(TrellisFixture, BasicPubSub) {
   }
 
   ASSERT_EQ(receive_count, 10U);
+}
+
+TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
+  static unsigned receive_count{0};
+  static unsigned watchdog_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_watchdog_topic");
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_watchdog_topic",
+      [](const test::Test& msg) {
+        ASSERT_EQ(msg.id(), receive_count);
+        ++receive_count;
+      },
+      50, []() { ++watchdog_count; });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  // Sanity check initial values
+  ASSERT_EQ(receive_count, 0U);
+  ASSERT_EQ(watchdog_count, 0U);
+
+  // Send 2 messages
+  for (unsigned i = 0; i < 2U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Expect two messages received
+  ASSERT_EQ(receive_count, 2U);
+  ASSERT_EQ(watchdog_count, 0U);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  // Expect watchdog fired
+  ASSERT_EQ(receive_count, 2U);
+  ASSERT_EQ(watchdog_count, 1U);
+
+  {
+    test::Test test_msg;
+    test_msg.set_id(2);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Expect third message received
+  ASSERT_EQ(receive_count, 3U);
+  ASSERT_EQ(watchdog_count, 1U);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  // Expect another watchdog fire
+  ASSERT_EQ(receive_count, 3U);
+  ASSERT_EQ(watchdog_count, 2U);
 }
