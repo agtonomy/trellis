@@ -13,9 +13,9 @@ cc_library(
     defines = [
         "ASIO_STANDALONE",
     ],
+    includes = ["asio/include"],
     linkopts = [
         "-lpthread",
     ],
-    includes = ["asio/include"],
     visibility = ["//visibility:public"],
 )

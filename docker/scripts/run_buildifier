@@ -3,4 +3,4 @@
 set -ex
 
 # Linting BUILD files
-find . -iname BUILD -print0 | xargs --null buildifier -lint=warn
+find . -iname "BUILD" -print0 -o -iname "*.BUILD" -print0 | xargs --null buildifier --mode=check
