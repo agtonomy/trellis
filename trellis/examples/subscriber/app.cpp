@@ -7,10 +7,11 @@ namespace subscriber {
 using namespace trellis::core;
 
 App::App(const Node& node, const Config& config)
-    : inputs_{node, {{{config["examples"]["publisher"]["topic"].as<std::string>()}}}, [this]() { Tick(); }} {}
+    : inputs_{node,
+              {{config["examples"]["publisher"]["topic"].as<std::string>()}},
+              [this](const trellis::examples::proto::HelloWorld& msg, const time::TimePoint&) { NewMessage(msg); }} {}
 
-void App::Tick() {
-  const auto& msg = inputs_.Newest<trellis::examples::proto::HelloWorld>().message;
+void App::NewMessage(const trellis::examples::proto::HelloWorld& msg) {
   Log::Info("Received message from {} with content {} and message number {}", msg.name(), msg.msg(), msg.id());
 }
 
