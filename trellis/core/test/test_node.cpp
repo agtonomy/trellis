@@ -23,8 +23,6 @@ using namespace trellis::core;
 using namespace trellis::core::test;
 
 TEST_F(TrellisFixture, StartAndStopNode) {
-  static unsigned receive_count{0};
-
   // Simply start the runner thread and then test that it will gracefully
   // stop without hanging
   StartRunnerThread();
