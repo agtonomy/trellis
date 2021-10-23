@@ -118,8 +118,9 @@ cc_library(
 )
 
 cc_test(
-    name = "test_core_ecal",
+    name = "test_core",
     srcs = [
+        "core/test/test_node.cpp",
         "core/test/test_pubsub.cpp",
     ],
     visibility = ["//visibility:public"],

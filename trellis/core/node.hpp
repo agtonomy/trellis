@@ -237,8 +237,11 @@ class Node {
   EventLoop GetEventLoop() const { return ev_loop_; }
 
  private:
+  bool ShouldRun() const;
+
   const std::string name_;
   EventLoop ev_loop_;
+  std::atomic<bool> should_run_{true};
 };
 
 }  // namespace core

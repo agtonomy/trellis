@@ -33,9 +33,16 @@ class TrellisFixture : public ::testing::Test {
     // allow pub/sub from same process, etc
     eCAL::Util::EnableLoopback(true);
   }
+
+  ~TrellisFixture() {
+    Stop();
+    if (runner_thread_.joinable()) {
+      runner_thread_.join();
+    }
+  }
   static void WaitForDiscovery() { std::this_thread::sleep_for(std::chrono::milliseconds(discovery_settling_time_ms)); }
   void Stop() { node_.Stop(); }
-  void Run() {
+  void StartRunnerThread() {
     runner_thread_ = std::thread([this]() { node_.Run(); });
   }
   trellis::core::Node node_;
