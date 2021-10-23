@@ -38,10 +38,38 @@ class MessageConsumer {
     time::TimePoint timestamp;
     T message;
   };
-  using Callback = std::function<void(void)>;
-  using TopicsArray = std::array<std::vector<std::string>, sizeof...(Types)>;
-  MessageConsumer(const Node& node, TopicsArray topics, Callback callback = {})
-      : topics_{topics}, callback_{callback}, loop_{node.GetEventLoop()} {
+  template <typename MSG_T>
+  using NewMessageCallback = std::function<void(const MSG_T&, const time::TimePoint&)>;
+  using NewMessageCallbacks = std::tuple<NewMessageCallback<Types>...>;
+  using UniversalUpdateCallback = std::function<void(void)>;
+  using SingleTopic = std::string;
+  using TopicsList = std::vector<SingleTopic>;
+  using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
+  using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
+
+  MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {})
+      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
+        update_callback_{callback},
+        new_message_callbacks_{},
+        loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks)
+      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
+        update_callback_{},
+        new_message_callbacks_{callbacks},
+        loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
+      : topics_{topics}, update_callback_{callback}, new_message_callbacks_{}, loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
+      : topics_{topics}, update_callback_{}, new_message_callbacks_{callbacks}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
 
@@ -65,12 +93,21 @@ class MessageConsumer {
   void NewMessage(const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
 
-    if (callback_) {
+    // Check if we have a callback to signal an update
+    if (update_callback_) {
       // XXX(bsirang): are there any thread-safety issues here?
       // According to https://think-async.com/Asio/asio-1.18.2/doc/asio/overview/core/threads.html
       // asio::post() seems to be thread-safe
-      auto cb = callback_;
+      auto cb = update_callback_;
       asio::post(*loop_, [cb]() { cb(); });
+    }
+
+    // Check if we have a callback to directly ingest a message of this particular type
+    const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
+    if (new_message_callback) {
+      auto cb = new_message_callback;
+      const auto& newest = Newest<MSG_T>();
+      asio::post(*loop_, [cb, &newest]() { cb(newest.message, newest.timestamp); });
     }
   }
 
@@ -89,8 +126,16 @@ class MessageConsumer {
   }
 
  private:
+  static TopicsArray CreateTopicsArrayFromSingleTopicArray(SingleTopicArray single_topic_array) {
+    TopicsArray output;
+    for (unsigned i = 0; i < output.size(); ++i) {
+      output[i].push_back(single_topic_array[i]);
+    }
+    return output;
+  }
   const TopicsArray topics_;
-  const Callback callback_;
+  const UniversalUpdateCallback update_callback_;
+  const NewMessageCallbacks new_message_callbacks_;
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
