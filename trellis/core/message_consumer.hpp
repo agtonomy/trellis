@@ -30,6 +30,18 @@
 namespace trellis {
 namespace core {
 
+/**
+ * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
+ *
+ * This class uses variadic templates to specify an arbitrary number of message types for which subscribers will be
+ * created. Furthermore, this class will manage FIFOs to queue up inbound messages and deal with thread-safety. All user
+ * callbacks will be invoked using the event loop handle, and all thread-synchronization is handled internally. This
+ * means that the user can interact with the messages freely (without threading concerns) from any message consumer
+ * callbacks or any other callback running on the given event loop (such as timers)
+ *
+ * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
+ * @tparam Types variadic list of message types to consume
+ */
 template <size_t FIFO_DEPTH, typename... Types>
 class MessageConsumer {
  public:
@@ -47,6 +59,15 @@ class MessageConsumer {
   using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
 
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of topics to subscribe to. The order of topics must match the order of message types in the
+   * template arguments
+   * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
+   * querying the data structures to understand what was updated.
+   */
   MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {})
       : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
         update_callback_{callback},
@@ -55,6 +76,15 @@ class MessageConsumer {
     CreateSubscribers(node);
   }
 
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of topics to subscribe to. The order of topics must match the order of message types in the
+   * template arguments
+   * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
+   * types in the template arguments
+   */
   MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks)
       : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
         update_callback_{},
@@ -63,11 +93,29 @@ class MessageConsumer {
     CreateSubscribers(node);
   }
 
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of list topics to subscribe to. The order of topics must match the order of message types in
+   * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
+   * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
+   * querying the data structures to understand what was updated
+   */
   MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
       : topics_{topics}, update_callback_{callback}, new_message_callbacks_{}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
 
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of list topics to subscribe to. The order of topics must match the order of message types in
+   * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
+   * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
+   * types in the template arguments
+   */
   MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
       : topics_{topics}, update_callback_{}, new_message_callbacks_{callbacks}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
@@ -89,6 +137,37 @@ class MessageConsumer {
     CreateSubscribers<I + 1>(node);
   }
 
+  /**
+   * Newest retrieve a reference to the newest message for the given type
+   *
+   * @tparam MSG_T the message type to retrieve
+   * @param updated an optional user-supplied pointer to a bool which is true if the message was just updated
+   * @return A reference to a timestamped message of the given type
+   */
+  template <typename MSG_T>
+  const StampedMessage<MSG_T>& Newest(bool* updated = nullptr) {
+    bool updated_msg;
+    bool* updated_ptr = (updated == nullptr) ? &updated_msg : updated;
+    return fifos_.template Newest<StampedMessage<MSG_T>>(*updated_ptr);
+  }
+
+  /**
+   * TimedOut determine if too much time has elapsed since the last reception of the given message type
+   *
+   * @tparam the message type to check
+   * @param now A time point intended to represent the current time
+   * @param timeout_ms The time duration in which the message is considered to be timed out
+   *
+   * @return true if the time elapsed since the last message reception is greater than timeout_ms
+   */
+  template <typename MSG_T>
+  bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
+    const auto& newest_stamp = Newest<MSG_T>().timestamp;
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - newest_stamp);
+    return elapsed_ms.count() > timeout_ms;
+  }
+
+ private:
   template <typename MSG_T>
   void NewMessage(const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
@@ -111,21 +190,6 @@ class MessageConsumer {
     }
   }
 
-  template <typename MSG_T>
-  const StampedMessage<MSG_T>& Newest(bool* updated = nullptr) {
-    bool updated_msg;
-    bool* updated_ptr = (updated == nullptr) ? &updated_msg : updated;
-    return fifos_.template Newest<StampedMessage<MSG_T>>(*updated_ptr);
-  }
-
-  template <typename MSG_T>
-  bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
-    const auto& newest_stamp = Newest<MSG_T>().timestamp;
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - newest_stamp);
-    return elapsed_ms.count() > timeout_ms;
-  }
-
- private:
   static TopicsArray CreateTopicsArrayFromSingleTopicArray(SingleTopicArray single_topic_array) {
     TopicsArray output;
     for (unsigned i = 0; i < output.size(); ++i) {
