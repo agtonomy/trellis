@@ -30,12 +30,13 @@ class TimerImpl {
  public:
   using Callback = std::function<void(void)>;
   enum Type { kOneShot = 0, kPeriodic };
-  TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay)
+  TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms)
       : loop_{loop},
         type_{type},
         callback_{callback},
         interval_ms_{interval_ms},
-        timer_{*loop, asio::chrono::milliseconds(delay)} {
+        delay_ms_(delay_ms),
+        timer_{*loop, asio::chrono::milliseconds(delay_ms)} {
     KickOff();
   }
 
@@ -58,9 +59,14 @@ class TimerImpl {
   }
 
   void Reload() {
-    // We calculate the new expiration time based on the last expiration
-    // rather than "now" in order to avoid drift due to jitter error
-    timer_.expires_at(timer_.expiry() + asio::chrono::milliseconds(interval_ms_));
+    if (type_ == kPeriodic) {
+      // We calculate the new expiration time based on the last expiration
+      // rather than "now" in order to avoid drift due to jitter error
+      timer_.expires_at(timer_.expiry() + asio::chrono::milliseconds(interval_ms_));
+    } else if (type_ == kOneShot) {
+      // If we're reloading a one shot timer we simply reload to now + our delay time
+      timer_.expires_after(asio::chrono::milliseconds(delay_ms_));
+    }
   }
 
   void Fire() {
@@ -74,6 +80,7 @@ class TimerImpl {
   const Type type_;
   const Callback callback_;
   const unsigned interval_ms_;
+  const unsigned delay_ms_;
   asio::steady_timer timer_;
 };
 
