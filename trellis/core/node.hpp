@@ -22,6 +22,7 @@
 
 #include <asio.hpp>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "bind.hpp"
@@ -84,12 +85,24 @@ class Node {
    * @tparam the message type that we expect to receive from the publisher
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
+   * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
+   * @param watchdog_callback optional watchdog callback to monitor timeouts
+   *
+   * NOTE: Both watchdog_timeout_ms and watchdog_callback must be specified in
+   * order to enable watchdog monitoring.
    *
    * @return a subscriber handle
    */
   template <typename T>
-  Subscriber<T> CreateSubscriber(std::string topic, std::function<void(const T&)> callback) const {
-    return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback);
+  Subscriber<T> CreateSubscriber(std::string topic, std::function<void(const T&)> callback,
+                                 std::optional<unsigned> watchdog_timeout_ms = {},
+                                 typename SubscriberImpl<T>::WatchdogCallback watchdog_callback = {}) const {
+    if (watchdog_timeout_ms && watchdog_callback) {
+      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+                                                 GetEventLoop());
+    } else {
+      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback);
+    }
   }
 
   /**
