@@ -33,6 +33,7 @@ cc_library(
     ],
     deps = [
         ":trellis_core",
+        ":trellis_containers",
         "@ecal",
         "@fmt",
     ],
@@ -123,6 +124,7 @@ cc_test(
         "core/test/test_node.cpp",
         "core/test/test_pubsub.cpp",
         "core/test/test_timer.cpp",
+        "core/test/test_message_consumer.cpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
