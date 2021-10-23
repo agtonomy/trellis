@@ -6,3 +6,8 @@ message Test {
   uint32 id = 1;
   string msg = 2;
 }
+
+message TestTwo {
+  float foo = 1;
+  string bar = 2;
+}

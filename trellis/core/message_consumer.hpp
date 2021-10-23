@@ -30,6 +30,18 @@
 namespace trellis {
 namespace core {
 
+/**
+ * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
+ *
+ * This class uses variadic templates to specify an arbitrary number of message types for which subscribers will be
+ * created. Furthermore, this class will manage FIFOs to queue up inbound messages and deal with thread-safety. All user
+ * callbacks will be invoked using the event loop handle, and all thread-synchronization is handled internally. This
+ * means that the user can interact with the messages freely (without threading concerns) from any message consumer
+ * callbacks or any other callback running on the given event loop (such as timers)
+ *
+ * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
+ * @tparam Types variadic list of message types to consume
+ */
 template <size_t FIFO_DEPTH, typename... Types>
 class MessageConsumer {
  public:
@@ -38,10 +50,74 @@ class MessageConsumer {
     time::TimePoint timestamp;
     T message;
   };
-  using Callback = std::function<void(void)>;
-  using TopicsArray = std::array<std::vector<std::string>, sizeof...(Types)>;
-  MessageConsumer(const Node& node, TopicsArray topics, Callback callback = {})
-      : topics_{topics}, callback_{callback}, loop_{node.GetEventLoop()} {
+  template <typename MSG_T>
+  using NewMessageCallback = std::function<void(const MSG_T&, const time::TimePoint&)>;
+  using NewMessageCallbacks = std::tuple<NewMessageCallback<Types>...>;
+  using UniversalUpdateCallback = std::function<void(void)>;
+  using SingleTopic = std::string;
+  using TopicsList = std::vector<SingleTopic>;
+  using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
+  using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
+
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of topics to subscribe to. The order of topics must match the order of message types in the
+   * template arguments
+   * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
+   * querying the data structures to understand what was updated.
+   */
+  MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {})
+      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
+        update_callback_{callback},
+        new_message_callbacks_{},
+        loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of topics to subscribe to. The order of topics must match the order of message types in the
+   * template arguments
+   * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
+   * types in the template arguments
+   */
+  MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks)
+      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
+        update_callback_{},
+        new_message_callbacks_{callbacks},
+        loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of list topics to subscribe to. The order of topics must match the order of message types in
+   * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
+   * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
+   * querying the data structures to understand what was updated
+   */
+  MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
+      : topics_{topics}, update_callback_{callback}, new_message_callbacks_{}, loop_{node.GetEventLoop()} {
+    CreateSubscribers(node);
+  }
+
+  /*
+   * MessageConsumer constructor
+   *
+   * @param node A node instance to create subscriptions with
+   * @param topics A list of list topics to subscribe to. The order of topics must match the order of message types in
+   * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
+   * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
+   * types in the template arguments
+   */
+  MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
+      : topics_{topics}, update_callback_{}, new_message_callbacks_{callbacks}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
 
@@ -61,19 +137,13 @@ class MessageConsumer {
     CreateSubscribers<I + 1>(node);
   }
 
-  template <typename MSG_T>
-  void NewMessage(const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
-
-    if (callback_) {
-      // XXX(bsirang): are there any thread-safety issues here?
-      // According to https://think-async.com/Asio/asio-1.18.2/doc/asio/overview/core/threads.html
-      // asio::post() seems to be thread-safe
-      auto cb = callback_;
-      asio::post(*loop_, [cb]() { cb(); });
-    }
-  }
-
+  /**
+   * Newest retrieve a reference to the newest message for the given type
+   *
+   * @tparam MSG_T the message type to retrieve
+   * @param updated an optional user-supplied pointer to a bool which is true if the message was just updated
+   * @return A reference to a timestamped message of the given type
+   */
   template <typename MSG_T>
   const StampedMessage<MSG_T>& Newest(bool* updated = nullptr) {
     bool updated_msg;
@@ -81,6 +151,15 @@ class MessageConsumer {
     return fifos_.template Newest<StampedMessage<MSG_T>>(*updated_ptr);
   }
 
+  /**
+   * TimedOut determine if too much time has elapsed since the last reception of the given message type
+   *
+   * @tparam the message type to check
+   * @param now A time point intended to represent the current time
+   * @param timeout_ms The time duration in which the message is considered to be timed out
+   *
+   * @return true if the time elapsed since the last message reception is greater than timeout_ms
+   */
   template <typename MSG_T>
   bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
     const auto& newest_stamp = Newest<MSG_T>().timestamp;
@@ -89,8 +168,38 @@ class MessageConsumer {
   }
 
  private:
+  template <typename MSG_T>
+  void NewMessage(const MSG_T& msg) {
+    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
+
+    // Check if we have a callback to signal an update
+    if (update_callback_) {
+      // XXX(bsirang): are there any thread-safety issues here?
+      // According to https://think-async.com/Asio/asio-1.18.2/doc/asio/overview/core/threads.html
+      // asio::post() seems to be thread-safe
+      auto cb = update_callback_;
+      asio::post(*loop_, [cb]() { cb(); });
+    }
+
+    // Check if we have a callback to directly ingest a message of this particular type
+    const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
+    if (new_message_callback) {
+      auto cb = new_message_callback;
+      const auto& newest = Newest<MSG_T>();
+      asio::post(*loop_, [cb, &newest]() { cb(newest.message, newest.timestamp); });
+    }
+  }
+
+  static TopicsArray CreateTopicsArrayFromSingleTopicArray(SingleTopicArray single_topic_array) {
+    TopicsArray output;
+    for (unsigned i = 0; i < output.size(); ++i) {
+      output[i].push_back(single_topic_array[i]);
+    }
+    return output;
+  }
   const TopicsArray topics_;
-  const Callback callback_;
+  const UniversalUpdateCallback update_callback_;
+  const NewMessageCallbacks new_message_callbacks_;
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;

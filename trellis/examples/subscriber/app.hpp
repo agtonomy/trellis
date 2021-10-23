@@ -14,7 +14,7 @@ class App {
   App(const trellis::core::Node& node, const trellis::core::Config& config);
 
  private:
-  void Tick();
+  void NewMessage(const trellis::examples::proto::HelloWorld& msg);
 
   trellis::core::MessageConsumer<1, trellis::examples::proto::HelloWorld> inputs_;
 };

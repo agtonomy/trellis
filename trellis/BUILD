@@ -32,6 +32,7 @@ cc_library(
         "core/time.hpp",
     ],
     deps = [
+        ":trellis_containers",
         ":trellis_core",
         "@ecal",
         "@fmt",
@@ -120,6 +121,7 @@ cc_library(
 cc_test(
     name = "test_core",
     srcs = [
+        "core/test/test_message_consumer.cpp",
         "core/test/test_node.cpp",
         "core/test/test_pubsub.cpp",
         "core/test/test_timer.cpp",
