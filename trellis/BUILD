@@ -122,6 +122,7 @@ cc_test(
     srcs = [
         "core/test/test_node.cpp",
         "core/test/test_pubsub.cpp",
+        "core/test/test_timer.cpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
