@@ -88,12 +88,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
          ++receive_count_2;
        }},
       {{50U, 100U}},
-      {{[]() {
-          ++watchdog_count_1;
-        },
-        []() {
-          ++watchdog_count_2;
-        }}}};
+      {{[]() { ++watchdog_count_1; }, []() { ++watchdog_count_2; }}}};
 
   WaitForDiscovery();
 
