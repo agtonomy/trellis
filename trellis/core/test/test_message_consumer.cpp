@@ -98,7 +98,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   WaitForDiscovery();
 
   // Publish messages on both topics
-  for (unsigned i = 0; i < 10U; ++i) {
+  for (unsigned i = 0; i < 5U; ++i) {
     test::Test test_msg;
     test::TestTwo test_msg2;
     test_msg.set_id(i);
@@ -109,11 +109,33 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
+  // Wait for watchdog
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  ASSERT_EQ(receive_count_1, 5U);
+  ASSERT_EQ(receive_count_2, 5U);
+
+  ASSERT_EQ(watchdog_count_1, 1U);
+  ASSERT_EQ(watchdog_count_2, 1U);
+
+  // Publish more messages on both topics
+  for (unsigned i = 5; i < 10U; ++i) {
+    test::Test test_msg;
+    test::TestTwo test_msg2;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    test_msg2.set_foo(i * 2.0);
+    pub->Send(test_msg);
+    pub2->Send(test_msg2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // Wait for watchdog
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
   ASSERT_EQ(receive_count_1, 10U);
   ASSERT_EQ(receive_count_2, 10U);
 
-  ASSERT_EQ(watchdog_count_1, 1U);
-  ASSERT_EQ(watchdog_count_2, 1U);
+  ASSERT_EQ(watchdog_count_1, 2U);
+  ASSERT_EQ(watchdog_count_2, 2U);
 }
