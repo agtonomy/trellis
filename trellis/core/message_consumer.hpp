@@ -69,11 +69,7 @@ class MessageConsumer {
    * querying the data structures to understand what was updated.
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {})
-      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
-        update_callback_{callback},
-        new_message_callbacks_{},
-        loop_{node.GetEventLoop()} {
-    CreateSubscribers(node);
+      : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback) {
   }
 
   /*
@@ -86,11 +82,7 @@ class MessageConsumer {
    * types in the template arguments
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks)
-      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
-        update_callback_{},
-        new_message_callbacks_{callbacks},
-        loop_{node.GetEventLoop()} {
-    CreateSubscribers(node);
+      : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks) {
   }
 
   /*
@@ -102,7 +94,7 @@ class MessageConsumer {
    * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
    * querying the data structures to understand what was updated
    */
-  MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
+  explicit MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
       : topics_{topics}, update_callback_{callback}, new_message_callbacks_{}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
@@ -116,7 +108,7 @@ class MessageConsumer {
    * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
    * types in the template arguments
    */
-  MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
+  explicit MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
       : topics_{topics}, update_callback_{}, new_message_callbacks_{callbacks}, loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
