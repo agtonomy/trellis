@@ -58,6 +58,8 @@ class MessageConsumer {
   using TopicsList = std::vector<SingleTopic>;
   using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
+  using WatchdogTimeoutsArray = std::array<unsigned, sizeof...(Types)>;
+  using WatchdogCallbacksArray = std::array<std::function<void(void)>, sizeof...(Types)>;
 
   /*
    * MessageConsumer constructor
@@ -67,14 +69,14 @@ class MessageConsumer {
    * template arguments
    * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
    * querying the data structures to understand what was updated.
+   * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
+   * @param watchdog_callbacks an array of optional watchdog callbacks
    */
-  MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {})
-      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
-        update_callback_{callback},
-        new_message_callbacks_{},
-        loop_{node.GetEventLoop()} {
-    CreateSubscribers(node);
-  }
+  MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
+                  std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                  WatchdogCallbacksArray watchdog_callbacks = {})
+      : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback, watchdog_timeouts_ms,
+                        watchdog_callbacks) {}
 
   /*
    * MessageConsumer constructor
@@ -84,14 +86,14 @@ class MessageConsumer {
    * template arguments
    * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
    * types in the template arguments
+   * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
+   * @param watchdog_callbacks an array of optional watchdog callbacks
    */
-  MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks)
-      : topics_{CreateTopicsArrayFromSingleTopicArray(topics)},
-        update_callback_{},
-        new_message_callbacks_{callbacks},
-        loop_{node.GetEventLoop()} {
-    CreateSubscribers(node);
-  }
+  MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
+                  std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                  WatchdogCallbacksArray watchdog_callbacks = {})
+      : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks, watchdog_timeouts_ms,
+                        watchdog_callbacks) {}
 
   /*
    * MessageConsumer constructor
@@ -101,9 +103,18 @@ class MessageConsumer {
    * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
    * @param callback A callback to call any time there's a new inbound message. The user is then responsible for
    * querying the data structures to understand what was updated
+   * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
+   * @param watchdog_callbacks an array of optional watchdog callbacks
    */
-  MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {})
-      : topics_{topics}, update_callback_{callback}, new_message_callbacks_{}, loop_{node.GetEventLoop()} {
+  explicit MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {},
+                           std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                           WatchdogCallbacksArray watchdog_callbacks = {})
+      : topics_{topics},
+        update_callback_{callback},
+        new_message_callbacks_{},
+        watchdog_timeouts_ms_{watchdog_timeouts_ms},
+        watchdog_callbacks_{watchdog_callbacks},
+        loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
 
@@ -115,26 +126,19 @@ class MessageConsumer {
    * the template arguments. Note this is useful in cases where there are multiple topics with the same message type
    * @param callbacks A tuple of callbacks for each message type. The order of topics must match the order of message
    * types in the template arguments
+   * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
+   * @param watchdog_callbacks an array of optional watchdog callbacks
    */
-  MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks)
-      : topics_{topics}, update_callback_{}, new_message_callbacks_{callbacks}, loop_{node.GetEventLoop()} {
+  explicit MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks,
+                           std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                           WatchdogCallbacksArray watchdog_callbacks = {})
+      : topics_{topics},
+        update_callback_{},
+        new_message_callbacks_{callbacks},
+        watchdog_timeouts_ms_{watchdog_timeouts_ms},
+        watchdog_callbacks_{watchdog_callbacks},
+        loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
-  }
-
-  template <size_t I = 0>
-  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(const Node& node) {}
-
-  template <size_t I = 0>
-      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(const Node& node) {
-    const auto& topics = topics_[I];
-    using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;
-    auto& subscriber_list = std::get<I>(subscribers_);
-    for (const auto& topic : topics) {
-      subscriber_list.emplace_back(
-          node.CreateSubscriber<MessageType>(topic, [this](const MessageType& msg) { NewMessage(msg); }));
-    }
-
-    CreateSubscribers<I + 1>(node);
   }
 
   /**
@@ -168,6 +172,31 @@ class MessageConsumer {
   }
 
  private:
+  template <size_t I = 0>
+  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(const Node& node) {}
+
+  template <size_t I = 0>
+      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(const Node& node) {
+    const auto& topics = topics_[I];
+    const auto& watchdog_callback = watchdog_callbacks_[I];
+    using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;
+    auto& subscriber_list = std::get<I>(subscribers_);
+    for (const auto& topic : topics) {
+      if (watchdog_timeouts_ms_ && watchdog_callback) {
+        // TODO(bsirang): add support for different timeouts and callbacks in the cases where there's multiple topics of
+        // the same message type
+        const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
+        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
+            topic, [this](const MessageType& msg) { NewMessage(msg); }, watchdog_timeout, watchdog_callback));
+      } else {
+        subscriber_list.emplace_back(
+            node.CreateSubscriber<MessageType>(topic, [this](const MessageType& msg) { NewMessage(msg); }));
+      }
+    }
+
+    CreateSubscribers<I + 1>(node);
+  }
+
   template <typename MSG_T>
   void NewMessage(const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
@@ -200,6 +229,8 @@ class MessageConsumer {
   const TopicsArray topics_;
   const UniversalUpdateCallback update_callback_;
   const NewMessageCallbacks new_message_callbacks_;
+  const std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms_;
+  const WatchdogCallbacksArray watchdog_callbacks_;
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
