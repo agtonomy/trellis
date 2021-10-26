@@ -44,26 +44,26 @@ class ServiceClientImpl {
     if (timeout_ms != 0) {
       timeout_timer = std::make_shared<TimerImpl>(
           ev_loop_, TimerImpl::Type::kOneShot,
-          // TODO(bsirang): we should be capturing the client here too so that we can
-          // cancel the pending call, however such an API doesn't exist right now
-          [cb]() {
+          [cb, client]() mutable {
+            // XXX(bsirang): investigate whether or not destruction of the client does
+            // the right thing in terms of releasing resources (i.e. cancelling pending IO)
+            client = nullptr;  // force destruction of client instance
             if (cb) cb(kTimedOut, nullptr);
           },
           0, timeout_ms);
     }
 
-    auto callback_wrapper = [client, timeout_timer, cb](const struct eCAL::SServiceInfo& service_info,
-                                                        const std::string& response) {
+    auto callback_wrapper = [timeout_timer, cb](const struct eCAL::SServiceInfo& service_info,
+                                                const std::string& response) {
       if (timeout_timer) {
         timeout_timer->Stop();
       }
-      if (service_info.call_state != call_state_executed) {
-        if (cb) cb(kFailure, nullptr);
-      } else {
-        RESP_T resp;
+      RESP_T resp;
+      const ServiceCallStatus status = (service_info.call_state != call_state_executed) ? kFailure : kSuccess;
+      if (status == kSuccess) {
         resp.ParseFromString(response);
-        if (cb) cb(kSuccess, &resp);
       }
+      if (cb) cb(status, &resp);
     };
     client->AddResponseCallback(callback_wrapper);
     client->CallAsync(method_name, req);
