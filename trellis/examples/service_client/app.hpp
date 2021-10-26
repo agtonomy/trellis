@@ -18,7 +18,7 @@ class App {
 
   trellis::core::ServiceClient<trellis::examples::proto::AdditionService> client_;
   trellis::core::Timer timer_;
-
+  const unsigned call_timeout_ms_;
   unsigned request_count_{0};
 };
 
