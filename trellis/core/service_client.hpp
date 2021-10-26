@@ -22,6 +22,9 @@
 
 #include <string>
 
+#include "event_loop.hpp"
+#include "timer.hpp"
+
 namespace trellis {
 namespace core {
 
@@ -32,11 +35,28 @@ class ServiceClientImpl {
  public:
   template <typename RESP_T>
   using Callback = std::function<void(ServiceCallStatus, const RESP_T*)>;
-  ServiceClientImpl() {}
+  ServiceClientImpl(EventLoop loop) : ev_loop_{loop} {}
 
   template <typename REQ_T, typename RESP_T>
-  void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb) {
-    auto callback_wrapper = [cb](const struct eCAL::SServiceInfo& service_info, const std::string& response) {
+  void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb, unsigned timeout_ms = 0) {
+    Timer timeout_timer{nullptr};
+    auto client = std::make_shared<eCAL::protobuf::CServiceClient<RPC_T>>();
+    if (timeout_ms != 0) {
+      timeout_timer = std::make_shared<TimerImpl>(
+          ev_loop_, TimerImpl::Type::kOneShot,
+          // TODO(bsirang): we should be capturing the client here too so that we can
+          // cancel the pending call, however such an API doesn't exist right now
+          [cb]() {
+            if (cb) cb(kTimedOut, nullptr);
+          },
+          0, timeout_ms);
+    }
+
+    auto callback_wrapper = [client, timeout_timer, cb](const struct eCAL::SServiceInfo& service_info,
+                                                        const std::string& response) {
+      if (timeout_timer) {
+        timeout_timer->Stop();
+      }
       if (service_info.call_state != call_state_executed) {
         if (cb) cb(kFailure, nullptr);
       } else {
@@ -45,14 +65,14 @@ class ServiceClientImpl {
         if (cb) cb(kSuccess, &resp);
       }
     };
-    client_.AddResponseCallback(callback_wrapper);
-    client_.CallAsync(method_name, req);
+    client->AddResponseCallback(callback_wrapper);
+    client->CallAsync(method_name, req);
   }
 
   // TODO(bsirang) implement sync call
 
  private:
-  eCAL::protobuf::CServiceClient<RPC_T> client_;
+  EventLoop ev_loop_;
 };
 
 template <typename RPC_T>
