@@ -25,22 +25,24 @@
 namespace trellis {
 namespace core {
 
+enum ServiceCallStatus { kTimedOut = 0, kSuccess = 1, kFailure = 2 };
+
 template <typename RPC_T>
 class ServiceClientImpl {
  public:
   template <typename RESP_T>
-  using Callback = std::function<void(const RESP_T*)>;
+  using Callback = std::function<void(ServiceCallStatus, const RESP_T*)>;
   ServiceClientImpl() {}
 
   template <typename REQ_T, typename RESP_T>
   void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb) {
     auto callback_wrapper = [cb](const struct eCAL::SServiceInfo& service_info, const std::string& response) {
       if (service_info.call_state != call_state_executed) {
-        if (cb) cb(nullptr);
+        if (cb) cb(kFailure, nullptr);
       } else {
         RESP_T resp;
         resp.ParseFromString(response);
-        if (cb) cb(&resp);
+        if (cb) cb(kSuccess, &resp);
       }
     };
     client_.AddResponseCallback(callback_wrapper);
