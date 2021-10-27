@@ -52,7 +52,7 @@ TEST_F(TrellisFixture, OneShotTimerReset) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateOneShotTimer(10, []() { ++fire_count; });
+  auto timer = node_.CreateOneShotTimer(30, []() { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
   // Keep resetting the timer for longer than it was originally set to expire
   for (unsigned i = 0; i < 100; ++i) {
