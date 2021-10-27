@@ -45,27 +45,37 @@ class ServiceClientImpl {
       timeout_timer = std::make_shared<TimerImpl>(
           ev_loop_, TimerImpl::Type::kOneShot,
           [cb, client]() mutable {
-            // XXX(bsirang): investigate whether or not destruction of the client does
-            // the right thing in terms of releasing resources (i.e. cancelling pending IO)
-            client = nullptr;  // force destruction of client instance
+            // XXX(bsirang): ideally we'd be able to abort the pending async operation
+            // here given that we've timed out. However, there doesn't seem to be an API for
+            // that in eCAL's service client. Instead we'll check for an expired timer
+            // in the client callback.
             if (cb) cb(kTimedOut, nullptr);
           },
           0, timeout_ms);
     }
 
-    auto callback_wrapper = [timeout_timer, cb](const struct eCAL::SServiceInfo& service_info,
-                                                const std::string& response) {
-      if (timeout_timer) {
-        timeout_timer->Stop();
-      }
-      RESP_T resp;
-      const ServiceCallStatus status = (service_info.call_state != call_state_executed) ? kFailure : kSuccess;
-      if (status == kSuccess) {
-        resp.ParseFromString(response);
-      }
-      if (cb) cb(status, &resp);
-    };
-    client->AddResponseCallback(callback_wrapper);
+    auto loop = ev_loop_;
+    client->AddResponseCallback(
+        [timeout_timer, cb, loop](const struct eCAL::SServiceInfo& service_info, const std::string& response) {
+          if (timeout_timer) {
+            if (timeout_timer->Expired()) {
+              // We've already timed out, bail now even if we have a response
+              // since we've already called back to the user.
+              return;
+            }
+            timeout_timer->Stop();
+          }
+          RESP_T resp;
+          const ServiceCallStatus status = (service_info.call_state != call_state_executed) ? kFailure : kSuccess;
+          if (status == kSuccess) {
+            resp.ParseFromString(response);
+          }
+          // Invoke callback from event loop thread...
+          // XXX(bsirang): look into eliiminating the copy of `resp` here
+          asio::post(*loop, [status, cb, resp]() {
+            if (cb) cb(status, &resp);
+          });
+        });
     client->CallAsync(method_name, req);
   }
 

@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+option cc_generic_services = true;
+
 package trellis.core.test;
 
 message Test {
@@ -10,4 +12,8 @@ message Test {
 message TestTwo {
   float foo = 1;
   string bar = 2;
+}
+
+service TestService {
+  rpc DoStuff(Test) returns (TestTwo);
 }
