@@ -4,3 +4,4 @@ examples:
     interval_ms: 1000
   service:
     interval_ms: 2000
+    timeout_ms: 100

@@ -27,8 +27,7 @@ using namespace trellis::core::test;
 TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
-  // Simply start the runner thread and then test that it will gracefully
-  // stop without hanging
+
   StartRunnerThread();
 
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
@@ -69,8 +68,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   static unsigned receive_count_2{0};
   static unsigned watchdog_count_1{0};
   static unsigned watchdog_count_2{0};
-  // Simply start the runner thread and then test that it will gracefully
-  // stop without hanging
+
   StartRunnerThread();
 
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");

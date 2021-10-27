@@ -124,6 +124,7 @@ cc_test(
         "core/test/test_message_consumer.cpp",
         "core/test/test_node.cpp",
         "core/test/test_pubsub.cpp",
+        "core/test/test_service.cpp",
         "core/test/test_timer.cpp",
     ],
     visibility = ["//visibility:public"],

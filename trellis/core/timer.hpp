@@ -48,9 +48,13 @@ class TimerImpl {
 
   void Stop() { timer_.cancel(); }
 
+  bool Expired() const { return expired_; }
+
  private:
   void KickOff() {
+    expired_ = false;
     timer_.async_wait([this](const trellis::core::error_code& e) {
+      expired_ = true;
       if (e) {
         return;
       }
@@ -82,6 +86,7 @@ class TimerImpl {
   const unsigned interval_ms_;
   const unsigned delay_ms_;
   asio::steady_timer timer_;
+  bool expired_{true};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

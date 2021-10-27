@@ -162,7 +162,7 @@ class Node {
    */
   template <typename RPC_T>
   ServiceClient<RPC_T> CreateServiceClient() const {
-    return std::make_shared<ServiceClientImpl<RPC_T>>();
+    return std::make_shared<ServiceClientImpl<RPC_T>>(GetEventLoop());
   }
 
   /**
