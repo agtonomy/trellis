@@ -28,11 +28,11 @@ namespace Log {
 namespace {
 
 void DoLog(const std::string& msg, const std::string& prefix, eCAL_Logging_eLogLevel level) {
-  if (eCAL::IsInitialized(eCAL::Init::Logging)) {
-    eCAL::Logging::Log(level, prefix + msg);
-  } else {
-    // use fallback logging
+  if (!eCAL::IsInitialized(eCAL::Init::Logging)) {
+    eCAL::Initialize(0, nullptr, nullptr, eCAL::Init::Logging);
   }
+  const std::string full_msg = prefix + msg;
+  eCAL::Logging::Log(level, full_msg);
 }
 
 }  // namespace
