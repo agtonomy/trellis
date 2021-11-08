@@ -25,34 +25,46 @@ namespace trellis {
 namespace core {
 namespace Log {
 
+namespace {
+
+void DoLog(const std::string& msg, const std::string& prefix, eCAL_Logging_eLogLevel level) {
+  if (eCAL::IsInitialized(eCAL::Init::Logging)) {
+    eCAL::Logging::Log(level, prefix + msg);
+  } else {
+    // use fallback logging
+  }
+}
+
+}  // namespace
+
 template <typename... Args>
 inline void Info(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_info, "[INFO] " + msg);
+  DoLog(msg, "[INFO] ", log_level_info);
 }
 
 template <typename... Args>
 inline void Warn(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_warning, "[WARN] " + msg);
+  DoLog(msg, "[WARN] ", log_level_warning);
 }
 
 template <typename... Args>
 inline void Error(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_error, "[ERROR] " + msg);
+  DoLog(msg, "[ERROR] ", log_level_error);
 }
 
 template <typename... Args>
 inline void Fatal(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_fatal, "[FATAL] " + msg);
+  DoLog(msg, "[FATAL] ", log_level_fatal);
 }
 
 template <typename... Args>
 inline void Debug(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_debug1, "[DEBUG] " + msg);
+  DoLog(msg, "[DEBUG] ", log_level_debug1);
 }
 
 }  // namespace Log
