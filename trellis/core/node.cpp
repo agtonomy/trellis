@@ -22,8 +22,13 @@
 using namespace trellis::core;
 
 Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()} {
-  // TODO (bsirang): do we ever want to pass argc/argv to eCAL?
-  eCAL::Initialize(0, nullptr, name_.c_str());
+  // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
+  // options. We won't make use of that for now. We'll just call Initialize with default arguments.
+  eCAL::Initialize();
+
+  // Instead of passing the unit name as part of Initialize above, we'll set it here explicitly. This ensures the unit
+  // name gets set in cases where we may have called Initialize already, such as from logging APIs.
+  eCAL::SetUnitName(name_.c_str());
 }
 
 Node::~Node() { Stop(); }

@@ -18,41 +18,53 @@
 #ifndef TRELLIS_CORE_LOGGING_HPP
 #define TRELLIS_CORE_LOGGING_HPP
 
-#include <ecal/ecal_log.h>
+#include <ecal/ecal.h>
 #include <fmt/core.h>
 
 namespace trellis {
 namespace core {
 namespace Log {
 
+namespace {
+
+void DoLog(const std::string& msg, const std::string& prefix, eCAL_Logging_eLogLevel level) {
+  if (!eCAL::IsInitialized(eCAL::Init::Logging)) {
+    eCAL::Initialize(0, nullptr, nullptr, eCAL::Init::Logging);
+  }
+  const std::string full_msg = prefix + msg;
+  eCAL::Logging::Log(level, full_msg);
+}
+
+}  // namespace
+
 template <typename... Args>
 inline void Info(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_info, "[INFO] " + msg);
+  DoLog(msg, "[INFO]  ", log_level_info);
 }
 
 template <typename... Args>
 inline void Warn(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_warning, "[WARN] " + msg);
+  DoLog(msg, "[WARN]  ", log_level_warning);
 }
 
 template <typename... Args>
 inline void Error(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_error, "[ERROR] " + msg);
+  DoLog(msg, "[ERROR] ", log_level_error);
 }
 
 template <typename... Args>
 inline void Fatal(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_fatal, "[FATAL] " + msg);
+  DoLog(msg, "[FATAL] ", log_level_fatal);
 }
 
 template <typename... Args>
 inline void Debug(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  eCAL::Logging::Log(log_level_debug1, "[DEBUG] " + msg);
+  DoLog(msg, "[DEBUG] ", log_level_debug1);
 }
 
 }  // namespace Log
