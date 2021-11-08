@@ -40,13 +40,13 @@ void DoLog(const std::string& msg, const std::string& prefix, eCAL_Logging_eLogL
 template <typename... Args>
 inline void Info(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[INFO] ", log_level_info);
+  DoLog(msg, "[INFO]  ", log_level_info);
 }
 
 template <typename... Args>
 inline void Warn(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[WARN] ", log_level_warning);
+  DoLog(msg, "[WARN]  ", log_level_warning);
 }
 
 template <typename... Args>
