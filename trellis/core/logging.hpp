@@ -18,6 +18,7 @@
 #ifndef TRELLIS_CORE_LOGGING_HPP
 #define TRELLIS_CORE_LOGGING_HPP
 
+#include <ecal/ecal.h>
 #include <ecal/ecal_log.h>
 #include <fmt/core.h>
 
