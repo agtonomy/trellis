@@ -37,10 +37,12 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
       node_,
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_1");
          ASSERT_EQ(receive_count_1, msg.id());
          ++receive_count_1;
        },
        [this](const std::string& topic, const test::TestTwo& msg, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_2");
          ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
          ++receive_count_2;
        }}};
@@ -78,10 +80,12 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
       node_,
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_1");
          ASSERT_EQ(receive_count_1, msg.id());
          ++receive_count_1;
        },
        [this](const std::string& topic, const test::TestTwo& msg, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_2");
          ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
          ++receive_count_2;
        }},
