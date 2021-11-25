@@ -51,7 +51,7 @@ class MessageConsumer {
     T message;
   };
   template <typename MSG_T>
-  using NewMessageCallback = std::function<void(const MSG_T&, const time::TimePoint&)>;
+  using NewMessageCallback = std::function<void(const std::string& topic, const MSG_T&, const time::TimePoint&)>;
   using NewMessageCallbacks = std::tuple<NewMessageCallback<Types>...>;
   using UniversalUpdateCallback = std::function<void(void)>;
   using SingleTopic = std::string;
@@ -187,10 +187,11 @@ class MessageConsumer {
         // the same message type
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
-            topic, [this](const MessageType& msg) { NewMessage(msg); }, watchdog_timeout, watchdog_callback));
+            topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, watchdog_timeout,
+            watchdog_callback));
       } else {
-        subscriber_list.emplace_back(
-            node.CreateSubscriber<MessageType>(topic, [this](const MessageType& msg) { NewMessage(msg); }));
+        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
+            topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }));
       }
     }
 
@@ -198,7 +199,7 @@ class MessageConsumer {
   }
 
   template <typename MSG_T>
-  void NewMessage(const MSG_T& msg) {
+  void NewMessage(const std::string& topic, const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
 
     // Check if we have a callback to signal an update
@@ -215,7 +216,7 @@ class MessageConsumer {
     if (new_message_callback) {
       auto cb = new_message_callback;
       const auto& newest = Newest<MSG_T>();
-      asio::post(*loop_, [cb, &newest]() { cb(newest.message, newest.timestamp); });
+      asio::post(*loop_, [topic, cb, &newest]() { cb(topic, newest.message, newest.timestamp); });
     }
   }
 
