@@ -171,11 +171,11 @@ class SubscriberImpl {
   }
 
   void CallbackWrapperLogic(const MSG_T& msg, const Callback& callback) {
-    if (rate_throttle_interval_ms_) {
+    const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    if (interval_ms) {
       // throttle callback
       const bool enough_time_elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - last_sent_).count() >
-          rate_throttle_interval_ms_;
+          std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - last_sent_).count() > interval_ms;
       if (enough_time_elapsed) {
         callback(msg);
         last_sent_ = trellis::core::time::now();
