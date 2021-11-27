@@ -26,13 +26,10 @@
 namespace trellis {
 namespace core {
 
-using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
-using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
-
-template <typename T>
+template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
 class SubscriberImpl {
  public:
-  using Callback = std::function<void(const T&)>;
+  using Callback = std::function<void(const MSG_T&)>;
   using WatchdogCallback = std::function<void(void)>;
   SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
     auto callback_wrapper = CreateCallbackWithoutWatchdog(callback);
@@ -48,11 +45,17 @@ class SubscriberImpl {
 
  private:
   using RawCallback =
-      std::function<void(const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_)>;
+      std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
+
+  // template <typename std::enable_if<!std::is_same<MSG_T, google::protobuf::Message>::value>>
+  // using RawCallback =
+  //     std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
 
   static RawCallback CreateCallbackWithoutWatchdog(Callback callback) {
     // XXX(bsirang) consider passing time_ and clock_ to user
-    return [callback](const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_) {
+    // auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
+    //                                    long long time_) { callback(msg_); };
+    return [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_) {
       callback(msg_);
     };
   }
@@ -61,7 +64,7 @@ class SubscriberImpl {
                                                 unsigned watchdog_timeout_ms, EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
     return [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-               const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_) mutable {
+               const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -73,12 +76,16 @@ class SubscriberImpl {
       callback(msg_);
     };
   }
-  eCAL::protobuf::CSubscriber<T> ecal_sub_;
+  ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
 };
 
-template <typename T>
-using Subscriber = std::shared_ptr<SubscriberImpl<T>>;
+template <typename MSG_T>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
+
+using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
+// using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
+using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
 
 }  // namespace core
 }  // namespace trellis
