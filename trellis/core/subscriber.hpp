@@ -106,8 +106,7 @@ class SubscriberImpl {
 template <typename MSG_T>
 using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
 
-using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
-// using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
+using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
 
 }  // namespace core

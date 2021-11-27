@@ -145,12 +145,8 @@ class Node {
    */
   DynamicSubscriber CreateDynamicSubscriber(std::string topic,
                                             std::function<void(const google::protobuf::Message&)> callback) {
-    DynamicSubscriber subscriber = std::make_shared<DynamicSubscriberClass>(topic);
-    // TODO(bsirang) consider passing time_ and clock_ to user
-    auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
-                                       long long time_) { callback(msg_); };
-    subscriber->AddReceiveCallback(callback_wrapper);
-    return subscriber;
+    return std::make_shared<SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>>(
+        topic.c_str(), callback);
   }
 
   /**
