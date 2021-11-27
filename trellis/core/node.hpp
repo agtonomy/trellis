@@ -74,9 +74,9 @@ class Node {
    *
    * @return a handle to a publisher instance
    */
-  template <typename T>
-  Publisher<T> CreatePublisher(std::string topic) const {
-    return std::make_shared<PublisherClass<T>>(topic.c_str());
+  template <typename MSG_T>
+  Publisher<MSG_T> CreatePublisher(std::string topic) const {
+    return std::make_shared<PublisherClass<MSG_T>>(topic.c_str());
   }
 
   /**
@@ -93,15 +93,15 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename T>
-  Subscriber<T> CreateSubscriber(std::string topic, std::function<void(const T&)> callback,
-                                 std::optional<unsigned> watchdog_timeout_ms = {},
-                                 typename SubscriberImpl<T>::WatchdogCallback watchdog_callback = {}) const {
+  template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+  Subscriber<MSG_T, ECAL_SUB_T> CreateSubscriber(
+      std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
+      typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {}) const {
     if (watchdog_timeout_ms && watchdog_callback) {
-      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                 GetEventLoop());
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
+                                                                 watchdog_callback, GetEventLoop());
     } else {
-      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback);
     }
   }
 
@@ -137,20 +137,21 @@ class Node {
    *
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
+   * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
+   * @param watchdog_callback optional watchdog callback to monitor timeouts
    *
    * Note that the callback will receive a generic `google::protobuf::Message` and must have a way
    * to determine how to interpret the message
    *
    * @return a subscriber handle
    */
-  DynamicSubscriber CreateDynamicSubscriber(std::string topic,
-                                            std::function<void(const google::protobuf::Message&)> callback) {
-    DynamicSubscriber subscriber = std::make_shared<DynamicSubscriberClass>(topic);
-    // TODO(bsirang) consider passing time_ and clock_ to user
-    auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
-                                       long long time_) { callback(msg_); };
-    subscriber->AddReceiveCallback(callback_wrapper);
-    return subscriber;
+  DynamicSubscriber CreateDynamicSubscriber(
+      std::string topic, std::function<void(const google::protobuf::Message&)> callback,
+      std::optional<unsigned> watchdog_timeout_ms = {},
+      typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
+          watchdog_callback = {}) {
+    return CreateSubscriber<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
+        topic, callback, watchdog_timeout_ms, watchdog_callback);
   }
 
   /**

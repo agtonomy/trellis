@@ -26,42 +26,53 @@
 namespace trellis {
 namespace core {
 
-using DynamicSubscriberClass = eCAL::protobuf::CDynamicSubscriber;
-using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
-
-template <typename T>
+template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
 class SubscriberImpl {
  public:
-  using Callback = std::function<void(const T&)>;
+  using Callback = std::function<void(const MSG_T&)>;
   using WatchdogCallback = std::function<void(void)>;
   SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
-    auto callback_wrapper = CreateCallbackWithoutWatchdog(callback);
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
+    SetCallbackWithoutWatchdog(callback);
   }
 
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
                  WatchdogCallback watchdog_callback, EventLoop event_loop)
       : ecal_sub_{topic} {
-    auto callback_wrapper = CreateCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
+    SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
  private:
   using RawCallback =
-      std::function<void(const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_)>;
+      std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
 
-  static RawCallback CreateCallbackWithoutWatchdog(Callback callback) {
-    // XXX(bsirang) consider passing time_ and clock_ to user
-    return [callback](const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_) {
-      callback(msg_);
-    };
+  /*
+   * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
+   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
+   * `SetCallbackWithoutWatchdog` and `SetCallbackWithWatchdog` overloads based on whether or not we're using the
+   * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
+   * subscriber callbacks use a slightly different function signature.
+   */
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithoutWatchdog(Callback callback) {
+    auto callback_wrapper = [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
+                                       long long id_) { callback(msg_); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  static RawCallback CreateCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback,
-                                                unsigned watchdog_timeout_ms, EventLoop event_loop) {
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithoutWatchdog(Callback callback) {
+    auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
+                                       long long time_) { callback(msg_); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
+  }
+
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
+                               EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
-    return [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-               const char* topic_name_, const T& msg_, long long time_, long long clock_, long long id_) mutable {
+    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+                                const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
+                                long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -72,13 +83,38 @@ class SubscriberImpl {
 
       callback(msg_);
     };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
-  eCAL::protobuf::CSubscriber<T> ecal_sub_;
+
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
+                               EventLoop event_loop) {
+    Timer watchdog_timer{nullptr};
+    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+                                const char* topic_name_, const google::protobuf::Message& msg_,
+                                long long time_) mutable {
+      if (watchdog_timer == nullptr) {
+        // create one shot watchdog timer which automatically loads the timer too
+        watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
+                                                     watchdog_timeout_ms);
+      } else {
+        watchdog_timer->Reset();
+      }
+
+      callback(msg_);
+    };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
+  }
+
+  ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
 };
 
-template <typename T>
-using Subscriber = std::shared_ptr<SubscriberImpl<T>>;
+template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, ECAL_SUB_T>>;
+
+using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
+using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
 
 }  // namespace core
 }  // namespace trellis
