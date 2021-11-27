@@ -32,39 +32,40 @@ class SubscriberImpl {
   using Callback = std::function<void(const MSG_T&)>;
   using WatchdogCallback = std::function<void(void)>;
   SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
-    auto callback_wrapper = CreateCallbackWithoutWatchdog(callback);
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
+    SetCallbackWithoutWatchdog(callback);
   }
 
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
                  WatchdogCallback watchdog_callback, EventLoop event_loop)
       : ecal_sub_{topic} {
-    auto callback_wrapper = CreateCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
+    SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
  private:
   using RawCallback =
       std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
 
-  // template <typename std::enable_if<!std::is_same<MSG_T, google::protobuf::Message>::value>>
-  // using RawCallback =
-  //     std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
-
-  static RawCallback CreateCallbackWithoutWatchdog(Callback callback) {
-    // XXX(bsirang) consider passing time_ and clock_ to user
-    // auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
-    //                                    long long time_) { callback(msg_); };
-    return [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_) {
-      callback(msg_);
-    };
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithoutWatchdog(Callback callback) {
+    auto callback_wrapper = [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
+                                       long long id_) { callback(msg_); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  static RawCallback CreateCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback,
-                                                unsigned watchdog_timeout_ms, EventLoop event_loop) {
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithoutWatchdog(Callback callback) {
+    auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
+                                       long long time_) { callback(msg_); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
+  }
+
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
+                               EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
-    return [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-               const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_) mutable {
+    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+                                const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
+                                long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -75,7 +76,29 @@ class SubscriberImpl {
 
       callback(msg_);
     };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
+
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
+                               EventLoop event_loop) {
+    Timer watchdog_timer{nullptr};
+    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+                                const char* topic_name_, const google::protobuf::Message& msg_,
+                                long long time_) mutable {
+      if (watchdog_timer == nullptr) {
+        // create one shot watchdog timer which automatically loads the timer too
+        watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
+                                                     watchdog_timeout_ms);
+      } else {
+        watchdog_timer->Reset();
+      }
+
+      callback(msg_);
+    };
+    ecal_sub_.AddReceiveCallback(callback_wrapper);
+  }
+
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
 };
