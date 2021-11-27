@@ -32,14 +32,57 @@ class SubscriberImpl {
  public:
   using Callback = std::function<void(const MSG_T&)>;
   using WatchdogCallback = std::function<void(void)>;
+
+  /**
+   * Construct a subscriber for a given topic
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   */
   SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
     SetCallbackWithoutWatchdog(callback);
   }
 
+  /**
+   * Construct a subscriber for a given topic with a rate throttle
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   * @param max_frequency the maximum frequency in which the callback may be called
+   */
+  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency) : SubscriberImpl(topic, callback) {
+    SetMaxFrequencyThrottle(max_frequency);
+  }
+
+  /**
+   * Construct a subscriber for a given topic with a watchdog timer
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   * @param watchdog_timeout_ms the amount of time in milliseconds in between messages that will trigger the watchdog
+   * @param watchdog_callback the function to call when the watchdog fires
+   * @param event_loop the event loop handle in which to run the watchdog on
+   */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
                  WatchdogCallback watchdog_callback, EventLoop event_loop)
       : ecal_sub_{topic} {
     SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
+  }
+
+  /**
+   * Construct a subscriber for a given topic with a watchdog timer and rate throttle
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   * @param watchdog_timeout_ms the amount of time in milliseconds in between messages that will trigger the watchdog
+   * @param watchdog_callback the function to call when the watchdog fires
+   * @param event_loop the event loop handle in which to run the watchdog on
+   * @param max_frequency the maximum frequency in which the callback may be called
+   */
+  SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
+                 WatchdogCallback watchdog_callback, EventLoop event_loop, double max_frequency)
+      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop) {
+    SetMaxFrequencyThrottle(max_frequency);
   }
 
   /**
@@ -53,8 +96,12 @@ class SubscriberImpl {
    * @param frequency The upper limit on receive frequency (in Hz)
    */
   void SetMaxFrequencyThrottle(double frequency) {
-    const unsigned interval_ms = static_cast<unsigned>(1000 / frequency);
-    *rate_throttle_interval_ms_ = interval_ms;
+    if (frequency != 0.0) {
+      const unsigned interval_ms = static_cast<unsigned>(1000 / frequency);
+      if (interval_ms != 0) {
+        *rate_throttle_interval_ms_ = interval_ms;
+      }
+    }
   }
 
  private:
