@@ -116,7 +116,7 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
   auto sub = node_.CreateSubscriber<test::Test>(
       "test_throttle_topic",
       [](const test::Test& msg) {
-        ASSERT_EQ(msg.id() >= receive_count, true);
+        ASSERT_TRUE(msg.id() >= receive_count);
         ++receive_count;
       },
       {}, {}, 100.0);
@@ -132,8 +132,13 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     ++sent_count;
   }
-  ASSERT_EQ(receive_count > 0, true);
-  ASSERT_EQ(receive_count <= 3, true);
-  ASSERT_EQ(sent_count > 0, true);
-  ASSERT_EQ(sent_count > receive_count, true);
+
+  ASSERT_TRUE(sent_count > 0);
+
+  // We should have received some
+  ASSERT_TRUE(receive_count > 0 && receive_count <= 3);
+  ASSERT_TRUE(receive_count <= 3);
+
+  // ...and it should be less than we sent
+  ASSERT_TRUE(sent_count > receive_count);
 }
