@@ -42,6 +42,21 @@ class SubscriberImpl {
     SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
+  /**
+   * SetMaxFrequencyThrottle set the maximum callback frequency for this subscriber
+   *
+   * This is useful in cases where the subscriber wants to process inbound messages
+   * at a rate slower than the nominal publish rate. This rate can be changed
+   * dynamically, which can be helpful in use cases where a downstream client
+   * may want to request data at a specified rate at runtime.
+   *
+   * @param frequency The upper limit on receive frequency (in Hz)
+   */
+  void SetMaxFrequencyThrottle(double frequency) {
+    const unsigned interval_ms = static_cast<unsigned>(1000 / frequency);
+    *rate_throttle_interval_ms_ = interval_ms;
+  }
+
  private:
   using RawCallback =
       std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
@@ -124,7 +139,7 @@ class SubscriberImpl {
 
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
-  const std::optional<unsigned> rate_throttle_interval_ms_;
+  std::optional<std::atomic<unsigned>> rate_throttle_interval_ms_;
   trellis::core::time::TimePoint last_sent_;
 };
 
