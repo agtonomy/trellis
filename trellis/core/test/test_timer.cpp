@@ -54,11 +54,11 @@ TEST_F(TrellisFixture, OneShotTimerReset) {
 
   auto timer = node_.CreateOneShotTimer(30, []() { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
-  // Keep resetting the timer for longer than it was originally set to expire
+  // Keep rapidly resetting the timer and let more time pass than the timer was
+  // originally set for
   for (unsigned i = 0; i < 100; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     timer->Reset();
-    ASSERT_EQ(timer->Expired(), false);
   }
 
   // Now it should still fire once after we wait

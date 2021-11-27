@@ -86,7 +86,7 @@ class TimerImpl {
   const unsigned interval_ms_;
   const unsigned delay_ms_;
   asio::steady_timer timer_;
-  bool expired_{true};
+  std::atomic<bool> expired_{true};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

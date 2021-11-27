@@ -119,17 +119,59 @@ cc_library(
 )
 
 cc_test(
-    name = "test_core",
+    name = "test_core_message_consumer",
     srcs = [
         "core/test/test_message_consumer.cpp",
-        "core/test/test_node.cpp",
-        "core/test/test_pubsub.cpp",
-        "core/test/test_service.cpp",
-        "core/test/test_timer.cpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":test_fixture",
         ":test_proto",
+    ],
+)
+
+cc_test(
+    name = "test_core_node",
+    srcs = [
+        "core/test/test_node.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+    ],
+)
+
+cc_test(
+    name = "test_core_pubsub",
+    srcs = [
+        "core/test/test_pubsub.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+        ":test_proto",
+    ],
+)
+
+cc_test(
+    name = "test_core_service",
+    srcs = [
+        "core/test/test_service.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+        ":test_proto",
+    ],
+)
+
+cc_test(
+    name = "test_core_timer",
+    srcs = [
+        "core/test/test_timer.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
     ],
 )
