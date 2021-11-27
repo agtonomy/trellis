@@ -21,6 +21,7 @@
 #include <ecal/msg/protobuf/dynamic_subscriber.h>
 #include <ecal/msg/protobuf/subscriber.h>
 
+#include "time.hpp"
 #include "timer.hpp"
 
 namespace trellis {
@@ -54,15 +55,16 @@ class SubscriberImpl {
    */
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
-                                       long long id_) { callback(msg_); };
+    auto callback_wrapper = [this, callback](const char* topic_name_, const MSG_T& msg_, long long time_,
+                                             long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [callback](const char* topic_name_, const google::protobuf::Message& msg_,
-                                       long long time_) { callback(msg_); };
+    auto callback_wrapper = [this, callback](const char* topic_name_, const MSG_T& msg_, long long time_) {
+      CallbackWrapperLogic(msg_, callback);
+    };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
@@ -70,7 +72,7 @@ class SubscriberImpl {
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
-    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
                                 const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
                                 long long id_) mutable {
       if (watchdog_timer == nullptr) {
@@ -81,7 +83,7 @@ class SubscriberImpl {
         watchdog_timer->Reset();
       }
 
-      callback(msg_);
+      CallbackWrapperLogic(msg_, callback);
     };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
@@ -90,9 +92,8 @@ class SubscriberImpl {
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
-    auto callback_wrapper = [callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const google::protobuf::Message& msg_,
-                                long long time_) mutable {
+    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+                                const char* topic_name_, const MSG_T& msg_, long long time_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -101,13 +102,30 @@ class SubscriberImpl {
         watchdog_timer->Reset();
       }
 
-      callback(msg_);
+      CallbackWrapperLogic(msg_, callback);
     };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
+  void CallbackWrapperLogic(const MSG_T& msg, const Callback& callback) {
+    if (!rate_throttle_interval_ms_) {
+      callback(msg);
+    } else {
+      // throttle callback
+      const bool enough_time_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - last_sent_).count() >
+          *rate_throttle_interval_ms_;
+      if (enough_time_elapsed) {
+        callback(msg);
+        last_sent_ = trellis::core::time::now();
+      }
+    }
+  }
+
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
+  const std::optional<unsigned> rate_throttle_interval_ms_;
+  trellis::core::time::TimePoint last_sent_;
 };
 
 template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
