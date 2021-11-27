@@ -93,15 +93,15 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(std::string topic, std::function<void(const MSG_T&)> callback,
-                                 std::optional<unsigned> watchdog_timeout_ms = {},
-                                 typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {}) const {
+  template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+  Subscriber<MSG_T, ECAL_SUB_T> CreateSubscriber(
+      std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
+      typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {}) const {
     if (watchdog_timeout_ms && watchdog_callback) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                 GetEventLoop());
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
+                                                                 watchdog_callback, GetEventLoop());
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback);
     }
   }
 
@@ -143,10 +143,13 @@ class Node {
    *
    * @return a subscriber handle
    */
-  DynamicSubscriber CreateDynamicSubscriber(std::string topic,
-                                            std::function<void(const google::protobuf::Message&)> callback) {
-    return std::make_shared<SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>>(
-        topic.c_str(), callback);
+  DynamicSubscriber CreateDynamicSubscriber(
+      std::string topic, std::function<void(const google::protobuf::Message&)> callback,
+      std::optional<unsigned> watchdog_timeout_ms = {},
+      typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
+          watchdog_callback = {}) {
+    return CreateSubscriber<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
+        topic, callback, watchdog_timeout_ms, watchdog_callback);
   }
 
   /**
