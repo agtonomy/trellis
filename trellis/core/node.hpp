@@ -137,6 +137,8 @@ class Node {
    *
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
+   * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
+   * @param watchdog_callback optional watchdog callback to monitor timeouts
    *
    * Note that the callback will receive a generic `google::protobuf::Message` and must have a way
    * to determine how to interpret the message

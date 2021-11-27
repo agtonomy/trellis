@@ -45,6 +45,13 @@ class SubscriberImpl {
   using RawCallback =
       std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
 
+  /*
+   * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
+   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
+   * `SetCallbackWithoutWatchdog` and `SetCallbackWithWatchdog` overloads based on whether or not we're using the
+   * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
+   * subscriber callbacks use a slightly different function signature.
+   */
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithoutWatchdog(Callback callback) {
     auto callback_wrapper = [callback](const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
