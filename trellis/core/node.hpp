@@ -69,7 +69,7 @@ class Node {
   /**
    * CreatePublisher create a new handle for a publisher
    *
-   * @tparam T the message type that will be published by this handle
+   * @tparam MSG_T the message type that will be published by this handle
    * @param topic the topic name to publish to
    *
    * @return a handle to a publisher instance
@@ -82,11 +82,13 @@ class Node {
   /**
    * CreateSubscriber create a new handle for a subscriber
    *
-   * @tparam the message type that we expect to receive from the publisher
+   * @tparam MSG_T the message type that we expect to receive from the publisher
+   * @tparam ECAL_SUB_T the eCAL subscriber primitive to use (will almost always be default)
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
    * @param watchdog_callback optional watchdog callback to monitor timeouts
+   * @param max_frequency optional maximum frequency to throttle the subscriber callback
    *
    * NOTE: Both watchdog_timeout_ms and watchdog_callback must be specified in
    * order to enable watchdog monitoring.
@@ -96,8 +98,16 @@ class Node {
   template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
   Subscriber<MSG_T, ECAL_SUB_T> CreateSubscriber(
       std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {}) const {
-    if (watchdog_timeout_ms && watchdog_callback) {
+      typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {},
+      std::optional<double> max_frequency = {}) const {
+    const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
+    const bool do_throttle = static_cast<bool>(max_frequency);
+    if (do_throttle && do_watchdog) {
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
+                                                                 watchdog_callback, GetEventLoop(), *max_frequency);
+    } else if (do_throttle && !do_watchdog) {
+      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *max_frequency);
+    } else if (!do_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
                                                                  watchdog_callback, GetEventLoop());
     } else {
@@ -139,6 +149,7 @@ class Node {
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
    * @param watchdog_callback optional watchdog callback to monitor timeouts
+   * @param max_frequency optional maximum frequency to throttle the subscriber callback
    *
    * Note that the callback will receive a generic `google::protobuf::Message` and must have a way
    * to determine how to interpret the message
@@ -149,9 +160,10 @@ class Node {
       std::string topic, std::function<void(const google::protobuf::Message&)> callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
-          watchdog_callback = {}) {
+          watchdog_callback = {},
+      std::optional<double> max_frequency = {}) {
     return CreateSubscriber<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
-        topic, callback, watchdog_timeout_ms, watchdog_callback);
+        topic, callback, watchdog_timeout_ms, watchdog_callback, max_frequency);
   }
 
   /**

@@ -107,3 +107,38 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
   ASSERT_EQ(receive_count, 3U);
   ASSERT_EQ(watchdog_count, 2U);
 }
+
+TEST_F(TrellisFixture, SubscriberThrottle) {
+  static unsigned receive_count{0};
+  static unsigned sent_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_throttle_topic");
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_throttle_topic",
+      [](const test::Test& msg) {
+        ASSERT_TRUE(msg.id() >= receive_count);
+        ++receive_count;
+      },
+      {}, {}, 100.0);
+
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  for (unsigned i = 0; i < 20U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ++sent_count;
+  }
+
+  ASSERT_TRUE(sent_count > 0);
+
+  // We should have received some
+  ASSERT_TRUE(receive_count > 0 && receive_count <= 3);
+  ASSERT_TRUE(receive_count <= 3);
+
+  // ...and it should be less than we sent
+  ASSERT_TRUE(sent_count > receive_count);
+}
