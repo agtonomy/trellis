@@ -69,7 +69,7 @@ class Node {
   /**
    * CreatePublisher create a new handle for a publisher
    *
-   * @tparam T the message type that will be published by this handle
+   * @tparam MSG_T the message type that will be published by this handle
    * @param topic the topic name to publish to
    *
    * @return a handle to a publisher instance
@@ -82,7 +82,8 @@ class Node {
   /**
    * CreateSubscriber create a new handle for a subscriber
    *
-   * @tparam the message type that we expect to receive from the publisher
+   * @tparam MSG_T the message type that we expect to receive from the publisher
+   * @tparam ECAL_SUB_T the eCAL subscriber primitive to use (will almost always be default)
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
