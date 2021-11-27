@@ -98,8 +98,9 @@ class SubscriberImpl {
   void SetMaxFrequencyThrottle(double frequency) {
     if (frequency != 0.0) {
       const unsigned interval_ms = static_cast<unsigned>(1000 / frequency);
+
       if (interval_ms != 0) {
-        *rate_throttle_interval_ms_ = interval_ms;
+        rate_throttle_interval_ms_ = interval_ms;
       }
     }
   }
@@ -170,24 +171,24 @@ class SubscriberImpl {
   }
 
   void CallbackWrapperLogic(const MSG_T& msg, const Callback& callback) {
-    if (!rate_throttle_interval_ms_) {
-      callback(msg);
-    } else {
+    if (rate_throttle_interval_ms_) {
       // throttle callback
       const bool enough_time_elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - last_sent_).count() >
-          *rate_throttle_interval_ms_;
+          rate_throttle_interval_ms_;
       if (enough_time_elapsed) {
         callback(msg);
         last_sent_ = trellis::core::time::now();
       }
+    } else {
+      callback(msg);
     }
   }
 
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
-  std::optional<std::atomic<unsigned>> rate_throttle_interval_ms_;
-  trellis::core::time::TimePoint last_sent_;
+  std::atomic<unsigned> rate_throttle_interval_ms_{0};
+  trellis::core::time::TimePoint last_sent_{};
 };
 
 template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
