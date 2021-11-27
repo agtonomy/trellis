@@ -74,9 +74,9 @@ class Node {
    *
    * @return a handle to a publisher instance
    */
-  template <typename T>
-  Publisher<T> CreatePublisher(std::string topic) const {
-    return std::make_shared<PublisherClass<T>>(topic.c_str());
+  template <typename MSG_T>
+  Publisher<MSG_T> CreatePublisher(std::string topic) const {
+    return std::make_shared<PublisherClass<MSG_T>>(topic.c_str());
   }
 
   /**
@@ -93,15 +93,15 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename T>
-  Subscriber<T> CreateSubscriber(std::string topic, std::function<void(const T&)> callback,
+  template <typename MSG_T>
+  Subscriber<MSG_T> CreateSubscriber(std::string topic, std::function<void(const MSG_T&)> callback,
                                  std::optional<unsigned> watchdog_timeout_ms = {},
-                                 typename SubscriberImpl<T>::WatchdogCallback watchdog_callback = {}) const {
+                                 typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {}) const {
     if (watchdog_timeout_ms && watchdog_callback) {
-      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
                                                  GetEventLoop());
     } else {
-      return std::make_shared<SubscriberImpl<T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
     }
   }
 
