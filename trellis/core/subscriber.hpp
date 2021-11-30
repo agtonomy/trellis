@@ -50,7 +50,8 @@ class SubscriberImpl {
    * @param callback the callback function to receive messages on
    * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
    */
-  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz) : SubscriberImpl(topic, callback) {
+  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz)
+      : SubscriberImpl(topic, callback) {
     SetMaxFrequencyThrottle(max_frequency_hz);
   }
 
