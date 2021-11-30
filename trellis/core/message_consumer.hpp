@@ -72,7 +72,8 @@ class MessageConsumer {
    * querying the data structures to understand what was updated.
    * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
    * @param watchdog_callbacks an array of optional watchdog callbacks
-   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
+   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz) for each subscriber, use 0.0 to skip
+   * rate throttling for a particular message type
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
                   std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
@@ -197,6 +198,8 @@ class MessageConsumer {
     for (const auto& topic : topics) {
       // We have 2 optional features (watchdogs and frequency throttles), so we have 4 total permutations
       // of subscribers to create based on these optional features. They are enumerated in this if/else chain.
+      // XXX(bsirang): currently if there are multiple subscribers of the same message type, they will all share the
+      // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
@@ -208,8 +211,6 @@ class MessageConsumer {
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, {}, {}, frequency_throttle_hz));
       } else if (!do_frequency_throttle && do_watchdog) {
-        // TODO(bsirang): add support for different timeouts and callbacks in the cases where there's multiple topics of
-        // the same message type
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, watchdog_timeout,
