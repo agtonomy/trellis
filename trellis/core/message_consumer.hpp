@@ -196,8 +196,8 @@ class MessageConsumer {
     const bool do_watchdog = static_cast<bool>(watchdog_timeouts_ms_ && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequencies_hz_) && ((*max_frequencies_hz_)[I] != 0.0);
     for (const auto& topic : topics) {
-      // We have 2 optional features (watchdogs and frequency throttles), so we have 4 total permutations
-      // of subscribers to create based on these optional features. They are enumerated in this if/else chain.
+      // We have 2 optional features we can turn on (watchdogs and frequency throttles), so we have 4 total cases
+      // for creating subscribers based on these optional features. They are enumerated in this if/else chain.
       // XXX(bsirang): currently if there are multiple subscribers of the same message type, they will all share the
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       if (do_frequency_throttle && do_watchdog) {
