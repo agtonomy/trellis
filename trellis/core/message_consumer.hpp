@@ -58,9 +58,9 @@ class MessageConsumer {
   using TopicsList = std::vector<SingleTopic>;
   using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
-  using WatchdogTimeoutsArray = std::array<unsigned, sizeof...(Types)>;
+  using OptionalWatchdogTimeoutsArray = std::optional<std::array<unsigned, sizeof...(Types)>>;
   using WatchdogCallbacksArray = std::array<std::function<void(void)>, sizeof...(Types)>;
-  using MaxFrequencyArray = std::array<double, sizeof...(Types)>;
+  using OptionalMaxFrequencyArray = std::optional<std::array<double, sizeof...(Types)>>;
 
   /*
    * MessageConsumer constructor
@@ -76,9 +76,8 @@ class MessageConsumer {
    * rate throttling for a particular message type
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
-                  std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                  WatchdogCallbacksArray watchdog_callbacks = {},
-                  std::optional<MaxFrequencyArray> max_frequencies_hz = {})
+                  OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
+                  WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback, watchdog_timeouts_ms,
                         watchdog_callbacks) {}
 
@@ -95,9 +94,8 @@ class MessageConsumer {
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
-                  std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                  WatchdogCallbacksArray watchdog_callbacks = {},
-                  std::optional<MaxFrequencyArray> max_frequencies_hz = {})
+                  OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
+                  WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks, watchdog_timeouts_ms,
                         watchdog_callbacks) {}
 
@@ -114,9 +112,9 @@ class MessageConsumer {
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   explicit MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {},
-                           std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                           OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
-                           std::optional<MaxFrequencyArray> max_frequencies_hz = {})
+                           OptionalMaxFrequencyArray max_frequencies_hz = {})
       : topics_{topics},
         update_callback_{callback},
         new_message_callbacks_{},
@@ -140,9 +138,9 @@ class MessageConsumer {
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   explicit MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks,
-                           std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
+                           OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
-                           std::optional<MaxFrequencyArray> max_frequencies_hz = {})
+                           OptionalMaxFrequencyArray max_frequencies_hz = {})
       : topics_{topics},
         update_callback_{},
         new_message_callbacks_{callbacks},
@@ -256,9 +254,9 @@ class MessageConsumer {
   const TopicsArray topics_;
   const UniversalUpdateCallback update_callback_;
   const NewMessageCallbacks new_message_callbacks_;
-  const std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms_;
+  const OptionalWatchdogTimeoutsArray watchdog_timeouts_ms_;
   const WatchdogCallbacksArray watchdog_callbacks_;
-  const std::optional<MaxFrequencyArray> max_frequencies_hz_;
+  const OptionalMaxFrequencyArray max_frequencies_hz_;
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
