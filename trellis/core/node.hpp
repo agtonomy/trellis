@@ -101,13 +101,13 @@ class Node {
       typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {},
       std::optional<double> max_frequency = {}) const {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
-    const bool do_throttle = static_cast<bool>(max_frequency);
-    if (do_throttle && do_watchdog) {
+    const bool do_frequency_throttle = static_cast<bool>(max_frequency);
+    if (do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
                                                                  watchdog_callback, GetEventLoop(), *max_frequency);
-    } else if (do_throttle && !do_watchdog) {
+    } else if (do_frequency_throttle && !do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *max_frequency);
-    } else if (!do_throttle && do_watchdog) {
+    } else if (!do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
                                                                  watchdog_callback, GetEventLoop());
     } else {

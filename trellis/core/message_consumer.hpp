@@ -60,6 +60,7 @@ class MessageConsumer {
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
   using WatchdogTimeoutsArray = std::array<unsigned, sizeof...(Types)>;
   using WatchdogCallbacksArray = std::array<std::function<void(void)>, sizeof...(Types)>;
+  using FrequencyThrottleArray = std::array<double, sizeof...(Types)>;
 
   /*
    * MessageConsumer constructor
@@ -71,10 +72,12 @@ class MessageConsumer {
    * querying the data structures to understand what was updated.
    * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
    * @param watchdog_callbacks an array of optional watchdog callbacks
+   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
                   std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                  WatchdogCallbacksArray watchdog_callbacks = {})
+                  WatchdogCallbacksArray watchdog_callbacks = {},
+                  std::optional<FrequencyThrottleArray> max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback, watchdog_timeouts_ms,
                         watchdog_callbacks) {}
 
@@ -88,10 +91,12 @@ class MessageConsumer {
    * types in the template arguments
    * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
    * @param watchdog_callbacks an array of optional watchdog callbacks
+   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
                   std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                  WatchdogCallbacksArray watchdog_callbacks = {})
+                  WatchdogCallbacksArray watchdog_callbacks = {},
+                  std::optional<FrequencyThrottleArray> max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks, watchdog_timeouts_ms,
                         watchdog_callbacks) {}
 
@@ -105,15 +110,18 @@ class MessageConsumer {
    * querying the data structures to understand what was updated
    * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
    * @param watchdog_callbacks an array of optional watchdog callbacks
+   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   explicit MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {},
                            std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                           WatchdogCallbacksArray watchdog_callbacks = {})
+                           WatchdogCallbacksArray watchdog_callbacks = {},
+                           std::optional<FrequencyThrottleArray> max_frequencies_hz = {})
       : topics_{topics},
         update_callback_{callback},
         new_message_callbacks_{},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
+        max_frequencies_hz_{max_frequencies_hz},
         loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
@@ -128,15 +136,18 @@ class MessageConsumer {
    * types in the template arguments
    * @param watchdog_timeouts_ms an optional array of watchdog timeouts for each message type
    * @param watchdog_callbacks an array of optional watchdog callbacks
+   * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
   explicit MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks,
                            std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms = {},
-                           WatchdogCallbacksArray watchdog_callbacks = {})
+                           WatchdogCallbacksArray watchdog_callbacks = {},
+                           std::optional<FrequencyThrottleArray> max_frequencies_hz = {})
       : topics_{topics},
         update_callback_{},
         new_message_callbacks_{callbacks},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
+        max_frequencies_hz_{max_frequencies_hz},
         loop_{node.GetEventLoop()} {
     CreateSubscribers(node);
   }
@@ -181,8 +192,22 @@ class MessageConsumer {
     const auto& watchdog_callback = watchdog_callbacks_[I];
     using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;
     auto& subscriber_list = std::get<I>(subscribers_);
+    const bool do_watchdog = static_cast<bool>(watchdog_timeouts_ms_ && watchdog_callback);
+    const bool do_frequency_throttle = static_cast<bool>(max_frequencies_hz_) && ((*max_frequencies_hz_)[I] != 0.0);
     for (const auto& topic : topics) {
-      if (watchdog_timeouts_ms_ && watchdog_callback) {
+      // We have 2 optional features (watchdogs and frequency throttles), so we have 4 total permutations
+      // of subscribers to create based on these optional features. They are enumerated in this if/else chain.
+      if (do_frequency_throttle && do_watchdog) {
+        const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
+        const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
+        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
+            topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, watchdog_timeout,
+            watchdog_callback, frequency_throttle_hz));
+      } else if (do_frequency_throttle && !do_watchdog) {
+        const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
+        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
+            topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, {}, {}, frequency_throttle_hz));
+      } else if (!do_frequency_throttle && do_watchdog) {
         // TODO(bsirang): add support for different timeouts and callbacks in the cases where there's multiple topics of
         // the same message type
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
@@ -232,6 +257,7 @@ class MessageConsumer {
   const NewMessageCallbacks new_message_callbacks_;
   const std::optional<WatchdogTimeoutsArray> watchdog_timeouts_ms_;
   const WatchdogCallbacksArray watchdog_callbacks_;
+  const std::optional<FrequencyThrottleArray> max_frequencies_hz_;
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
