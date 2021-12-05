@@ -177,7 +177,7 @@ class MessageConsumer {
   template <typename MSG_T>
   bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
     const auto& newest_stamp = Newest<MSG_T>().timestamp;
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - newest_stamp);
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - newest_stamp);
     return elapsed_ms.count() > timeout_ms;
   }
 
@@ -224,7 +224,7 @@ class MessageConsumer {
 
   template <typename MSG_T>
   void NewMessage(const std::string& topic, const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::now(), msg}));
+    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::Now(), msg}));
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
