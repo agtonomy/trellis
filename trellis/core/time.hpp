@@ -25,7 +25,25 @@ namespace core {
 namespace time {
 
 using TimePoint = std::chrono::time_point<eCAL::Time::ecal_clock>;
-inline TimePoint now() { return eCAL::Time::ecal_clock::now(); }
+
+/**
+ * now Get the current time
+ * @return A time point with millisecond resolution representing the current time
+ */
+inline TimePoint Now() { return eCAL::Time::ecal_clock::now(); }
+
+/**
+ * TimePointToSeconds Convert a timepoint to seconds
+ * @param tp the timepoint to convert
+ * @return the equivalent value in seconds
+ */
+inline double TimePointToSeconds(const TimePoint& tp) { return (tp.time_since_epoch().count() / 1000.0); }
+
+/**
+ * NewInSeconds Get the current time in seconds
+ * @return a the time in seconds since Unix epoch as a floating point value
+ */
+inline double NowInSeconds() { return TimePointToSeconds(Now()); }
 
 }  // namespace time
 }  // namespace core
