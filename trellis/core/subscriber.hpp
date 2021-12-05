@@ -176,10 +176,10 @@ class SubscriberImpl {
     if (interval_ms) {
       // throttle callback
       const bool enough_time_elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(time::now() - last_sent_).count() > interval_ms;
+          std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
       if (enough_time_elapsed) {
         callback(msg);
-        last_sent_ = trellis::core::time::now();
+        last_sent_ = trellis::core::time::Now();
       }
     } else {
       callback(msg);
