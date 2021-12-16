@@ -21,7 +21,7 @@
 
 using namespace trellis::core;
 
-Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()} {
+Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()}, work_guard_{asio::make_work_guard(*ev_loop_)} {
   // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
   // options. We won't make use of that for now. We'll just call Initialize with default arguments.
   eCAL::Initialize();
@@ -35,7 +35,6 @@ Node::~Node() { Stop(); }
 
 int Node::Run() {
   Log::Info("{} node running...", name_);
-  auto word_guard = asio::make_work_guard(*ev_loop_);
   while (ShouldRun()) {
     ev_loop_->run_for(std::chrono::milliseconds(500));
     // If the event loop was stopped, run_for will return immediately, so
