@@ -267,6 +267,8 @@ class Node {
 
   const std::string name_;
   EventLoop ev_loop_;
+  // Keeps event loop alive even when there's no work to do at the moment
+  asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
   std::atomic<bool> should_run_{true};
 };
 
