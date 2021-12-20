@@ -12,7 +12,7 @@ available on the network.
 ## Examples
 Publish on a topic (`/navigator/state`) a fixed number of messages (10,000) at a certain rate (10 Hz)
 ```
-bazel run //trellis/tools/trellis-cli -- topic publish -t /navigator/state -b '{loaded: false, mission_id: ef3b750c-9027-46ef-bbbb-e3d36103d4d2, completed: false, percentage: 0, enabled: false, health: {state: 1, inputs: 1, controller_state: 0, interlock_tripped: true}}' -c 10000 -r 10
+bazel run //trellis/tools/trellis-cli -- topic publish -t hello_world -b '{}' -c 10 -r 1
 ```
 
 ## Limitations
