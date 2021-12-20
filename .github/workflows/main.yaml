@@ -24,7 +24,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
       - name: docker buildx
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v2.7.0
         with:
           context: ./docker
           push: false
