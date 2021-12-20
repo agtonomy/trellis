@@ -50,9 +50,11 @@ int Node::Run() {
 bool Node::RunN(unsigned n) {
   unsigned count = 0;
   bool ok;
-  while ((ok = ShouldRun()) && count++ < n) {
-    ev_loop_->run_one();
-  }
+  // poll_one will return immediately (never block). If it returned 0 there's
+  // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
+  // polling so long as work is being done
+  while ((ok = ShouldRun()) && ev_loop_->poll_one() && count++ < n)
+    ;
   return ok;
 }
 
