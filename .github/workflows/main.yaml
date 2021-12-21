@@ -15,7 +15,7 @@ jobs:
         id: checkout
         uses: actions/checkout@v2
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v1.6.0
       - name: Cache Docker layers
         uses: actions/cache@v2
         with:
@@ -24,7 +24,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
       - name: docker buildx
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v2.7.0
         with:
           context: ./docker
           push: false
