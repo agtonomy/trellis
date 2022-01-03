@@ -181,6 +181,21 @@ class MessageConsumer {
     return elapsed_ms.count() > timeout_ms;
   }
 
+  /**
+   * SetMaxFrequencyThrottle throttle the frequency of a particular message type
+   *
+   * @tparam the message type to throttle
+   * @param max_frequency the maximum frequency of message updates for each subscriber of
+   * the given message type
+   */
+  template <typename MSG_T>
+  void SetMaxFrequencyThrottle(double max_frequency) {
+    auto& subscribers = std::get<std::vector<Subscriber<MSG_T>>>(subscribers_);
+    for (auto& subscriber : subscribers) {
+      subscriber->SetMaxFrequencyThrottle(max_frequency);
+    }
+  }
+
  private:
   template <size_t I = 0>
   inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(const Node& node) {}
