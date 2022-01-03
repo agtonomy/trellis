@@ -190,9 +190,9 @@ class MessageConsumer {
    */
   template <typename MSG_T>
   void SetMaxFrequencyThrottle(double max_frequency) {
-    auto& subscribers = std::get<MSG_T>(subscribers_);
+    auto& subscribers = std::get<std::vector<Subscriber<MSG_T>>>(subscribers_);
     for (auto& subscriber : subscribers) {
-      subscriber.SetMaxFrequencyThrottle(max_frequency);
+      subscriber->SetMaxFrequencyThrottle(max_frequency);
     }
   }
 
