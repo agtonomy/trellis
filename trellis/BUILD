@@ -175,3 +175,15 @@ cc_test(
         ":test_fixture",
     ],
 )
+
+cc_test(
+    name = "test_core_time",
+    srcs = [
+        "core/test/test_time.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":trellis_core_ecal",
+        "@gtest//:gtest_main",
+    ],
+)
