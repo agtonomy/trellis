@@ -37,7 +37,10 @@ inline TimePoint Now() { return eCAL::Time::ecal_clock::now(); }
  * @param tp the timepoint to convert
  * @return the equivalent value in seconds
  */
-inline double TimePointToSeconds(const TimePoint& tp) { return (tp.time_since_epoch().count() / 1000.0); }
+inline double TimePointToSeconds(const TimePoint& tp) {
+  return (tp.time_since_epoch().count() *
+          (static_cast<double>(TimePoint::period::num) / static_cast<double>(TimePoint::period::den)));
+}
 
 /**
  * NewInSeconds Get the current time in seconds
