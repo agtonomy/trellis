@@ -28,19 +28,33 @@ namespace cli {
 
 using namespace trellis::core;
 
+namespace {
+time::TimePoint last_echo_time_;
+}
+
 int topic_echo_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_echo_command.data(), topic_echo_command_desc.data());
-  options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())("h,help", "print usage");
+  options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())(
+      "r,rate", "max echo rate in hz", cxxopts::value<int>()->default_value("0"))("h,help", "print usage");
 
   auto result = options.parse(argc, argv);
   if (result.count("help") || !result.count("topic")) {
     std::cout << options.help() << std::endl;
     return 1;
   }
+
   const std::string topic = result["topic"].as<std::string>();
+  const int rate = std::clamp(result["rate"].as<int>(), 0, 1000);
+  unsigned throttle_interval_ms = (rate > 0) ? 1000.0 / static_cast<unsigned>(rate) : 0;
 
   Node node(root_command.data());
-  auto sub = node.CreateDynamicSubscriber(topic, [](const google::protobuf::Message& msg) {
+  auto sub = node.CreateDynamicSubscriber(topic, [throttle_interval_ms](const google::protobuf::Message& msg) {
+    if (throttle_interval_ms != 0) {
+      auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
+      if (elapsed_ms <= throttle_interval_ms) {
+        return;  // rate throttle
+      }
+    }
     // convert to JSON and print
     std::string json;
     google::protobuf::util::JsonPrintOptions json_options;
@@ -50,9 +64,14 @@ int topic_echo_main(int argc, char* argv[]) {
     json_options.preserve_proto_field_names = false;
     auto r = google::protobuf::util::MessageToJsonString(msg, &json, json_options);
     std::cout << json << std::endl;
+    last_echo_time_ = time::Now();
   });
 
-  std::cout << "Echoing messages on \"" << topic << "\"" << std::endl;
+  std::cout << "Echoing messages on \"" << topic << "\"";
+  if (rate != 0) {
+    std::cout << " with max rate " << rate << " Hz";
+  }
+  std::cout << std::endl;
 
   node.Run();
   return 0;
