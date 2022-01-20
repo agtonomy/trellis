@@ -43,10 +43,25 @@ inline double TimePointToSeconds(const TimePoint& tp) {
 }
 
 /**
- * NewInSeconds Get the current time in seconds
+ * NowInSeconds Get the current time in seconds
  * @return a the time in seconds since Unix epoch as a floating point value
  */
 inline double NowInSeconds() { return TimePointToSeconds(Now()); }
+
+/**
+ * TimePointToNanoSeconds Convert a timepoint to nanoseconds
+ * @param tp the timepoint to convert
+ * @return the equivalent value in nanoseconds
+ */
+inline unsigned long long TimePointToNanoSeconds(const TimePoint& tp) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
+}
+
+/**
+ * NowInNanoSeconds Get the current time in nanoseconds
+ * @return a the time in nanoseconds since Unix epoch as an unsigned long long
+ */
+inline unsigned long long NowInNanoSeconds() { return TimePointToNanoSeconds(Now()); }
 
 }  // namespace time
 }  // namespace core
