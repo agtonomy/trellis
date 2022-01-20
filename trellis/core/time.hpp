@@ -49,19 +49,34 @@ inline double TimePointToSeconds(const TimePoint& tp) {
 inline double NowInSeconds() { return TimePointToSeconds(Now()); }
 
 /**
- * TimePointToNanoSeconds Convert a timepoint to nanoseconds
+ * TimePointToNanoseconds Convert a timepoint to nanoseconds
  * @param tp the timepoint to convert
  * @return the equivalent value in nanoseconds
  */
-inline unsigned long long TimePointToNanoSeconds(const TimePoint& tp) {
+inline unsigned long long TimePointToNanoseconds(const TimePoint& tp) {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
 }
 
 /**
- * NowInNanoSeconds Get the current time in nanoseconds
+ * NowInNanoseconds Get the current time in nanoseconds
  * @return a the time in nanoseconds since Unix epoch as an unsigned long long
  */
-inline unsigned long long NowInNanoSeconds() { return TimePointToNanoSeconds(Now()); }
+inline unsigned long long NowInNanoseconds() { return TimePointToNanoseconds(Now()); }
+
+/**
+ * TimePointToMilliseconds Convert a timepoint to nanoseconds
+ * @param tp the timepoint to convert
+ * @return the equivalent value in nanoseconds
+ */
+inline unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
+}
+
+/**
+ * NowInMilliseconds Get the current time in milliseconds
+ * @return a the time in milliseconds since Unix epoch as an unsigned long long
+ */
+inline unsigned long long NowInMilliseconds() { return TimePointToMilliseconds(Now()); }
 
 }  // namespace time
 }  // namespace core

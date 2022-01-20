@@ -40,11 +40,24 @@ TEST(TrellisTimeAPI, Nanoseconds) {
   time::TimePoint start(std::chrono::milliseconds(500));
   time::TimePoint end(std::chrono::milliseconds(1000));
 
-  const double start_nanos = time::TimePointToNanoSeconds(start);
-  const double end_nanos = time::TimePointToNanoSeconds(end);
+  const double start_nanos = time::TimePointToNanoseconds(start);
+  const double end_nanos = time::TimePointToNanoseconds(end);
 
   const double dt = end_nanos - start_nanos;
 
   ASSERT_TRUE(end_nanos > start_nanos);
   ASSERT_TRUE(dt == 5e8);
+}
+
+TEST(TrellisTimeAPI, Milliseconds) {
+  time::TimePoint start(std::chrono::milliseconds(500));
+  time::TimePoint end(std::chrono::milliseconds(1000));
+
+  const double start_millis = time::TimePointToMilliseconds(start);
+  const double end_millis = time::TimePointToMilliseconds(end);
+
+  const double dt = end_millis - start_millis;
+
+  ASSERT_TRUE(end_millis > start_millis);
+  ASSERT_TRUE(dt == 500);
 }
