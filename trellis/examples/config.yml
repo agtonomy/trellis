@@ -5,3 +5,4 @@ examples:
   service:
     interval_ms: 2000
     timeout_ms: 100
+    initial_delay_ms: 2000
