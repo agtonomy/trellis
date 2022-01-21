@@ -18,7 +18,7 @@ cc_binary(
     ],
     linkstatic = False,
     deps = [
+        "//trellis",
         "@cxxopts",
-        "@trellis//trellis",
     ],
 )
