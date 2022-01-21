@@ -34,7 +34,7 @@ Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()}, work_gu
 Node::~Node() { Stop(); }
 
 int Node::Run() {
-  Log::Info("{} node running...", name_);
+  Log::Debug("{} node running...", name_);
   while (ShouldRun()) {
     ev_loop_->run_for(std::chrono::milliseconds(500));
     // If the event loop was stopped, run_for will return immediately, so
