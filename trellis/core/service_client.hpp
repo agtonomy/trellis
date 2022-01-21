@@ -56,7 +56,7 @@ class ServiceClientImpl {
 
     auto loop = ev_loop_;
     client->AddResponseCallback(
-        [timeout_timer, cb, loop](const struct eCAL::SServiceInfo& service_info, const std::string& response) {
+        [timeout_timer, cb, loop, client](const struct eCAL::SServiceInfo& service_info, const std::string& response) {
           if (timeout_timer) {
             if (timeout_timer->Expired()) {
               // We've already timed out, bail now even if we have a response
