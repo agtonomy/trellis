@@ -56,6 +56,28 @@ TEST_F(TrellisFixture, BasicService) {
   ASSERT_EQ(response_count, 1);
 }
 
+TEST_F(TrellisFixture, UseZeroForTimeout) {
+  static unsigned response_count{0};
+  auto server = std::make_shared<MyService>();
+  auto service = node_.CreateServiceServer<MyService>(server);
+  auto client = node_.CreateServiceClient<MyService>();
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  test::Test request;
+  request.set_id(123);
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request,
+      [request](ServiceCallStatus status, const test::TestTwo* response) {
+        ++response_count;
+        ASSERT_EQ(status, ServiceCallStatus::kSuccess);
+        ASSERT_EQ(request.id(), static_cast<unsigned>(response->foo()));
+      },
+      0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  ASSERT_EQ(response_count, 1);
+}
+
 class MySlowService : public test::TestService {
  public:
   void DoStuff(::google::protobuf::RpcController* /* controller_ */, const test::Test* request_,
