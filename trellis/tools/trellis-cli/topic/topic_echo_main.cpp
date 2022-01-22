@@ -34,7 +34,7 @@ time::TimePoint last_echo_time_;
 
 int topic_echo_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_echo_command.data(), topic_echo_command_desc.data());
-  options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())(
+  options.add_options()("t,topic", "topic name(s)", cxxopts::value<std::vector<std::string>>())(
       "r,rate", "max echo rate in hz", cxxopts::value<int>()->default_value("0"))(
       "w,whitespace", "add whitespace to output")("v,verbose", "include non-essential output")("h,help", "print usage");
 
@@ -44,40 +44,49 @@ int topic_echo_main(int argc, char* argv[]) {
     return 1;
   }
 
-  const std::string topic = result["topic"].as<std::string>();
+  const auto topics = result["topic"].as<std::vector<std::string>>();
   const int rate = std::clamp(result["rate"].as<int>(), 0, 1000);
   unsigned throttle_interval_ms = (rate > 0) ? 1000.0 / static_cast<unsigned>(rate) : 0;
   const bool add_whitespace = result.count("whitespace");
   const bool verbose = result.count("verbose");
 
   Node node(root_command.data());
-  auto sub =
-      node.CreateDynamicSubscriber(topic, [throttle_interval_ms, add_whitespace](const google::protobuf::Message& msg) {
-        if (throttle_interval_ms != 0) {
-          auto elapsed_ms =
-              std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
-          if (elapsed_ms <= throttle_interval_ms) {
-            return;  // rate throttle
-          }
+  std::vector<trellis::core::DynamicSubscriber> subs;
+  auto ev = node.GetEventLoop();
+  for (const auto& topic : topics) {
+    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms,
+                                                    add_whitespace](const google::protobuf::Message& msg) {
+      if (throttle_interval_ms != 0) {
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
+        if (elapsed_ms <= throttle_interval_ms) {
+          return;  // rate throttle
         }
-        // convert to JSON and print
-        std::string json;
-        google::protobuf::util::JsonPrintOptions json_options;
-        json_options.add_whitespace = add_whitespace;
-        json_options.always_print_primitive_fields = true;
-        json_options.always_print_enums_as_ints = false;
-        json_options.preserve_proto_field_names = false;
-        auto r = google::protobuf::util::MessageToJsonString(msg, &json, json_options);
-        std::cout << json << std::endl;
-        last_echo_time_ = time::Now();
-      });
+      }
+      // convert to JSON and print
+      std::string json;
+      google::protobuf::util::JsonPrintOptions json_options;
+      json_options.add_whitespace = add_whitespace;
+      json_options.always_print_primitive_fields = true;
+      json_options.always_print_enums_as_ints = false;
+      json_options.preserve_proto_field_names = false;
+      auto r = google::protobuf::util::MessageToJsonString(msg, &json, json_options);
+      // Post the output to the event loop to remove synchronization problems between multiple subscribers
+      asio::post(*ev, [json]() { std::cout << json << std::endl; });
+      last_echo_time_ = time::Now();
+    });
+
+    subs.push_back(sub);
+  }
 
   if (verbose) {
-    std::cout << "Echoing messages on \"" << topic << "\"";
-    if (rate != 0) {
-      std::cout << " with max rate " << rate << " Hz";
+    std::cout << "Echoing messages on";
+    for (const auto& topic : topics) {
+      std::cout << " \"" << topic << "\"";
     }
-    std::cout << " and " << (add_whitespace ? "multi" : "one") << "-line output.";
+    if (rate != 0) {
+      std::cout << " with max rate " << rate << " Hz and";
+    }
+    std::cout << " with " << (add_whitespace ? "multi" : "one") << "-line output.";
     std::cout << std::endl;
   }
 
