@@ -54,6 +54,28 @@ cc_library(
 )
 
 cc_library(
+    name = "custom_tclap",
+    srcs = [
+        "lib/CustomTclap/include/custom_tclap/advanced_tclap_output.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_duo_value_arg_unsigned_longlong_string.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_bool.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_double.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_unsigned_longlong.h",
+        "lib/CustomTclap/src/advanced_tclap_output.cpp",
+        "lib/CustomTclap/src/fuzzy_duo_value_arg_unsigned_longlong_string.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_bool.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_double.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_unsigned_longlong.cpp",
+    ],
+    includes = [
+        "lib/CustomTclap/include",
+    ],
+    deps = [
+        "@tclap",
+    ],
+)
+
+cc_library(
     name = "ecal",
     srcs = glob(
         [
@@ -65,7 +87,6 @@ cc_library(
             "ecal/*.h",
             "ecal/core/src/service/*.h",
             "ecal/core/src/*.h",
-            "lib/CustomTclap/src/**",
         ],
         exclude = [
             "ecal/**/win32/**",
@@ -77,7 +98,6 @@ cc_library(
         "ecal/core/include/**",
         "app/rec/rec_client_core/include/**",
         "contrib/ecalproto/include/**",
-        "lib/CustomTclap/include/**",
         "app/apps/include/**",
     ]),
     copts = [
@@ -105,7 +125,6 @@ cc_library(
         "app/rec/rec_client_core/src",
         "contrib/ecalproto/include",
         "ecal/core/include",
-        "lib/CustomTclap/include",
     ],
     linkopts = [
         "-ldl",
@@ -113,6 +132,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":custom_tclap",
         ":ecal_cc_proto",
         ":ecal_parser",
         ":ecal_utils",
@@ -120,7 +140,6 @@ cc_library(
         ":threading_utils",
         "@asio",
         "@simpleini",
-        "@tclap",
     ],
 )
 
