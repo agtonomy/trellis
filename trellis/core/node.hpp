@@ -123,7 +123,7 @@ class Node {
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::shared_ptr<google::protobuf::Message> msg) {
+  DynamicPublisher CreateDynamicPublisher(std::string topic, std::shared_ptr<google::protobuf::Message> msg) const {
     return std::make_shared<DynamicPublisherImpl>(topic, msg);
   }
 
@@ -138,7 +138,7 @@ class Node {
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::string proto_type_name) {
+  DynamicPublisher CreateDynamicPublisher(std::string topic, std::string proto_type_name) const {
     return std::make_shared<DynamicPublisherImpl>(topic, proto_type_name);
   }
 
@@ -161,7 +161,7 @@ class Node {
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
           watchdog_callback = {},
-      std::optional<double> max_frequency = {}) {
+      std::optional<double> max_frequency = {}) const {
     return CreateSubscriber<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
         topic, callback, watchdog_timeout_ms, watchdog_callback, max_frequency);
   }
