@@ -80,8 +80,6 @@ cc_library(
     srcs = glob(
         [
             "contrib/ecalproto/src/*.cpp",
-            "app/rec/rec_client_core/**/*.cpp",
-            "app/rec/rec_client_core/**/*.h",
             "ecal/core/**/*.h",
             "ecal/core/**/*.cpp",
             "ecal/*.h",
@@ -96,7 +94,6 @@ cc_library(
     ) + ["ecal/core/include/ecal/ecal_defs.h"],
     hdrs = glob([
         "ecal/core/include/**",
-        "app/rec/rec_client_core/include/**",
         "contrib/ecalproto/include/**",
         "app/apps/include/**",
     ]),
@@ -121,8 +118,6 @@ cc_library(
     ],
     includes = [
         "app/apps/include",
-        "app/rec/rec_client_core/include",
-        "app/rec/rec_client_core/src",
         "contrib/ecalproto/include",
         "ecal/core/include",
     ],
@@ -134,12 +129,64 @@ cc_library(
     deps = [
         ":custom_tclap",
         ":ecal_cc_proto",
-        ":ecal_parser",
+        #":ecal_parser",
         ":ecal_utils",
         ":ecaltime-localtime",
-        ":threading_utils",
+        #":threading_utils",
         "@asio",
         "@simpleini",
+    ],
+)
+
+cc_library(
+    name = "rec_client_core",
+    srcs = [
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec.h",
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec_defs.h",
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec_logger.h",
+        "app/rec/rec_client_core/include/rec_client_core/job_config.h",
+        "app/rec/rec_client_core/include/rec_client_core/proto_helpers.h",
+        "app/rec/rec_client_core/include/rec_client_core/rec_error.h",
+        "app/rec/rec_client_core/include/rec_client_core/record_mode.h",
+        "app/rec/rec_client_core/include/rec_client_core/state.h",
+        "app/rec/rec_client_core/include/rec_client_core/topic_info.h",
+        "app/rec/rec_client_core/include/rec_client_core/upload_config.h",
+        "app/rec/rec_client_core/src/addons/addon.cpp",
+        "app/rec/rec_client_core/src/addons/addon.h",
+        "app/rec/rec_client_core/src/addons/addon_manager.cpp",
+        "app/rec/rec_client_core/src/addons/addon_manager.h",
+        "app/rec/rec_client_core/src/addons/common_types.h",
+        "app/rec/rec_client_core/src/addons/concurrent_queue.h",
+        "app/rec/rec_client_core/src/addons/function_descriptors.h",
+        "app/rec/rec_client_core/src/addons/pipe_handler.cpp",
+        "app/rec/rec_client_core/src/addons/pipe_handler.h",
+        "app/rec/rec_client_core/src/addons/response_handler.cpp",
+        "app/rec/rec_client_core/src/addons/response_handler.h",
+        "app/rec/rec_client_core/src/ecal_rec.cpp",
+        "app/rec/rec_client_core/src/ecal_rec_impl.cpp",
+        "app/rec/rec_client_core/src/ecal_rec_impl.h",
+        "app/rec/rec_client_core/src/frame.h",
+        "app/rec/rec_client_core/src/garbage_collector_trigger_thread.cpp",
+        "app/rec/rec_client_core/src/garbage_collector_trigger_thread.h",
+        "app/rec/rec_client_core/src/job/ftp_upload_thread.cpp",
+        "app/rec/rec_client_core/src/job/ftp_upload_thread.h",
+        "app/rec/rec_client_core/src/job/hdf5_writer_thread.cpp",
+        "app/rec/rec_client_core/src/job/hdf5_writer_thread.h",
+        "app/rec/rec_client_core/src/job/record_job.cpp",
+        "app/rec/rec_client_core/src/job/record_job.h",
+        "app/rec/rec_client_core/src/job_config.cpp",
+        "app/rec/rec_client_core/src/monitoring_thread.cpp",
+        "app/rec/rec_client_core/src/monitoring_thread.h",
+        "app/rec/rec_client_core/src/proto_helpers.cpp",
+    ],
+    includes = [
+        "app/rec/rec_client_core/include",
+        "app/rec/rec_client_core/src",
+    ],
+    deps = [
+        ":ecal",
+        ":ecal_parser",
+        ":threading_utils",
     ],
 )
 
@@ -168,7 +215,7 @@ cc_binary(
         "app/rec/rec_client_cli/src/ecal_rec_service.h",
     ],
     deps = [
-        ":ecal",
+        ":rec_client_core",
         ":threading_utils",
     ],
 )
