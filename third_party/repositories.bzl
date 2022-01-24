@@ -98,3 +98,14 @@ def trellis_deps():
             "https://github.com/google/protobuf/archive/436bd7880e458532901c58f4d9d1ea23fa7edd52.tar.gz",
         ],
     )
+
+    maybe(
+        http_archive,
+        name = "hdf5",
+        build_file = "//third_party:hdf5.BUILD",
+        sha256 = "a1b7c2a477090508365d79bb1356d995a90d5c75e9e3ff0f2bd09d54d8a225d0",
+        strip_prefix = "hdf5-hdf5-1_10_7",
+        urls = [
+            "https://github.com/HDFGroup/hdf5/archive/hdf5-1_10_7.tar.gz",  # Oct 16, 2020
+        ],
+    )

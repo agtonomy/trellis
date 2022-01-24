@@ -76,6 +76,42 @@ cc_library(
 )
 
 cc_library(
+    name = "ecal_hdf5",
+    srcs = [
+        "contrib/ecalhdf5/include/ecal/measurement/imeasurement.h",
+        "contrib/ecalhdf5/include/ecal/measurement/measurement.h",
+        "contrib/ecalhdf5/include/ecal/measurement/omeasurement.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_defs.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_meas.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_types.h",
+        "contrib/ecalhdf5/src/eh5_meas.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_dir.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_dir.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v1.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v1.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v2.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v2.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v3.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v3.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v4.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v4.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v5.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v5.h",
+        "contrib/ecalhdf5/src/eh5_meas_impl.h",
+        "contrib/ecalhdf5/src/eh5_util.h",
+        "contrib/ecalhdf5/src/escape.cpp",
+        "contrib/ecalhdf5/src/escape.h",
+    ],
+    includes = [
+        "contrib/ecalhdf5/include",
+    ],
+    deps = [
+        ":ecal_utils",
+        "@hdf5",
+    ],
+)
+
+cc_library(
     name = "ecal",
     srcs = glob(
         [
@@ -185,6 +221,7 @@ cc_library(
     ],
     deps = [
         ":ecal",
+        ":ecal_hdf5",
         ":ecal_parser",
         ":threading_utils",
     ],
@@ -217,6 +254,7 @@ cc_binary(
     deps = [
         ":rec_client_core",
         ":threading_utils",
+        "@spdlog",
     ],
 )
 
