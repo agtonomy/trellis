@@ -254,7 +254,6 @@ cc_binary(
     deps = [
         ":rec_client_core",
         ":threading_utils",
-        "@spdlog",
     ],
 )
 
