@@ -1,10 +1,65 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 cc_library(
+    name = "threading_utils",
+    srcs = [
+        "lib/ThreadingUtils/include/ThreadingUtils/DynamicSleeper.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/InterruptibleLoopThread.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/InterruptibleThread.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/ThreadSafeQueue.h",
+    ],
+    includes = [
+        "lib/ThreadingUtils/include",
+    ],
+)
+
+cc_library(
+    name = "ecal_utils",
+    srcs = [
+        "lib/ecal_utils/include/ecal_utils/ecal_utils.h",
+        "lib/ecal_utils/include/ecal_utils/filesystem.h",
+        "lib/ecal_utils/include/ecal_utils/string.h",
+        "lib/ecal_utils/src/filesystem.cpp",
+    ],
+    includes = [
+        "lib/ecal_utils/include",
+    ],
+)
+
+cc_library(
+    name = "ecal_parser",
+    srcs = [
+        "lib/EcalParser/include/EcalParser/EcalParser.h",
+        "lib/EcalParser/include/EcalParser/Function.h",
+        "lib/EcalParser/src/EcalParser.cpp",
+        "lib/EcalParser/src/functions/env.cpp",
+        "lib/EcalParser/src/functions/env.h",
+        "lib/EcalParser/src/functions/hostname.cpp",
+        "lib/EcalParser/src/functions/hostname.h",
+        "lib/EcalParser/src/functions/os.cpp",
+        "lib/EcalParser/src/functions/os.h",
+        "lib/EcalParser/src/functions/osselect.cpp",
+        "lib/EcalParser/src/functions/osselect.h",
+        "lib/EcalParser/src/functions/time.cpp",
+        "lib/EcalParser/src/functions/time.h",
+        "lib/EcalParser/src/functions/username.cpp",
+        "lib/EcalParser/src/functions/username.h",
+    ],
+    includes = [
+        "lib/EcalParser/include",
+    ],
+    deps = [
+        ":ecal_utils",
+    ],
+)
+
+cc_library(
     name = "ecal",
     srcs = glob(
         [
             "contrib/ecalproto/src/*.cpp",
+            "app/rec/rec_client_core/**/*.cpp",
+            "app/rec/rec_client_core/**/*.h",
             "ecal/core/**/*.h",
             "ecal/core/**/*.cpp",
             "ecal/*.h",
@@ -20,7 +75,7 @@ cc_library(
     ) + ["ecal/core/include/ecal/ecal_defs.h"],
     hdrs = glob([
         "ecal/core/include/**",
-        "lib/ecal_utils/include/**",
+        "app/rec/rec_client_core/include/**",
         "contrib/ecalproto/include/**",
         "lib/CustomTclap/include/**",
         "app/apps/include/**",
@@ -46,10 +101,11 @@ cc_library(
     ],
     includes = [
         "app/apps/include",
+        "app/rec/rec_client_core/include",
+        "app/rec/rec_client_core/src",
         "contrib/ecalproto/include",
         "ecal/core/include",
         "lib/CustomTclap/include",
-        "lib/ecal_utils/include",
     ],
     linkopts = [
         "-ldl",
@@ -58,7 +114,10 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":ecal_cc_proto",
+        ":ecal_parser",
+        ":ecal_utils",
         ":ecaltime-localtime",
+        ":threading_utils",
         "@asio",
         "@simpleini",
         "@tclap",
@@ -80,6 +139,19 @@ cc_binary(
         "contrib/ecaltime/include",
     ],
     linkshared = True,
+)
+
+cc_binary(
+    name = "rec_client_cli",
+    srcs = [
+        "app/rec/rec_client_cli/src/ecal_rec_cli.cpp",
+        "app/rec/rec_client_cli/src/ecal_rec_service.cpp",
+        "app/rec/rec_client_cli/src/ecal_rec_service.h",
+    ],
+    deps = [
+        ":ecal",
+        ":threading_utils",
+    ],
 )
 
 proto_library(
@@ -108,6 +180,7 @@ genrule(
         "#define ECAL_PLATFORMTOOLSET \"\"",
         "#define ECAL_INSTALL_CONFIG_DIR \"/etc/ecal\"",
         "#define ECAL_INSTALL_PREFIX \"\"",
+        "#define ECAL_INSTALL_LIB_DIR \"\"",
         "#endif // ecal_defs_h_included",
         "EOF",
     ]),
