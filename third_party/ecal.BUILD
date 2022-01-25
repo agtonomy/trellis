@@ -1,6 +1,117 @@
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 cc_library(
+    name = "threading_utils",
+    srcs = [
+        "lib/ThreadingUtils/include/ThreadingUtils/DynamicSleeper.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/InterruptibleLoopThread.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/InterruptibleThread.h",
+        "lib/ThreadingUtils/include/ThreadingUtils/ThreadSafeQueue.h",
+    ],
+    includes = [
+        "lib/ThreadingUtils/include",
+    ],
+)
+
+cc_library(
+    name = "ecal_utils",
+    srcs = [
+        "lib/ecal_utils/include/ecal_utils/ecal_utils.h",
+        "lib/ecal_utils/include/ecal_utils/filesystem.h",
+        "lib/ecal_utils/include/ecal_utils/string.h",
+        "lib/ecal_utils/src/filesystem.cpp",
+    ],
+    includes = [
+        "lib/ecal_utils/include",
+    ],
+)
+
+cc_library(
+    name = "ecal_parser",
+    srcs = [
+        "lib/EcalParser/include/EcalParser/EcalParser.h",
+        "lib/EcalParser/include/EcalParser/Function.h",
+        "lib/EcalParser/src/EcalParser.cpp",
+        "lib/EcalParser/src/functions/env.cpp",
+        "lib/EcalParser/src/functions/env.h",
+        "lib/EcalParser/src/functions/hostname.cpp",
+        "lib/EcalParser/src/functions/hostname.h",
+        "lib/EcalParser/src/functions/os.cpp",
+        "lib/EcalParser/src/functions/os.h",
+        "lib/EcalParser/src/functions/osselect.cpp",
+        "lib/EcalParser/src/functions/osselect.h",
+        "lib/EcalParser/src/functions/time.cpp",
+        "lib/EcalParser/src/functions/time.h",
+        "lib/EcalParser/src/functions/username.cpp",
+        "lib/EcalParser/src/functions/username.h",
+    ],
+    includes = [
+        "lib/EcalParser/include",
+    ],
+    deps = [
+        ":ecal_utils",
+    ],
+)
+
+cc_library(
+    name = "custom_tclap",
+    srcs = [
+        "lib/CustomTclap/include/custom_tclap/advanced_tclap_output.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_duo_value_arg_unsigned_longlong_string.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_bool.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_double.h",
+        "lib/CustomTclap/include/custom_tclap/fuzzy_value_switch_arg_unsigned_longlong.h",
+        "lib/CustomTclap/src/advanced_tclap_output.cpp",
+        "lib/CustomTclap/src/fuzzy_duo_value_arg_unsigned_longlong_string.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_bool.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_double.cpp",
+        "lib/CustomTclap/src/fuzzy_value_switch_arg_unsigned_longlong.cpp",
+    ],
+    includes = [
+        "lib/CustomTclap/include",
+    ],
+    deps = [
+        "@tclap",
+    ],
+)
+
+cc_library(
+    name = "ecal_hdf5",
+    srcs = [
+        "contrib/ecalhdf5/include/ecal/measurement/imeasurement.h",
+        "contrib/ecalhdf5/include/ecal/measurement/measurement.h",
+        "contrib/ecalhdf5/include/ecal/measurement/omeasurement.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_defs.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_meas.h",
+        "contrib/ecalhdf5/include/ecalhdf5/eh5_types.h",
+        "contrib/ecalhdf5/src/eh5_meas.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_dir.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_dir.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v1.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v1.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v2.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v2.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v3.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v3.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v4.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v4.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_v5.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_v5.h",
+        "contrib/ecalhdf5/src/eh5_meas_impl.h",
+        "contrib/ecalhdf5/src/eh5_util.h",
+        "contrib/ecalhdf5/src/escape.cpp",
+        "contrib/ecalhdf5/src/escape.h",
+    ],
+    includes = [
+        "contrib/ecalhdf5/include",
+    ],
+    deps = [
+        ":ecal_utils",
+        "@hdf5",
+    ],
+)
+
+cc_library(
     name = "ecal",
     srcs = glob(
         [
@@ -10,7 +121,6 @@ cc_library(
             "ecal/*.h",
             "ecal/core/src/service/*.h",
             "ecal/core/src/*.h",
-            "lib/CustomTclap/src/**",
         ],
         exclude = [
             "ecal/**/win32/**",
@@ -20,9 +130,7 @@ cc_library(
     ) + ["ecal/core/include/ecal/ecal_defs.h"],
     hdrs = glob([
         "ecal/core/include/**",
-        "lib/ecal_utils/include/**",
         "contrib/ecalproto/include/**",
-        "lib/CustomTclap/include/**",
         "app/apps/include/**",
     ]),
     copts = [
@@ -48,8 +156,6 @@ cc_library(
         "app/apps/include",
         "contrib/ecalproto/include",
         "ecal/core/include",
-        "lib/CustomTclap/include",
-        "lib/ecal_utils/include",
     ],
     linkopts = [
         "-ldl",
@@ -57,11 +163,65 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":custom_tclap",
         ":ecal_cc_proto",
+        ":ecal_utils",
         ":ecaltime-localtime",
         "@asio",
         "@simpleini",
-        "@tclap",
+    ],
+)
+
+cc_library(
+    name = "rec_client_core",
+    srcs = [
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec.h",
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec_defs.h",
+        "app/rec/rec_client_core/include/rec_client_core/ecal_rec_logger.h",
+        "app/rec/rec_client_core/include/rec_client_core/job_config.h",
+        "app/rec/rec_client_core/include/rec_client_core/proto_helpers.h",
+        "app/rec/rec_client_core/include/rec_client_core/rec_error.h",
+        "app/rec/rec_client_core/include/rec_client_core/record_mode.h",
+        "app/rec/rec_client_core/include/rec_client_core/state.h",
+        "app/rec/rec_client_core/include/rec_client_core/topic_info.h",
+        "app/rec/rec_client_core/include/rec_client_core/upload_config.h",
+        "app/rec/rec_client_core/src/addons/addon.cpp",
+        "app/rec/rec_client_core/src/addons/addon.h",
+        "app/rec/rec_client_core/src/addons/addon_manager.cpp",
+        "app/rec/rec_client_core/src/addons/addon_manager.h",
+        "app/rec/rec_client_core/src/addons/common_types.h",
+        "app/rec/rec_client_core/src/addons/concurrent_queue.h",
+        "app/rec/rec_client_core/src/addons/function_descriptors.h",
+        "app/rec/rec_client_core/src/addons/pipe_handler.cpp",
+        "app/rec/rec_client_core/src/addons/pipe_handler.h",
+        "app/rec/rec_client_core/src/addons/response_handler.cpp",
+        "app/rec/rec_client_core/src/addons/response_handler.h",
+        "app/rec/rec_client_core/src/ecal_rec.cpp",
+        "app/rec/rec_client_core/src/ecal_rec_impl.cpp",
+        "app/rec/rec_client_core/src/ecal_rec_impl.h",
+        "app/rec/rec_client_core/src/frame.h",
+        "app/rec/rec_client_core/src/garbage_collector_trigger_thread.cpp",
+        "app/rec/rec_client_core/src/garbage_collector_trigger_thread.h",
+        "app/rec/rec_client_core/src/job/ftp_upload_thread.cpp",
+        "app/rec/rec_client_core/src/job/ftp_upload_thread.h",
+        "app/rec/rec_client_core/src/job/hdf5_writer_thread.cpp",
+        "app/rec/rec_client_core/src/job/hdf5_writer_thread.h",
+        "app/rec/rec_client_core/src/job/record_job.cpp",
+        "app/rec/rec_client_core/src/job/record_job.h",
+        "app/rec/rec_client_core/src/job_config.cpp",
+        "app/rec/rec_client_core/src/monitoring_thread.cpp",
+        "app/rec/rec_client_core/src/monitoring_thread.h",
+        "app/rec/rec_client_core/src/proto_helpers.cpp",
+    ],
+    includes = [
+        "app/rec/rec_client_core/include",
+        "app/rec/rec_client_core/src",
+    ],
+    deps = [
+        ":ecal",
+        ":ecal_hdf5",
+        ":ecal_parser",
+        ":threading_utils",
     ],
 )
 
@@ -80,6 +240,20 @@ cc_binary(
         "contrib/ecaltime/include",
     ],
     linkshared = True,
+)
+
+cc_binary(
+    name = "rec_client_cli",
+    srcs = [
+        "app/rec/rec_client_cli/src/ecal_rec_cli.cpp",
+        "app/rec/rec_client_cli/src/ecal_rec_service.cpp",
+        "app/rec/rec_client_cli/src/ecal_rec_service.h",
+    ],
+    deps = [
+        ":rec_client_core",
+        ":threading_utils",
+        "@fmtv6//:fmt",
+    ],
 )
 
 proto_library(
@@ -108,6 +282,7 @@ genrule(
         "#define ECAL_PLATFORMTOOLSET \"\"",
         "#define ECAL_INSTALL_CONFIG_DIR \"/etc/ecal\"",
         "#define ECAL_INSTALL_PREFIX \"\"",
+        "#define ECAL_INSTALL_LIB_DIR \"\"",
         "#endif // ecal_defs_h_included",
         "EOF",
     ]),

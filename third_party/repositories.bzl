@@ -26,6 +26,17 @@ def trellis_deps():
 
     maybe(
         http_archive,
+        name = "fmtv6",
+        build_file = Label("//third_party:fmt.BUILD"),
+        sha256 = "94fea742ddcccab6607b517f6e608b1e5d63d712ddbc5982e44bafec5279881a",
+        strip_prefix = "fmt-6.2.1",
+        urls = [
+            "https://github.com/fmtlib/fmt/releases/download/6.2.1/fmt-6.2.1.zip",
+        ],
+    )
+
+    maybe(
+        http_archive,
         name = "yaml-cpp",
         sha256 = "43e6a9fcb146ad871515f0d0873947e5d497a1c9c60c58cb102a97b47208b7c3",
         strip_prefix = "yaml-cpp-yaml-cpp-0.7.0",
@@ -96,5 +107,16 @@ def trellis_deps():
         urls = [
             "https://storage.googleapis.com/grpc-bazel-mirror/github.com/google/protobuf/archive/436bd7880e458532901c58f4d9d1ea23fa7edd52.tar.gz",
             "https://github.com/google/protobuf/archive/436bd7880e458532901c58f4d9d1ea23fa7edd52.tar.gz",
+        ],
+    )
+
+    maybe(
+        http_archive,
+        name = "hdf5",
+        build_file = Label("//third_party:hdf5.BUILD"),
+        sha256 = "a1b7c2a477090508365d79bb1356d995a90d5c75e9e3ff0f2bd09d54d8a225d0",
+        strip_prefix = "hdf5-hdf5-1_10_7",
+        urls = [
+            "https://github.com/HDFGroup/hdf5/archive/hdf5-1_10_7.tar.gz",  # Oct 16, 2020
         ],
     )
