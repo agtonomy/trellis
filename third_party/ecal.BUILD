@@ -109,6 +109,7 @@ cc_library(
         ":ecal_utils",
         "@hdf5",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
@@ -271,7 +272,7 @@ cc_binary(
     linkshared = True,
 )
 
-cc_binary(
+cc_library(
     name = "rec_client_cli",
     srcs = [
         "app/rec/rec_client_cli/src/ecal_rec_cli.cpp",
@@ -286,7 +287,7 @@ cc_binary(
     ],
 )
 
-cc_binary(
+cc_library(
     name = "play_cli",
     srcs = [
         "app/play/play_cli/src/convert_utf.cpp",
