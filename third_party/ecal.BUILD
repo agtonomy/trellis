@@ -165,10 +165,8 @@ cc_library(
     deps = [
         ":custom_tclap",
         ":ecal_cc_proto",
-        #":ecal_parser",
         ":ecal_utils",
         ":ecaltime-localtime",
-        #":threading_utils",
         "@asio",
         "@simpleini",
     ],
