@@ -26,6 +26,17 @@ def trellis_deps():
 
     maybe(
         http_archive,
+        name = "fmtv6",
+        build_file = Label("//third_party:fmt.BUILD"),
+        sha256 = "94fea742ddcccab6607b517f6e608b1e5d63d712ddbc5982e44bafec5279881a",
+        strip_prefix = "fmt-6.2.1",
+        urls = [
+            "https://github.com/fmtlib/fmt/releases/download/6.2.1/fmt-6.2.1.zip",
+        ],
+    )
+
+    maybe(
+        http_archive,
         name = "yaml-cpp",
         sha256 = "43e6a9fcb146ad871515f0d0873947e5d497a1c9c60c58cb102a97b47208b7c3",
         strip_prefix = "yaml-cpp-yaml-cpp-0.7.0",
