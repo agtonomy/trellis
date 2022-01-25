@@ -105,11 +105,11 @@ cc_library(
     includes = [
         "contrib/ecalhdf5/include",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":ecal_utils",
         "@hdf5",
     ],
-    visibility = ["//visibility:public"],
 )
 
 cc_library(
