@@ -226,6 +226,35 @@ cc_library(
 )
 
 cc_library(
+    name = "play_core",
+    srcs = [
+        "app/play/play_core/include/continuity_report.h",
+        "app/play/play_core/include/ecal_play.h",
+        "app/play/play_core/include/ecal_play_globals.h",
+        "app/play/play_core/include/ecal_play_logger.h",
+        "app/play/play_core/include/ecal_play_scenario.h",
+        "app/play/play_core/include/ecal_play_state.h",
+        "app/play/play_core/src/ecal_play.cpp",
+        "app/play/play_core/src/ecal_play_command.h",
+        "app/play/play_core/src/measurement_container.cpp",
+        "app/play/play_core/src/measurement_container.h",
+        "app/play/play_core/src/play_thread.cpp",
+        "app/play/play_core/src/play_thread.h",
+        "app/play/play_core/src/state_publisher_thread.cpp",
+        "app/play/play_core/src/state_publisher_thread.h",
+        "app/play/play_core/src/stop_watch.cpp",
+        "app/play/play_core/src/stop_watch.h",
+    ],
+    includes = [
+        "app/play/play_core/include",
+    ],
+    deps = [
+        ":ecal",
+        ":threading_utils",
+    ],
+)
+
+cc_library(
     name = "ecaltime-localtime",
     srcs = ["libecaltime-localtime.so"],
 )
@@ -249,10 +278,29 @@ cc_binary(
         "app/rec/rec_client_cli/src/ecal_rec_service.cpp",
         "app/rec/rec_client_cli/src/ecal_rec_service.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":rec_client_core",
         ":threading_utils",
         "@fmtv6//:fmt",
+    ],
+)
+
+cc_binary(
+    name = "play_cli",
+    srcs = [
+        "app/play/play_cli/src/convert_utf.cpp",
+        "app/play/play_cli/src/convert_utf.h",
+        "app/play/play_cli/src/ecal_play_cli.cpp",
+        "app/play/play_cli/src/ecal_play_service.cpp",
+        "app/play/play_cli/src/ecal_play_service.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ecal_hdf5",
+        ":play_core",
+        "@fmtv6//:fmt",
+        "@termcolor",
     ],
 )
 

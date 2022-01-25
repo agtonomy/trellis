@@ -120,3 +120,14 @@ def trellis_deps():
             "https://github.com/HDFGroup/hdf5/archive/hdf5-1_10_7.tar.gz",  # Oct 16, 2020
         ],
     )
+
+    maybe(
+        http_archive,
+        name = "termcolor",
+        build_file = Label("//third_party:termcolor.BUILD"),
+        sha256 = "4a73a77053822ca1ed6d4a2af416d31028ec992fb0ffa794af95bd6216bb6a20",
+        strip_prefix = "termcolor-2.0.0",
+        urls = [
+            "https://github.com/ikalnytskyi/termcolor/archive/refs/tags/v2.0.0.tar.gz",
+        ],
+    )
