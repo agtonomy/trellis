@@ -113,7 +113,7 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "hdf5",
-        build_file = "//third_party:hdf5.BUILD",
+        build_file = Label("//third_party:hdf5.BUILD"),
         sha256 = "a1b7c2a477090508365d79bb1356d995a90d5c75e9e3ff0f2bd09d54d8a225d0",
         strip_prefix = "hdf5-hdf5-1_10_7",
         urls = [
