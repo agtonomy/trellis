@@ -223,6 +223,7 @@ cc_library(
         ":ecal_hdf5",
         ":ecal_parser",
         ":threading_utils",
+        "@spdlog",
     ],
 )
 
@@ -253,6 +254,7 @@ cc_library(
         ":ecal",
         ":ecal_hdf5",
         ":threading_utils",
+        "@spdlog",
     ],
 )
 
@@ -284,7 +286,6 @@ cc_library(
     deps = [
         ":rec_client_core",
         ":threading_utils",
-        "@fmtv6//:fmt",
     ],
 )
 
@@ -300,7 +301,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":play_core",
-        "@fmtv6//:fmt",
         "@termcolor",
     ],
 )
