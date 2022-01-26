@@ -202,8 +202,8 @@ cc_library(
         "app/rec/rec_client_core/src/frame.h",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.cpp",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.h",
-        "app/rec/rec_client_core/src/job/ftp_upload_thread.cpp",
-        "app/rec/rec_client_core/src/job/ftp_upload_thread.h",
+        #"app/rec/rec_client_core/src/job/ftp_upload_thread.cpp", # disabling due to curl dependency
+        #"app/rec/rec_client_core/src/job/ftp_upload_thread.h", # disabling due to curl dependency
         "app/rec/rec_client_core/src/job/hdf5_writer_thread.cpp",
         "app/rec/rec_client_core/src/job/hdf5_writer_thread.h",
         "app/rec/rec_client_core/src/job/record_job.cpp",
