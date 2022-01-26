@@ -202,8 +202,8 @@ cc_library(
         "app/rec/rec_client_core/src/frame.h",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.cpp",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.h",
-        "app/rec/rec_client_core/src/job/ftp_upload_thread.cpp",
-        "app/rec/rec_client_core/src/job/ftp_upload_thread.h",
+        #"app/rec/rec_client_core/src/job/ftp_upload_thread.cpp", # disabling due to curl dependency
+        #"app/rec/rec_client_core/src/job/ftp_upload_thread.h", # disabling due to curl dependency
         "app/rec/rec_client_core/src/job/hdf5_writer_thread.cpp",
         "app/rec/rec_client_core/src/job/hdf5_writer_thread.h",
         "app/rec/rec_client_core/src/job/record_job.cpp",
@@ -222,6 +222,38 @@ cc_library(
         ":ecal_hdf5",
         ":ecal_parser",
         ":threading_utils",
+        "@spdlog",
+    ],
+)
+
+cc_library(
+    name = "play_core",
+    srcs = [
+        "app/play/play_core/include/continuity_report.h",
+        "app/play/play_core/include/ecal_play.h",
+        "app/play/play_core/include/ecal_play_globals.h",
+        "app/play/play_core/include/ecal_play_logger.h",
+        "app/play/play_core/include/ecal_play_scenario.h",
+        "app/play/play_core/include/ecal_play_state.h",
+        "app/play/play_core/src/ecal_play.cpp",
+        "app/play/play_core/src/ecal_play_command.h",
+        "app/play/play_core/src/measurement_container.cpp",
+        "app/play/play_core/src/measurement_container.h",
+        "app/play/play_core/src/play_thread.cpp",
+        "app/play/play_core/src/play_thread.h",
+        "app/play/play_core/src/state_publisher_thread.cpp",
+        "app/play/play_core/src/state_publisher_thread.h",
+        "app/play/play_core/src/stop_watch.cpp",
+        "app/play/play_core/src/stop_watch.h",
+    ],
+    includes = [
+        "app/play/play_core/include",
+    ],
+    deps = [
+        ":ecal",
+        ":ecal_hdf5",
+        ":threading_utils",
+        "@spdlog",
     ],
 )
 
@@ -242,17 +274,33 @@ cc_binary(
     linkshared = True,
 )
 
-cc_binary(
+cc_library(
     name = "rec_client_cli",
     srcs = [
         "app/rec/rec_client_cli/src/ecal_rec_cli.cpp",
         "app/rec/rec_client_cli/src/ecal_rec_service.cpp",
         "app/rec/rec_client_cli/src/ecal_rec_service.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":rec_client_core",
         ":threading_utils",
-        "@fmtv6//:fmt",
+    ],
+)
+
+cc_library(
+    name = "play_cli",
+    srcs = [
+        "app/play/play_cli/src/convert_utf.cpp",
+        "app/play/play_cli/src/convert_utf.h",
+        "app/play/play_cli/src/ecal_play_cli.cpp",
+        "app/play/play_cli/src/ecal_play_service.cpp",
+        "app/play/play_cli/src/ecal_play_service.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":play_core",
+        "@termcolor",
     ],
 )
 
