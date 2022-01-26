@@ -251,6 +251,7 @@ cc_library(
     ],
     deps = [
         ":ecal",
+        ":ecal_hdf5",
         ":threading_utils",
     ],
 )
@@ -298,7 +299,6 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":ecal_hdf5",
         ":play_core",
         "@fmtv6//:fmt",
         "@termcolor",
