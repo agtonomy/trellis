@@ -21,7 +21,11 @@
 
 using namespace trellis::core;
 
-Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()}, work_guard_{asio::make_work_guard(*ev_loop_)} {
+Node::Node(std::string name)
+    : name_{name},
+      ev_loop_{CreateEventLoop()},
+      work_guard_{asio::make_work_guard(*ev_loop_)},
+      signal_set_(*ev_loop_, SIGTERM, SIGINT) {
   // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
   // options. We won't make use of that for now. We'll just call Initialize with default arguments.
   eCAL::Initialize();
@@ -29,6 +33,15 @@ Node::Node(std::string name) : name_{name}, ev_loop_{CreateEventLoop()}, work_gu
   // Instead of passing the unit name as part of Initialize above, we'll set it here explicitly. This ensures the unit
   // name gets set in cases where we may have called Initialize already, such as from logging APIs.
   eCAL::SetUnitName(name_.c_str());
+
+  // Handle signals explicitly, allowing the user to supply their own handler
+  signal_set_.async_wait([this](const trellis::core::error_code& error, int signal_number) {
+    if (!error) {
+      if (user_handler_) user_handler_(signal_number);
+      Log::Debug("{} node stopping...", name_);
+      Stop();
+    }
+  });
 }
 
 Node::~Node() { Stop(); }
@@ -74,3 +87,5 @@ void Node::Stop() {
 }
 
 bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
+
+void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
