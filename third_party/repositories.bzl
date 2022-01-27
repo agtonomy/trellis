@@ -124,7 +124,7 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "spdlog",
-        build_file = "//third_party:spdlog.BUILD",
+        build_file = Label("//third_party:spdlog.BUILD"),
         sha256 = "6fff9215f5cb81760be4cc16d033526d1080427d236e86d70bb02994f85e3d38",
         strip_prefix = "spdlog-1.9.2",
         urls = [
