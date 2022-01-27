@@ -53,6 +53,11 @@ namespace core {
 class Node {
  public:
   /**
+   * Function type for signal handlers (SIGINT & SIGTERM)
+   */
+  using SignalHandler = std::function<void(int)>;
+
+  /**
    * Node Construct an instance
    *
    * @param name the name of the application this instance represents
@@ -262,6 +267,13 @@ class Node {
    */
   EventLoop GetEventLoop() const { return ev_loop_; }
 
+  /**
+   *  AddSignalHandler adds a handler for SIGINT or SIGTERM signals
+   *
+   * @param handler the function to call when SIGINT or SIGTERM is caught
+   */
+  void AddSignalHandler(SignalHandler handler);
+
  private:
   bool ShouldRun() const;
 
@@ -269,6 +281,8 @@ class Node {
   EventLoop ev_loop_;
   // Keeps event loop alive even when there's no work to do at the moment
   asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
+  asio::signal_set signal_set_;
+  SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
 };
 
