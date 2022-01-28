@@ -356,7 +356,6 @@ cc_library(
     deps = [
         ":ecal",
         ":ecal_parser",
-        "@fmt",
         "@spdlog",
     ],
 )
