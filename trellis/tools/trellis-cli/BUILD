@@ -17,6 +17,7 @@ cc_binary(
         "topic/topic_publish_main.cpp",
     ],
     linkstatic = False,
+    visibility = ["//visibility:public"],
     deps = [
         "//trellis",
         "@cxxopts",
