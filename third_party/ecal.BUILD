@@ -349,17 +349,16 @@ cc_library(
         "app/sys/sys_client_core/src/proto_helpers.cpp",
         "app/sys/sys_client_core/src/task.cpp",
     ],
+    includes = [
+        "app/sys/sys_client_core/include",
+        "app/sys/sys_client_core/src",
+    ],
     deps = [
         ":ecal",
         ":ecal_parser",
-        "@fmt//:fmt",
-        "@spdlog//:spdlog",
-     ],
-     includes = [
-         "app/sys/sys_client_core/src",
-         "app/sys/sys_client_core/include",
-     ],
-
+        "@fmt",
+        "@spdlog",
+    ],
 )
 
 cc_library(
@@ -369,6 +368,6 @@ cc_library(
         "app/sys/sys_client_cli/src/ecal_sys_client_service.cpp",
         "app/sys/sys_client_cli/src/ecal_sys_client_service.h",
     ],
-    deps = [":sys_client_core"],
     visibility = ["//visibility:public"],
+    deps = [":sys_client_core"],
 )
