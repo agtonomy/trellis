@@ -335,3 +335,40 @@ genrule(
         "EOF",
     ]),
 )
+
+cc_library(
+    name = "sys_client_core",
+    srcs = [
+        "app/sys/sys_client_core/include/sys_client_core/ecal_sys_client.h",
+        "app/sys/sys_client_core/include/sys_client_core/ecal_sys_client_defs.h",
+        "app/sys/sys_client_core/include/sys_client_core/ecal_sys_client_logger.h",
+        "app/sys/sys_client_core/include/sys_client_core/proto_helpers.h",
+        "app/sys/sys_client_core/include/sys_client_core/runner.h",
+        "app/sys/sys_client_core/include/sys_client_core/task.h",
+        "app/sys/sys_client_core/src/ecal_sys_client.cpp",
+        "app/sys/sys_client_core/src/proto_helpers.cpp",
+        "app/sys/sys_client_core/src/task.cpp",
+    ],
+    deps = [
+        ":ecal",
+        ":ecal_parser",
+        "@fmt//:fmt",
+        "@spdlog//:spdlog",
+     ],
+     includes = [
+         "app/sys/sys_client_core/src",
+         "app/sys/sys_client_core/include",
+     ],
+
+)
+
+cc_library(
+    name = "sys_client_cli",
+    srcs = [
+        "app/sys/sys_client_cli/src/ecal_sys_client_cli.cpp",
+        "app/sys/sys_client_cli/src/ecal_sys_client_service.cpp",
+        "app/sys/sys_client_cli/src/ecal_sys_client_service.h",
+    ],
+    deps = [":sys_client_core"],
+    visibility = ["//visibility:public"],
+)
