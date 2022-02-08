@@ -13,7 +13,7 @@ else
 fi
 
 # Running `bazel test ...` will also build all buildable targets (from discussion: https://github.com/bazelbuild/bazel/issues/4257)
-bazel test --repository_cache="$BAZEL_CACHE_DIR/repository" --disk_cache="$BAZEL_CACHE_DIR/disk" ...
+bazel test --features=all_warnings_as_errors,opt --repository_cache="$BAZEL_CACHE_DIR/repository" --disk_cache="$BAZEL_CACHE_DIR/disk" ...
 
 # Since this script is running inside of a container (as root) the bazel cache
 # is owned by root. However, the host system (Github's ubuntu-latest vm)
