@@ -326,6 +326,7 @@ cc_binary(
         "contrib/mma/src/zombie_instance_killer.cpp",
     ],
     includes = ["contrib/mma/include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":ecal",
         ":threading_utils",
