@@ -304,6 +304,34 @@ cc_library(
     ],
 )
 
+cc_binary(
+    name = "mma",
+    srcs = [
+        "contrib/mma/include/interruptable_timer.h",
+        "contrib/mma/include/linux/mma_linux.h",
+        "contrib/mma/include/linux/pipe_refresher.h",
+        "contrib/mma/include/linux/ressource.h",
+        "contrib/mma/include/logger.h",
+        "contrib/mma/include/mma.h",
+        "contrib/mma/include/mma_defs.h",
+        "contrib/mma/include/mma_impl.h",
+        "contrib/mma/include/query_manager.h",
+        "contrib/mma/include/zombie_instance_killer.h",
+        "contrib/mma/src/linux/mma_linux.cpp",
+        "contrib/mma/src/linux/pipe_refresher.cpp",
+        "contrib/mma/src/logger.cpp",
+        "contrib/mma/src/mma.cpp",
+        "contrib/mma/src/mma_application.cpp",
+        "contrib/mma/src/query_manager.cpp",
+        "contrib/mma/src/zombie_instance_killer.cpp",
+    ],
+    includes = ["contrib/mma/include"],
+    deps = [
+        ":ecal",
+        ":threading_utils",
+    ],
+)
+
 proto_library(
     name = "ecal_proto",
     srcs = glob(["ecal/**/*.proto"]),
