@@ -304,7 +304,7 @@ cc_library(
     ],
 )
 
-cc_binary(
+cc_library(
     name = "mma",
     srcs = [
         "contrib/mma/include/interruptable_timer.h",
