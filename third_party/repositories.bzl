@@ -131,3 +131,14 @@ def trellis_deps():
             "https://github.com/gabime/spdlog/archive/refs/tags/v1.9.2.tar.gz",
         ],
     )
+
+    maybe(
+        http_archive,
+        name = "json",
+        build_file = Label("//third_party:json.BUILD"),
+        sha256 = "61e605be15e88deeac4582aaf01c09d616f8302edde7adcaba9261ddc3b4ceca",
+        strip_prefix = "single_include/nlohmann",
+        urls = [
+            "https://github.com/nlohmann/json/releases/download/v3.10.2/include.zip",
+        ],
+    )
