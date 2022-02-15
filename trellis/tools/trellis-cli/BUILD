@@ -21,5 +21,6 @@ cc_binary(
     deps = [
         "//trellis",
         "@cxxopts",
+        "@json",
     ],
 )

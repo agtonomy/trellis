@@ -19,6 +19,7 @@
 
 #include <cxxopts.hpp>
 
+#include "json.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
@@ -36,7 +37,8 @@ int topic_echo_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_echo_command.data(), topic_echo_command_desc.data());
   options.add_options()("t,topic", "topic name(s)", cxxopts::value<std::vector<std::string>>())(
       "r,rate", "max echo rate in hz", cxxopts::value<int>()->default_value("0"))(
-      "w,whitespace", "add whitespace to output")("v,verbose", "include non-essential output")("h,help", "print usage");
+      "w,whitespace", "add whitespace to output")("v,verbose", "include non-essential output")("h,help", "print usage")(
+      "s,stamp", "inject timestamp into message output");
 
   auto result = options.parse(argc, argv);
   if (result.count("help") || !result.count("topic")) {
@@ -49,30 +51,49 @@ int topic_echo_main(int argc, char* argv[]) {
   unsigned throttle_interval_ms = (rate > 0) ? 1000.0 / static_cast<unsigned>(rate) : 0;
   const bool add_whitespace = result.count("whitespace");
   const bool verbose = result.count("verbose");
+  const bool timestamp = result.count("stamp");
 
   Node node(root_command.data());
   std::vector<trellis::core::DynamicSubscriber> subs;
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {
-    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms,
-                                                    add_whitespace](const google::protobuf::Message& msg) {
+    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms, add_whitespace,
+                                                    timestamp](const google::protobuf::Message& msg) {
       if (throttle_interval_ms != 0) {
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
         if (elapsed_ms <= throttle_interval_ms) {
           return;  // rate throttle
         }
       }
+      const auto now = time::Now();
+
       // convert to JSON and print
-      std::string json;
+      std::string json_raw;
       google::protobuf::util::JsonPrintOptions json_options;
       json_options.add_whitespace = add_whitespace;
       json_options.always_print_primitive_fields = true;
       json_options.always_print_enums_as_ints = false;
       json_options.preserve_proto_field_names = false;
-      auto r = google::protobuf::util::MessageToJsonString(msg, &json, json_options);
+      auto status = google::protobuf::util::MessageToJsonString(msg, &json_raw, json_options);
+      if (!status.ok()) {
+        std::ostringstream ss;
+        ss << status;
+        throw std::runtime_error(ss.str());
+      }
+
+      if (timestamp) {
+        nlohmann::json json_obj = nlohmann::json::parse(json_raw);
+        auto it = json_obj.find("timestamp");
+        // Make sure timestamp key doesn't already exist...
+        if (it == json_obj.end()) {
+          json_obj["timestamp"] = time::TimePointToSeconds(now);
+          json_raw = json_obj.dump();
+        }
+      }
+
       // Post the output to the event loop to remove synchronization problems between multiple subscribers
-      asio::post(*ev, [json]() { std::cout << json << std::endl; });
-      last_echo_time_ = time::Now();
+      asio::post(*ev, [json_raw]() { std::cout << json_raw << std::endl; });
+      last_echo_time_ = now;
     });
 
     subs.push_back(sub);
