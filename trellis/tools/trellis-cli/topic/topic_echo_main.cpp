@@ -65,6 +65,8 @@ int topic_echo_main(int argc, char* argv[]) {
           return;  // rate throttle
         }
       }
+      const auto now = time::Now();
+
       // convert to JSON and print
       std::string json_raw;
       google::protobuf::util::JsonPrintOptions json_options;
@@ -79,20 +81,19 @@ int topic_echo_main(int argc, char* argv[]) {
         throw std::runtime_error(ss.str());
       }
 
-      last_echo_time_ = time::Now();
-
       if (timestamp) {
         nlohmann::json json_obj = nlohmann::json::parse(json_raw);
         auto it = json_obj.find("timestamp");
         // Make sure timestamp key doesn't already exist...
         if (it == json_obj.end()) {
-          json_obj["timestamp"] = time::TimePointToSeconds(last_echo_time_);
+          json_obj["timestamp"] = time::TimePointToSeconds(now);
           json_raw = json_obj.dump();
         }
       }
 
       // Post the output to the event loop to remove synchronization problems between multiple subscribers
       asio::post(*ev, [json_raw]() { std::cout << json_raw << std::endl; });
+      last_echo_time_ = now;
     });
 
     subs.push_back(sub);
