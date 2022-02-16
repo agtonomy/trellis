@@ -166,7 +166,7 @@ cc_library(
         ":custom_tclap",
         ":ecal_cc_proto",
         ":ecal_utils",
-        ":ecaltime-localtime",
+        ":libecaltime-localtime.so",
         "@asio",
         "@simpleini",
     ],
@@ -255,11 +255,6 @@ cc_library(
         ":threading_utils",
         "@spdlog",
     ],
-)
-
-cc_library(
-    name = "ecaltime-localtime",
-    srcs = ["libecaltime-localtime.so"],
 )
 
 cc_binary(
