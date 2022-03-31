@@ -59,7 +59,7 @@ class MessageConsumer {
   using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
   using OptionalWatchdogTimeoutsArray = std::optional<std::array<unsigned, sizeof...(Types)>>;
-  using WatchdogCallback = std::function<void(void)>;
+  using WatchdogCallback = std::function<void(const std::string&)>;
   using WatchdogCallbacksArray = std::array<WatchdogCallback, sizeof...(Types)>;
   using OptionalMaxFrequencyArray = std::optional<std::array<double, sizeof...(Types)>>;
 
@@ -217,18 +217,20 @@ class MessageConsumer {
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
+        auto watchdog_callback_wrapper = [topic, watchdog_callback]() { watchdog_callback(topic); };
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, watchdog_timeout,
-            watchdog_callback, frequency_throttle_hz));
+            watchdog_callback_wrapper, frequency_throttle_hz));
       } else if (do_frequency_throttle && !do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, {}, {}, frequency_throttle_hz));
       } else if (!do_frequency_throttle && do_watchdog) {
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
+        auto watchdog_callback_wrapper = [topic, watchdog_callback]() { watchdog_callback(topic); };
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }, watchdog_timeout,
-            watchdog_callback));
+            watchdog_callback_wrapper));
       } else {
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
             topic, [topic, this](const MessageType& msg) { NewMessage(topic, msg); }));

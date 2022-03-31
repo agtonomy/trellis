@@ -90,7 +90,14 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
          ++receive_count_2;
        }},
       {{50U, 100U}},
-      {{[]() { ++watchdog_count_1; }, []() { ++watchdog_count_2; }}}};
+      {{[](const std::string& topic) {
+          ++watchdog_count_1;
+          ASSERT_EQ(topic, "consumer_topic_1");
+        },
+        [](const std::string& topic) {
+          ++watchdog_count_2;
+          ASSERT_EQ(topic, "consumer_topic_2");
+        }}}};
 
   WaitForDiscovery();
 

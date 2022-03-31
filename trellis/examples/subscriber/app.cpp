@@ -12,7 +12,7 @@ App::App(const Node& node, const Config& config)
               [this](const std::string& topic, const trellis::examples::proto::HelloWorld& msg,
                      const time::TimePoint&) { NewMessage(topic, msg); },
               {{2000U}},
-              {{[]() { Log::Warn("Watchdog tripped on inbound messages!"); }}}} {}
+              {{[](const std::string&) { Log::Warn("Watchdog tripped on inbound messages!"); }}}} {}
 
 void App::NewMessage(const std::string& topic, const trellis::examples::proto::HelloWorld& msg) {
   Log::Info("Received message on topic {} from {} with content {} and message number {}", topic, msg.name(), msg.msg(),
