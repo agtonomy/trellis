@@ -59,7 +59,8 @@ class MessageConsumer {
   using SingleTopicArray = std::array<SingleTopic, sizeof...(Types)>;
   using TopicsArray = std::array<TopicsList, sizeof...(Types)>;
   using OptionalWatchdogTimeoutsArray = std::optional<std::array<unsigned, sizeof...(Types)>>;
-  using WatchdogCallbacksArray = std::array<std::function<void(void)>, sizeof...(Types)>;
+  using WatchdogCallback = std::function<void(void)>;
+  using WatchdogCallbacksArray = std::array<WatchdogCallback, sizeof...(Types)>;
   using OptionalMaxFrequencyArray = std::optional<std::array<double, sizeof...(Types)>>;
 
   /*
