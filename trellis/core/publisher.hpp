@@ -20,8 +20,8 @@
 
 #include <ecal/msg/protobuf/publisher.h>
 
-#include "trellis/core/proto_utils.hpp"
-#include "trellis/core/time.hpp"
+#include "proto_utils.hpp"
+#include "time.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
