@@ -114,22 +114,13 @@ class SubscriberImpl {
    * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
    * subscriber callbacks use a slightly different function signature.
    */
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+
   void SetCallbackWithoutWatchdog(Callback callback) {
     auto callback_wrapper = [this, callback](const char* topic_name_, const ECAL_MSG_T& msg_, long long time_,
                                              long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [this, callback](const char* topic_name_, const ECAL_MSG_T& msg_, long long time_) {
-      CallbackWrapperLogic(msg_, callback);
-    };
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
-  }
-
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
@@ -149,42 +140,8 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
-                               EventLoop event_loop) {
-    Timer watchdog_timer{nullptr};
-    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const ECAL_MSG_T& msg_, long long time_) mutable {
-      if (watchdog_timer == nullptr) {
-        // create one shot watchdog timer which automatically loads the timer too
-        watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
-                                                     watchdog_timeout_ms);
-      } else {
-        watchdog_timer->Reset();
-      }
-
-      CallbackWrapperLogic(msg_, callback);
-    };
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
-  }
-
-  template <class FOO = ECAL_MSG_T,
-            std::enable_if_t<!std::is_same<FOO, trellis::core::TimestampedMessage>::value>* = nullptr>
-  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
-    const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    if (interval_ms) {
-      // throttle callback
-      const bool enough_time_elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
-      if (enough_time_elapsed) {
-        callback(msg);
-        last_sent_ = trellis::core::time::Now();
-      }
-    } else {
-      callback(msg);
-    }
-  }
-
+  // Timestamped message non-dynamic case
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     MSG_T user_msg;
@@ -202,6 +159,27 @@ class SubscriberImpl {
     }
   }
 
+  // Timestamped message dynamic case
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
+    // const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    std::cout << "GOT MESSAGE " << msg.payload().type_url() << std::endl;
+    // std::cout << "GOT GENERIC MESSAGE" << std::endl;
+    // MSG_T user_msg;
+    // msg.payload().UnpackTo(&user_msg);
+    // if (interval_ms) {
+    //   // throttle callback
+    //   const bool enough_time_elapsed =
+    //       std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
+    //   if (enough_time_elapsed) {
+    //     callback(user_msg);
+    //     last_sent_ = trellis::core::time::Now();
+    //   }
+    // } else {
+    //   callback(user_msg);
+    // }
+  }
+
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
@@ -212,8 +190,7 @@ template <typename MSG_T, typename ECAL_MSG_T = trellis::core::TimestampedMessag
           typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
 using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>;
 
-using DynamicSubscriberClass =
-    SubscriberImpl<google::protobuf::Message, google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
+using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, trellis::core::TimestampedMessage>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
 
 }  // namespace core

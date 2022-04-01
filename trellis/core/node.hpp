@@ -169,7 +169,7 @@ class Node {
       typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
           watchdog_callback = {},
       std::optional<double> max_frequency = {}) const {
-    return CreateSubscriber<google::protobuf::Message, google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
+    return CreateSubscriber<google::protobuf::Message, trellis::core::TimestampedMessage>(
         topic, callback, watchdog_timeout_ms, watchdog_callback, max_frequency);
   }
 
