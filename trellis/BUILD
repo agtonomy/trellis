@@ -25,6 +25,7 @@ cc_library(
         "core/config.hpp",
         "core/error_code.hpp",
         "core/event_loop.hpp",
+        "core/proto_utils.hpp",
         "core/timer.hpp",
     ],
     deps = [
