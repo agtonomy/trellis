@@ -21,6 +21,8 @@
 #include <ecal/msg/protobuf/dynamic_subscriber.h>
 #include <ecal/msg/protobuf/subscriber.h>
 
+#include "monitoring_utils.hpp"
+#include "proto_utils.hpp"
 #include "time.hpp"
 #include "timer.hpp"
 
@@ -143,47 +145,60 @@ class SubscriberImpl {
   // Timestamped message non-dynamic case
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
+    if (user_msg_ == nullptr) {
+      user_msg_ = std::make_shared<MSG_T>();
+    }
+    msg.payload().UnpackTo(&(*user_msg_));
+    CallbackHelperLogic(msg, callback);
+  }
+
+  // Timestamped message dynamic case
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
+    // const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    monitor_.UpdateSnapshot();
+    if (user_msg_ == nullptr) {
+      try {
+        user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
+      } catch (std::runtime_error&) {
+        std::cout << "couldn't get message scheme. dropping message" << std::endl;
+        return;
+      }
+    }
+
+    if (user_msg_ != nullptr) {
+      msg.payload().UnpackTo(&(*user_msg_));
+      CallbackHelperLogic(msg, callback);
+    }
+  }
+
+  // Common logic between dynamic and non-dynamic case
+  void CallbackHelperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    MSG_T user_msg;
-    msg.payload().UnpackTo(&user_msg);
     if (interval_ms) {
       // throttle callback
       const bool enough_time_elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
       if (enough_time_elapsed) {
-        callback(user_msg);
+        callback(*user_msg_);
         last_sent_ = trellis::core::time::Now();
       }
     } else {
-      callback(user_msg);
+      callback(*user_msg_);
     }
-  }
-
-  // Timestamped message dynamic case
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
-    // const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    std::cout << "GOT MESSAGE " << msg.payload().type_url() << std::endl;
-    // std::cout << "GOT GENERIC MESSAGE" << std::endl;
-    // MSG_T user_msg;
-    // msg.payload().UnpackTo(&user_msg);
-    // if (interval_ms) {
-    //   // throttle callback
-    //   const bool enough_time_elapsed =
-    //       std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
-    //   if (enough_time_elapsed) {
-    //     callback(user_msg);
-    //     last_sent_ = trellis::core::time::Now();
-    //   }
-    // } else {
-    //   callback(user_msg);
-    // }
   }
 
   ECAL_SUB_T ecal_sub_;
   EventLoop ev_loop_;
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
+
+  // Used for dynamic subscribers
+  trellis::core::MonitorUtil monitor_;
+
+  // Cache the message sent to the user, using a shared pointer here since
+  // it's useful in the dynamic case where MSG_T = google::protobuf::Message
+  std::shared_ptr<MSG_T> user_msg_{nullptr};
 };
 
 template <typename MSG_T, typename ECAL_MSG_T = trellis::core::TimestampedMessage,
