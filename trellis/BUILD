@@ -1,3 +1,20 @@
+
+proto_library(
+    name = "trellis_core_proto_lib",
+    srcs = [
+        "core/timestamped_message.proto",
+    ],
+    deps = [
+      "@com_google_protobuf//:timestamp_proto",
+      "@com_google_protobuf//:any_proto",
+    ]
+)
+
+cc_proto_library(
+    name = "trellis_core_proto",
+    deps = [":trellis_core_proto_lib"],
+)
+
 cc_library(
     name = "trellis_core",
     srcs = [
@@ -13,6 +30,7 @@ cc_library(
     deps = [
         "@asio",
         "@yaml-cpp",
+        ":trellis_core_proto",
     ],
 )
 
