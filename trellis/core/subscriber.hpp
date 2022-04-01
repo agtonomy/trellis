@@ -155,9 +155,8 @@ class SubscriberImpl {
   // Timestamped message dynamic case
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
-    // const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    monitor_.UpdateSnapshot();
     if (user_msg_ == nullptr) {
+      monitor_.UpdateSnapshot();
       try {
         user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
       } catch (std::runtime_error&) {
