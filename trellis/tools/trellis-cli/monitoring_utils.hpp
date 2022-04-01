@@ -45,6 +45,8 @@ class MonitorUtil {
   MonitorUtil();
   const eCAL::pb::Monitoring& UpdateSnapshot();
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
+  std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& topic);
+  std::string FindFirstTopicNameForProtoType(const std::string& type_string) const;
   void PrintTopics() const;
   void PrintNodes() const;
   void PrintHosts() const;
