@@ -35,11 +35,11 @@ class PublisherClass {
     tsmsg.mutable_timestamp()->set_seconds(trellis::core::time::NowInSeconds());
     auto any = tsmsg.mutable_payload();
     any->PackFrom(msg);
-    ecal_pub_.Send(msg);
+    ecal_pub_.Send(tsmsg);
   }
 
  private:
-  eCAL::protobuf::CPublisher<MSG_T> ecal_pub_;
+  eCAL::protobuf::CPublisher<trellis::core::TimestampedMessage> ecal_pub_;
 };
 
 template <typename T>
