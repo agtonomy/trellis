@@ -149,7 +149,7 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  template <class FOO = ECAL_MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
@@ -185,9 +185,7 @@ class SubscriberImpl {
     }
   }
 
-  template <class FOO = ECAL_MSG_T,
-            std::enable_if_t<std::is_same<FOO, trellis::core::TimestampedMessage>::value>* = nullptr>
-  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
+  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     MSG_T user_msg;
     msg.payload().UnpackTo(&user_msg);
