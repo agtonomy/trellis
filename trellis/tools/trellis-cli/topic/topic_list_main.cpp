@@ -40,7 +40,7 @@ int topic_list_main(int argc, char* argv[]) {
   // Delay to give time for discovery
   std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
 
-  MonitorUtil mutil;
+  trellis::core::MonitorUtil mutil;
   mutil.PrintTopics();
 
   eCAL::Finalize();
