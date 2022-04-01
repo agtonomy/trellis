@@ -149,7 +149,7 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  template <class FOO = ECAL_MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
