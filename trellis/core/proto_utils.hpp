@@ -56,6 +56,11 @@ static std::string GetDescription(const google::protobuf::Message* msg) {
 
 static std::string GetTypeName(const google::protobuf::Message* msg) { return ("proto:" + msg->GetTypeName()); }
 
+static std::string GetTypeFromURL(const std::string& type_url) {
+  // Example string: type.googleapis.com/trellis.examples.proto.HelloWorld
+  return "proto:" + type_url.substr(type_url.find_first_of('/') + 1, type_url.size());
+}
+
 }  // namespace proto_utils
 }  // namespace core
 }  // namespace trellis
