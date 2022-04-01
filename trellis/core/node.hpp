@@ -35,6 +35,7 @@
 #include "subscriber.hpp"
 #include "time.hpp"
 #include "timer.hpp"
+#include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
 namespace core {
@@ -100,7 +101,7 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T, typename ECAL_MSG_T = MSG_T,
+  template <typename MSG_T, typename ECAL_MSG_T = trellis::core::TimestampedMessage,
             typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
   Subscriber<MSG_T, ECAL_MSG_T, ECAL_SUB_T> CreateSubscriber(
       std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
