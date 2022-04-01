@@ -21,7 +21,7 @@
 #include <ecal/msg/protobuf/dynamic_subscriber.h>
 #include <ecal/msg/protobuf/subscriber.h>
 
-#include "monitoring_utils.hpp"
+#include "monitor_interface.hpp"
 #include "proto_utils.hpp"
 #include "time.hpp"
 #include "timer.hpp"
@@ -193,7 +193,7 @@ class SubscriberImpl {
   trellis::core::time::TimePoint last_sent_{};
 
   // Used for dynamic subscribers
-  trellis::core::MonitorUtil monitor_;
+  trellis::core::MonitorInterface monitor_;
 
   // Cache the message sent to the user, using a shared pointer here since
   // it's useful in the dynamic case where MSG_T = google::protobuf::Message

@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_MONITORING_UTILS_HPP
-#define TRELLIS_CORE_MONITORING_UTILS_HPP
+#ifndef TRELLIS_CORE_MONITOR_INTERFACE_HPP
+#define TRELLIS_CORE_MONITOR_INTERFACE_HPP
 
 #include <ecal/ecal.h>
 #include <ecal/protobuf/ecal_proto_dyn.h>
@@ -34,14 +34,14 @@ std::ostream& operator<<(std::ostream&, const eCAL::pb::Service&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Method&);
 
-class MonitorUtil {
+class MonitorInterface {
  public:
   using TopicFilterFunction = std::function<bool(const eCAL::pb::Topic&)>;
   using NodeFilterFunction = std::function<bool(const eCAL::pb::Process&)>;
 
   template <typename T>
   using FilterFunction = std::function<bool(const T&)>;
-  MonitorUtil();
+  MonitorInterface();
   const eCAL::pb::Monitoring& UpdateSnapshot();
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
   std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& type_string);
@@ -82,4 +82,4 @@ class MonitorUtil {
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_MONITORING_UTILS_HPP
+#endif  // TRELLIS_CORE_MONITOR_INTERFACE_HPP

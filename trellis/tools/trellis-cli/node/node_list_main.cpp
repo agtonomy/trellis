@@ -18,7 +18,7 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "trellis/core/monitoring_utils.hpp"
+#include "trellis/core/monitor_interface.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
@@ -40,7 +40,7 @@ int node_list_main(int argc, char* argv[]) {
   // Delay to give time for discovery
   std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
 
-  trellis::core::MonitorUtil mutil;
+  trellis::core::MonitorInterface mutil;
   mutil.PrintNodes();
 
   eCAL::Finalize();

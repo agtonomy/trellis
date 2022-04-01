@@ -19,7 +19,7 @@
 
 #include <cxxopts.hpp>
 
-#include "trellis/core/monitoring_utils.hpp"
+#include "trellis/core/monitor_interface.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
@@ -58,7 +58,7 @@ int topic_publish_main(int argc, char* argv[]) {
   // Delay to give time for discovery
   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
-  MonitorUtil mutil;
+  MonitorInterface mutil;
 
   auto message = mutil.GetMessageFromTopic(topic);
 
