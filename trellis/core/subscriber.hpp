@@ -27,7 +27,7 @@
 namespace trellis {
 namespace core {
 
-template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+template <typename MSG_T, typename ECAL_MSG_T = MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
 class SubscriberImpl {
  public:
   using Callback = std::function<void(const MSG_T&)>;
@@ -192,10 +192,11 @@ class SubscriberImpl {
   trellis::core::time::TimePoint last_sent_{};
 };
 
-template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
-using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, ECAL_SUB_T>>;
+template <typename MSG_T, typename ECAL_MSG_T = MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>;
 
-using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
+using DynamicSubscriberClass =
+    SubscriberImpl<google::protobuf::Message, google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
 
 }  // namespace core
