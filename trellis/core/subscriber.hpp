@@ -107,9 +107,6 @@ class SubscriberImpl {
   }
 
  private:
-  using RawCallback =
-      std::function<void(const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_, long long id_)>;
-
   /*
    * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
    * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
