@@ -29,7 +29,7 @@ namespace core {
 template <typename MSG_T>
 class PublisherClass {
  public:
-  PublisherClass(const std::string& topic) : ecal_pub_(topic) {}
+  PublisherClass(const std::string& topic) : ecal_pub_(topic), ecal_pub_raw_(topic + "/raw") {}
   void Send(const MSG_T& msg) {
     trellis::core::TimestampedMessage tsmsg;
     tsmsg.mutable_timestamp()->set_seconds(trellis::core::time::NowInSeconds());
@@ -40,6 +40,9 @@ class PublisherClass {
 
  private:
   eCAL::protobuf::CPublisher<trellis::core::TimestampedMessage> ecal_pub_;
+
+  // This enables us to get our MSG_T schema into the monitoring layer
+  eCAL::protobuf::CPublisher<MSG_T> ecal_pub_raw_;
 };
 
 template <typename T>
