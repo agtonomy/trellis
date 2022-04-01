@@ -38,12 +38,14 @@ cc_library(
 cc_library(
     name = "trellis_core_ecal",
     srcs = [
+        "core/monitoring_utils.cpp",
         "core/node.cpp",
     ],
     hdrs = [
         "core/logging.hpp",
         "core/message_consumer.hpp",
         "core/node.hpp",
+        "core/monitoring_utils.hpp",
         "core/publisher.hpp",
         "core/service_client.hpp",
         "core/service_server.hpp",

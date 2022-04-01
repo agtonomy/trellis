@@ -18,8 +18,8 @@
 #include <cxxopts.hpp>
 #include <thread>
 
+#include "trellis/core/monitoring_utils.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
-#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
 namespace tools {

@@ -19,9 +19,9 @@
 
 #include <cxxopts.hpp>
 
+#include "trellis/core/monitoring_utils.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
-#include "trellis/tools/trellis-cli/monitoring_utils.hpp"
 
 namespace trellis {
 namespace tools {
@@ -32,10 +32,14 @@ using namespace trellis::core;
 int topic_publish_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_publish_command.data(), topic_publish_command_desc.data());
   options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())(
-      "b,body", "message body in JSON", cxxopts::value<std::string>())("c,count", "message count",
-                                                                       cxxopts::value<int>()->default_value("1"))(
-      "d,delay", "discovery delay milliseconds", cxxopts::value<int>()->default_value("1500"))(
-      "r,rate", "publish rate hz", cxxopts::value<int>()->default_value("1"))("h,help", "print usage");
+      "b,body", "message body in JSON",
+      cxxopts::value<std::string>())("c,count", "message count",
+                                     cxxopts::value<int>()->default_value(
+                                         "1"))("d,delay", "discovery delay milliseconds",
+                                               cxxopts::value<int>()->default_value(
+                                                   "1500"))("r,rate", "publish rate hz",
+                                                            cxxopts::value<int>()->default_value("1"))("h,help",
+                                                                                                       "print usage");
   auto result = options.parse(argc, argv);
   if (result.count("help") || !result.count("topic") || !result.count("body")) {
     std::cout << options.help() << std::endl;
