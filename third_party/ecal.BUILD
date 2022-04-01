@@ -200,6 +200,8 @@ cc_library(
         "app/rec/rec_client_core/src/ecal_rec_impl.cpp",
         "app/rec/rec_client_core/src/ecal_rec_impl.h",
         "app/rec/rec_client_core/src/frame.h",
+        "app/rec/rec_client_core/src/frame_buffer.cpp",
+        "app/rec/rec_client_core/src/frame_buffer.h",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.cpp",
         "app/rec/rec_client_core/src/garbage_collector_trigger_thread.h",
         #"app/rec/rec_client_core/src/job/ftp_upload_thread.cpp", # disabling due to curl dependency
