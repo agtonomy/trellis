@@ -116,14 +116,14 @@ class SubscriberImpl {
    */
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [this, callback](const char* topic_name_, const MSG_T& msg_, long long time_,
+    auto callback_wrapper = [this, callback](const char* topic_name_, const ECAL_MSG_T& msg_, long long time_,
                                              long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [this, callback](const char* topic_name_, const MSG_T& msg_, long long time_) {
+    auto callback_wrapper = [this, callback](const char* topic_name_, const ECAL_MSG_T& msg_, long long time_) {
       CallbackWrapperLogic(msg_, callback);
     };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
@@ -134,7 +134,7 @@ class SubscriberImpl {
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
     auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const MSG_T& msg_, long long time_, long long clock_,
+                                const char* topic_name_, const ECAL_MSG_T& msg_, long long time_, long long clock_,
                                 long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
@@ -154,7 +154,7 @@ class SubscriberImpl {
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
     auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const MSG_T& msg_, long long time_) mutable {
+                                const char* topic_name_, const ECAL_MSG_T& msg_, long long time_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -168,7 +168,7 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  void CallbackWrapperLogic(const MSG_T& msg, const Callback& callback) {
+  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     if (interval_ms) {
       // throttle callback
