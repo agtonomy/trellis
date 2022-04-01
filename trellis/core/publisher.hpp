@@ -20,6 +20,7 @@
 
 #include <ecal/msg/protobuf/publisher.h>
 
+#include "trellis/core/time.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
@@ -29,7 +30,13 @@ template <typename MSG_T>
 class PublisherClass {
  public:
   PublisherClass(const std::string& topic) : ecal_pub_(topic) {}
-  void Send(const MSG_T& msg) { ecal_pub_.Send(msg); }
+  void Send(const MSG_T& msg) {
+    trellis::core::TimestampedMessage tsmsg;
+    tsmsg.mutable_timestamp()->set_seconds(trellis::core::time::NowInSeconds());
+    auto any = tsmsg.mutable_payload();
+    any->PackFrom(msg);
+    ecal_pub_.Send(msg);
+  }
 
  private:
   eCAL::protobuf::CPublisher<MSG_T> ecal_pub_;
