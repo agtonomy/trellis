@@ -20,11 +20,20 @@
 
 #include <ecal/msg/protobuf/publisher.h>
 
+#include "trellis/core/timestamped_message.pb.h"
+
 namespace trellis {
 namespace core {
 
-template <typename T>
-using PublisherClass = eCAL::protobuf::CPublisher<T>;
+template <typename MSG_T>
+class PublisherClass {
+ public:
+  PublisherClass(const std::string& topic) : ecal_pub_(topic) {}
+  void Send(const MSG_T& msg) { ecal_pub_.Send(msg); }
+
+ private:
+  eCAL::protobuf::CPublisher<MSG_T> ecal_pub_;
+};
 
 template <typename T>
 using Publisher = std::shared_ptr<PublisherClass<T>>;
