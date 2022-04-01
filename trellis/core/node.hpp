@@ -100,7 +100,8 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T, typename ECAL_MSG_T = MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
+  template <typename MSG_T, typename ECAL_MSG_T = MSG_T,
+            typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
   Subscriber<MSG_T, ECAL_MSG_T, ECAL_SUB_T> CreateSubscriber(
       std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {},

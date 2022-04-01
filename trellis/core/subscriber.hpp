@@ -168,6 +168,8 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
+  template <class FOO = ECAL_MSG_T,
+            std::enable_if_t<!std::is_same<FOO, trellis::core::TimestampedMessage>::value>* = nullptr>
   void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     if (interval_ms) {
@@ -180,6 +182,25 @@ class SubscriberImpl {
       }
     } else {
       callback(msg);
+    }
+  }
+
+  template <class FOO = ECAL_MSG_T,
+            std::enable_if_t<std::is_same<FOO, trellis::core::TimestampedMessage>::value>* = nullptr>
+  void CallbackWrapperLogic(const ECAL_MSG_T& msg, const Callback& callback) {
+    const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    MSG_T user_msg;
+    msg.payload().UnpackTo(&user_msg);
+    if (interval_ms) {
+      // throttle callback
+      const bool enough_time_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
+      if (enough_time_elapsed) {
+        callback(user_msg);
+        last_sent_ = trellis::core::time::Now();
+      }
+    } else {
+      callback(user_msg);
     }
   }
 
