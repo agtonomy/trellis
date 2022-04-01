@@ -1,13 +1,12 @@
-
 proto_library(
     name = "trellis_core_proto_lib",
     srcs = [
         "core/timestamped_message.proto",
     ],
     deps = [
-      "@com_google_protobuf//:timestamp_proto",
-      "@com_google_protobuf//:any_proto",
-    ]
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 cc_proto_library(
@@ -29,9 +28,9 @@ cc_library(
         "core/timer.hpp",
     ],
     deps = [
+        ":trellis_core_proto",
         "@asio",
         "@yaml-cpp",
-        ":trellis_core_proto",
     ],
 )
 
@@ -44,8 +43,8 @@ cc_library(
     hdrs = [
         "core/logging.hpp",
         "core/message_consumer.hpp",
-        "core/node.hpp",
         "core/monitoring_utils.hpp",
+        "core/node.hpp",
         "core/publisher.hpp",
         "core/service_client.hpp",
         "core/service_server.hpp",
