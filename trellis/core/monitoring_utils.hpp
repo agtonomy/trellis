@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_TOOLS_TRELLIS_CLI_MONITORING_UTILS_HPP
-#define TRELLIS_TOOLS_TRELLIS_CLI_MONITORING_UTILS_HPP
+#ifndef TRELLIS_CORE_MONITORING_UTILS_HPP
+#define TRELLIS_CORE_MONITORING_UTILS_HPP
 
 #include <ecal/ecal.h>
 #include <ecal/protobuf/ecal_proto_dyn.h>
@@ -26,8 +26,7 @@
 #include "ecal/pb/monitoring.pb.h"
 
 namespace trellis {
-namespace tools {
-namespace cli {
+namespace core {
 
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Host&);
 std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
@@ -45,7 +44,7 @@ class MonitorUtil {
   MonitorUtil();
   const eCAL::pb::Monitoring& UpdateSnapshot();
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
-  std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& topic);
+  std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& type_string);
   std::string FindFirstTopicNameForProtoType(const std::string& type_string) const;
   void PrintTopics() const;
   void PrintNodes() const;
@@ -80,8 +79,7 @@ class MonitorUtil {
   eCAL::pb::Monitoring snapshot_;
 };
 
-}  // namespace cli
-}  // namespace tools
+}  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_TOOLS_TRELLIS_CLI_MONITORING_UTILS_HPP
+#endif  // TRELLIS_CORE_MONITORING_UTILS_HPP

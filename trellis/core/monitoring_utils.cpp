@@ -23,8 +23,7 @@
 #include <sstream>
 
 namespace trellis {
-namespace tools {
-namespace cli {
+namespace core {
 
 std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Topic& topic) {
   ostream << "tname        : " << topic.tname() << std::endl;      // topic name
@@ -127,6 +126,11 @@ std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(cons
   return message;
 }
 
+std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTypeString(const std::string& type_string) {
+  const auto topic = FindFirstTopicNameForProtoType(type_string);
+  return GetMessageFromTopic(topic);
+}
+
 std::string MonitorUtil::FindFirstTopicNameForProtoType(const std::string& type_string) const {
   const auto& topics = snapshot_.topics();
   auto filter = [type_string](const eCAL::pb::Topic& topic) { return topic.ttype() == type_string; };
@@ -182,6 +186,5 @@ void MonitorUtil::PrintServiceInfo(const std::string service_name) const {
   }
 }
 
-}  // namespace cli
-}  // namespace tools
+}  // namespace core
 }  // namespace trellis
