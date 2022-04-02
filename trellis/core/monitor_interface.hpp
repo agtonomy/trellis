@@ -36,23 +36,66 @@ std::ostream& operator<<(std::ostream&, const eCAL::pb::Method&);
 
 class MonitorInterface {
  public:
-  using TopicFilterFunction = std::function<bool(const eCAL::pb::Topic&)>;
-  using NodeFilterFunction = std::function<bool(const eCAL::pb::Process&)>;
-
   template <typename T>
   using FilterFunction = std::function<bool(const T&)>;
+
   MonitorInterface();
+
+  /**
+   * UpdateSnapshot updates the internal cached snapshot of the monitoring layer information
+   *
+   * @return a const reference to the newly-updated internal snapshot
+   */
   const eCAL::pb::Monitoring& UpdateSnapshot();
+
+  /**
+   * GetMessageFromTopic create a new proto message object containing the message schema tied to the given topic
+   *
+   * @return a shared pointer to a proto message
+   */
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
+
+  /**
+   * GetMessageFromTypeString create a new proto message object containing the message schema tied to the given type
+   * string
+   *
+   * A type string is the fully qualified proto message name prefixed with "proto:"
+   * Example type string: proto:trellis.examples.proto.HelloWorld
+   *
+   * @return a shared pointer to a proto message
+   */
   std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& type_string);
-  std::string FindFirstTopicNameForProtoType(const std::string& type_string) const;
+
+  /**
+   * PrintTopics print the list of topic metadata broadcasted on the monitoring layer
+   */
   void PrintTopics() const;
+
+  /**
+   * PrintNodes print the list of node metadata broadcasted on the monitoring layer
+   */
   void PrintNodes() const;
+
+  /**
+   * PrintHosts print the list of host metadata broadcasted on the monitoring layer
+   */
   void PrintHosts() const;
+
+  /**
+   * PrintServices print the list of service metadata broadcasted on the monitoring layer
+   */
   void PrintServices() const;
+
+  /**
+   * PrintServiceInfo print the service metadata for a particular service
+   *
+   * @param service_name a string representing the service to print
+   */
   void PrintServiceInfo(const std::string service_name) const;
 
  private:
+  std::string FindFirstTopicNameForProtoType(const std::string& type_string) const;
+
   template <typename T>
   auto GetFilteredIterator(const google::protobuf::RepeatedPtrField<T>& entries, FilterFunction<T> filter) const {
     return std::find_if(entries.begin(), entries.end(), filter);
