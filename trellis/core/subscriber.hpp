@@ -160,7 +160,7 @@ class SubscriberImpl {
       try {
         user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
       } catch (std::runtime_error&) {
-        std::cout << "couldn't get message scheme. dropping message" << std::endl;
+        std::cout << "couldn't get message schema. dropping message" << std::endl;
         return;
       }
     }
