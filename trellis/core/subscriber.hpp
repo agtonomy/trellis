@@ -157,12 +157,8 @@ class SubscriberImpl {
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     if (user_msg_ == nullptr) {
       monitor_.UpdateSnapshot();
-      try {
-        user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
-      } catch (std::runtime_error&) {
-        std::cout << "couldn't get message schema. dropping message" << std::endl;
-        return;
-      }
+      // This will throw on failure
+      user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
     }
 
     if (user_msg_ != nullptr) {
