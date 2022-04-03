@@ -34,6 +34,8 @@ static std::string GetTypeFromURL(const std::string& type_url) {
   return "proto:" + type_url.substr(type_url.find_first_of('/') + 1, type_url.size());
 }
 
+static std::string GetRawTopicString(const std::string& topic) { return topic + "/raw"; }
+
 }  // namespace proto_utils
 }  // namespace core
 }  // namespace trellis

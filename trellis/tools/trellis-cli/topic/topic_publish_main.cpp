@@ -54,21 +54,25 @@ int topic_publish_main(int argc, char* argv[]) {
   // Delay to give time for discovery
   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
-  MonitorInterface mutil;
+  MonitorInterface monitor_interface;
 
-  auto message = mutil.GetMessageFromTopic(topic);
+  auto message = monitor_interface.GetMessageFromTopic(proto_utils::GetRawTopicString(topic));
 
   if (message == nullptr) {
     std::cerr << "Could not get proto message from descriptor set." << std::endl;
     return 1;
   }
-  auto pub = node.CreateDynamicPublisher(topic, message);
+  auto pub = node.CreateDynamicPublisher(topic);
 
   google::protobuf::util::JsonParseOptions json_options;
   json_options.ignore_unknown_fields = false;
   json_options.case_insensitive_enum_parsing = false;
 
   auto r = google::protobuf::util::JsonStringToMessage(body, message.get(), json_options);
+  if (!r.ok()) {
+    std::cerr << "Could not convert JSON string to message (status = " << r.message() << ")" << std::endl;
+    return 1;
+  }
 
   std::cout << "Echoing " << count << " messages at " << rate << " hz to topic " << topic << std::endl;
 

@@ -125,28 +125,15 @@ class Node {
   /**
    * CreateDynamicPublisher create a handle to a publisher for message types not known at compile time.
    *
+   * In order to use the dynamic publisher, you must be able to create instances of the abstract
+   * google::protobuf::Message type at runtime.
+   *
    * @param topic the topic name to publish to
-   * @param msg an instance of google::protobuf::Message that contains the appropriate message schema
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::shared_ptr<google::protobuf::Message> msg) const {
-    return std::make_shared<DynamicPublisherImpl>(topic, msg);
-  }
-
-  /**
-   * CreateDynamicPublisher create a handle to a publisher for message types not known at compile time.
-   *
-   * @param topic the topic name to publish to
-   * @param proto_type_name a string representing the message name to be used
-   *
-   * Note: the string must be a fully qualified proto name (e.g. my.proto.package.MyMessage)
-   * The compiled message must be linked together with this library in order for it to be found at runtime.
-   *
-   * @return a publisher handle
-   */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::string proto_type_name) const {
-    return std::make_shared<DynamicPublisherImpl>(topic, proto_type_name);
+  DynamicPublisher CreateDynamicPublisher(std::string topic) const {
+    return std::make_shared<PublisherClass<google::protobuf::Message>>(topic);
   }
 
   /**

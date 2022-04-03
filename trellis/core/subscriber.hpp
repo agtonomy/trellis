@@ -41,7 +41,8 @@ class SubscriberImpl {
    * @param topic the topic string to subscribe to
    * @param callback the callback function to receive messages on
    */
-  SubscriberImpl(const std::string& topic, Callback callback) : ecal_sub_{topic} {
+  SubscriberImpl(const std::string& topic, Callback callback)
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)} {
     SetCallbackWithoutWatchdog(callback);
   }
 
@@ -68,7 +69,7 @@ class SubscriberImpl {
    */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
                  WatchdogCallback watchdog_callback, EventLoop event_loop)
-      : ecal_sub_{topic} {
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)} {
     SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
@@ -184,6 +185,20 @@ class SubscriberImpl {
   }
 
   ECAL_SUB_T ecal_sub_;
+
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
+    return std::make_shared<eCAL::protobuf::CSubscriber<MSG_T>>(proto_utils::GetRawTopicString(topic));
+  }
+
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
+    return nullptr;
+  }
+
+  std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
+      ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
+
   EventLoop ev_loop_;
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
