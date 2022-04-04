@@ -165,10 +165,8 @@ class SubscriberImpl {
 
   /*
    * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
-   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
-   * `SetCallbackWithoutWatchdog` and `SetCallbackWithWatchdog` overloads based on whether or not we're using the
-   * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
-   * subscriber callbacks use a slightly different function signature.
+   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct overloads
+   * based on whether or not we're using the `google::protobuf::Message` type.
    */
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
@@ -177,7 +175,7 @@ class SubscriberImpl {
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
-    return nullptr;
+    return nullptr;  // unused for dynamic subscribers
   }
 
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
