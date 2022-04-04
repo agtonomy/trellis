@@ -57,8 +57,9 @@ int topic_echo_main(int argc, char* argv[]) {
   std::vector<trellis::core::DynamicSubscriber> subs;
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {
-    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms, add_whitespace,
-                                                    timestamp](const google::protobuf::Message& msg) {
+    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms, add_whitespace, timestamp](
+                                                       const trellis::core::time::TimePoint&,
+                                                       const google::protobuf::Message& msg) {
       if (throttle_interval_ms != 0) {
         auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
         if (elapsed_ms <= throttle_interval_ms) {

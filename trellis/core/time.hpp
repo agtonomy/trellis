@@ -20,6 +20,8 @@
 
 #include <ecal/ecal_time.h>
 
+#include "trellis/core/timestamped_message.pb.h"
+
 namespace trellis {
 namespace core {
 namespace time {
