@@ -28,12 +28,11 @@
 namespace trellis {
 namespace core {
 
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Host&);
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Service&);
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
-std::ostream& operator<<(std::ostream&, const eCAL::pb::Method&);
-
+/**
+ * MonitorInterface provides an interface to access the monitoring layer
+ *
+ * The APIs are not exhaustive and contain just the interfaces that are needed.
+ */
 class MonitorInterface {
  public:
   template <typename T>
@@ -51,6 +50,8 @@ class MonitorInterface {
   /**
    * GetMessageFromTopic create a new proto message object containing the message schema tied to the given topic
    *
+   * This is useful for dynamic publishers and subscribers, where the message scheme must be determined at runtime.
+   *
    * @return a shared pointer to a proto message
    */
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
@@ -61,6 +62,8 @@ class MonitorInterface {
    *
    * A type string is the fully qualified proto message name prefixed with "proto:"
    * Example type string: proto:trellis.examples.proto.HelloWorld
+   *
+   * This is useful for dynamic publishers and subscribers, where the message scheme must be determined at runtime.
    *
    * @return a shared pointer to a proto message
    */
@@ -121,6 +124,12 @@ class MonitorInterface {
   std::string snapshot_raw_;
   eCAL::pb::Monitoring snapshot_;
 };
+
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Host&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Process&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Service&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Topic&);
+std::ostream& operator<<(std::ostream&, const eCAL::pb::Method&);
 
 }  // namespace core
 }  // namespace trellis
