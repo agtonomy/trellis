@@ -29,7 +29,7 @@
 namespace trellis {
 namespace core {
 
-template <typename MSG_T, typename ECAL_MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
+template <typename MSG_T>
 class SubscriberImpl {
  public:
   using Callback = std::function<void(const MSG_T&)>;
@@ -119,8 +119,9 @@ class SubscriberImpl {
    */
 
   void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [this, callback](const char* topic_name_, const ECAL_MSG_T& msg_, long long time_,
-                                             long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
+    auto callback_wrapper = [this, callback](const char* topic_name_, const trellis::core::TimestampedMessage& msg_,
+                                             long long time_, long long clock_,
+                                             long long id_) { CallbackWrapperLogic(msg_, callback); };
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
@@ -128,8 +129,8 @@ class SubscriberImpl {
                                EventLoop event_loop) {
     Timer watchdog_timer{nullptr};
     auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const ECAL_MSG_T& msg_, long long time_, long long clock_,
-                                long long id_) mutable {
+                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                                long long clock_, long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
         watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
@@ -184,7 +185,7 @@ class SubscriberImpl {
     }
   }
 
-  ECAL_SUB_T ecal_sub_;
+  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
@@ -211,12 +212,11 @@ class SubscriberImpl {
   std::shared_ptr<MSG_T> user_msg_{nullptr};
 };
 
-template <typename MSG_T, typename ECAL_MSG_T = trellis::core::TimestampedMessage,
-          typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
-using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>;
+template <typename MSG_T>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
 
-using DynamicSubscriberClass = SubscriberImpl<google::protobuf::Message, trellis::core::TimestampedMessage>;
-using DynamicSubscriber = std::shared_ptr<DynamicSubscriberClass>;
+using DynamicSubscriberImpl = SubscriberImpl<google::protobuf::Message>;
+using DynamicSubscriber = std::shared_ptr<DynamicSubscriberImpl>;
 
 }  // namespace core
 }  // namespace trellis

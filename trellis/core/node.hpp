@@ -89,7 +89,6 @@ class Node {
    * CreateSubscriber create a new handle for a subscriber
    *
    * @tparam MSG_T the message type that we expect to receive from the publisher
-   * @tparam ECAL_SUB_T the eCAL subscriber primitive to use (will almost always be default)
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
@@ -101,24 +100,23 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T, typename ECAL_MSG_T = trellis::core::TimestampedMessage,
-            typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<ECAL_MSG_T>>
-  Subscriber<MSG_T, ECAL_MSG_T, ECAL_SUB_T> CreateSubscriber(
-      std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {},
-      std::optional<double> max_frequency = {}) const {
+  template <typename MSG_T>
+  Subscriber<MSG_T> CreateSubscriber(std::string topic, std::function<void(const MSG_T&)> callback,
+                                     std::optional<unsigned> watchdog_timeout_ms = {},
+                                     typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
+                                     std::optional<double> max_frequency = {}) const {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequency);
     if (do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>(
-          topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback, GetEventLoop(), *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+                                                     GetEventLoop(), *max_frequency);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency);
     } else if (!do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>(
-          topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback, GetEventLoop());
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+                                                     GetEventLoop());
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_MSG_T, ECAL_SUB_T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
     }
   }
 
@@ -153,11 +151,10 @@ class Node {
   DynamicSubscriber CreateDynamicSubscriber(
       std::string topic, std::function<void(const google::protobuf::Message&)> callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
-          watchdog_callback = {},
+      typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
       std::optional<double> max_frequency = {}) const {
-    return CreateSubscriber<google::protobuf::Message, trellis::core::TimestampedMessage>(
-        topic, callback, watchdog_timeout_ms, watchdog_callback, max_frequency);
+    return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
+                                                       max_frequency);
   }
 
   /**
