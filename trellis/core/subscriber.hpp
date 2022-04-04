@@ -110,14 +110,6 @@ class SubscriberImpl {
   }
 
  private:
-  /*
-   * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
-   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
-   * `SetCallbackWithoutWatchdog` and `SetCallbackWithWatchdog` overloads based on whether or not we're using the
-   * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
-   * subscriber callbacks use a slightly different function signature.
-   */
-
   void SetCallbackWithoutWatchdog(Callback callback) {
     auto callback_wrapper = [this, callback](const char* topic_name_, const trellis::core::TimestampedMessage& msg_,
                                              long long time_, long long clock_,
@@ -144,23 +136,9 @@ class SubscriberImpl {
     ecal_sub_.AddReceiveCallback(callback_wrapper);
   }
 
-  // Timestamped message non-dynamic case
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     if (user_msg_ == nullptr) {
-      user_msg_ = std::make_shared<MSG_T>();
-    }
-    msg.payload().UnpackTo(&(*user_msg_));
-    CallbackHelperLogic(msg, callback);
-  }
-
-  // Timestamped message dynamic case
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
-    if (user_msg_ == nullptr) {
-      monitor_.UpdateSnapshot();
-      // This will throw on failure
-      user_msg_ = monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(msg.payload().type_url()));
+      user_msg_ = CreateUserMessage(msg.payload().type_url());
     }
 
     if (user_msg_ != nullptr) {
@@ -185,8 +163,13 @@ class SubscriberImpl {
     }
   }
 
-  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
-
+  /*
+   * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
+   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct
+   * `SetCallbackWithoutWatchdog` and `SetCallbackWithWatchdog` overloads based on whether or not we're using the
+   * `google::protobuf::Message` type. This is because unfortunately there's a special case because eCAL's dynamic
+   * subscriber callbacks use a slightly different function signature.
+   */
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
     return std::make_shared<eCAL::protobuf::CSubscriber<MSG_T>>(proto_utils::GetRawTopicString(topic));
@@ -196,6 +179,20 @@ class SubscriberImpl {
   static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
     return nullptr;
   }
+
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  std::shared_ptr<MSG_T> CreateUserMessage(const std::string&) {
+    return std::make_shared<MSG_T>();
+  }
+
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  std::shared_ptr<MSG_T> CreateUserMessage(const std::string& type_url) {
+    monitor_.UpdateSnapshot();
+    // This will throw on failure
+    return monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(type_url));
+  }
+
+  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
       ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
