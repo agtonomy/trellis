@@ -80,6 +80,29 @@ inline unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
  */
 inline unsigned long long NowInMilliseconds() { return TimePointToMilliseconds(Now()); }
 
+/**
+ * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
+ *
+ */
+inline TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg) {
+  const auto duration =
+      std::chrono::seconds{msg.timestamp().seconds()} + std::chrono::nanoseconds{msg.timestamp().nanos()};
+  return TimePoint{duration};
+}
+
+/**
+ * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
+ */
+inline google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp) {
+  google::protobuf::Timestamp ts;
+  auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch());
+  const auto duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(duration_ns);
+  duration_ns -= duration_seconds;
+  ts.set_seconds(duration_seconds.count());
+  ts.set_nanos(duration_ns.count());
+  return ts;
+}
+
 }  // namespace time
 }  // namespace core
 }  // namespace trellis

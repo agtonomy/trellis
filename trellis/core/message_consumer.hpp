@@ -214,27 +214,26 @@ class MessageConsumer {
       // for creating subscribers based on these optional features. They are enumerated in this if/else chain.
       // XXX(bsirang): currently if there are multiple subscribers of the same message type, they will all share the
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
+      const auto message_callback = [topic, this](const time::TimePoint& time, const MessageType& msg) {
+        NewMessage(topic, time, msg);
+      };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
         auto watchdog_callback_wrapper = [topic, watchdog_callback]() { watchdog_callback(topic); };
         subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
-            topic, [topic, this](const time::TimePoint&, const MessageType& msg) { NewMessage(topic, msg); },
-            watchdog_timeout, watchdog_callback_wrapper, frequency_throttle_hz));
+            topic, message_callback, watchdog_timeout, watchdog_callback_wrapper, frequency_throttle_hz));
       } else if (do_frequency_throttle && !do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
-        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
-            topic, [topic, this](const time::TimePoint&, const MessageType& msg) { NewMessage(topic, msg); }, {}, {},
-            frequency_throttle_hz));
+        subscriber_list.emplace_back(
+            node.CreateSubscriber<MessageType>(topic, message_callback, {}, {}, frequency_throttle_hz));
       } else if (!do_frequency_throttle && do_watchdog) {
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
         auto watchdog_callback_wrapper = [topic, watchdog_callback]() { watchdog_callback(topic); };
-        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
-            topic, [topic, this](const time::TimePoint&, const MessageType& msg) { NewMessage(topic, msg); },
-            watchdog_timeout, watchdog_callback_wrapper));
+        subscriber_list.emplace_back(
+            node.CreateSubscriber<MessageType>(topic, message_callback, watchdog_timeout, watchdog_callback_wrapper));
       } else {
-        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(
-            topic, [topic, this](const time::TimePoint&, const MessageType& msg) { NewMessage(topic, msg); }));
+        subscriber_list.emplace_back(node.CreateSubscriber<MessageType>(topic, message_callback));
       }
     }
 
@@ -242,8 +241,8 @@ class MessageConsumer {
   }
 
   template <typename MSG_T>
-  void NewMessage(const std::string& topic, const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time::Now(), msg}));
+  void NewMessage(const std::string& topic, const time::TimePoint& time, const MSG_T& msg) {
+    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time, msg}));
 
     // Check if we have a callback to signal an update
     if (update_callback_) {

@@ -58,15 +58,14 @@ int topic_echo_main(int argc, char* argv[]) {
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {
     auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms, add_whitespace, timestamp](
-                                                       const trellis::core::time::TimePoint&,
+                                                       const trellis::core::time::TimePoint& msgtime,
                                                        const google::protobuf::Message& msg) {
       if (throttle_interval_ms != 0) {
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_echo_time_).count();
+        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_echo_time_).count();
         if (elapsed_ms <= throttle_interval_ms) {
           return;  // rate throttle
         }
       }
-      const auto now = time::Now();
 
       // convert to JSON and print
       std::string json_raw;
@@ -87,14 +86,14 @@ int topic_echo_main(int argc, char* argv[]) {
         auto it = json_obj.find("timestamp");
         // Make sure timestamp key doesn't already exist...
         if (it == json_obj.end()) {
-          json_obj["timestamp"] = time::TimePointToSeconds(now);
+          json_obj["timestamp"] = time::TimePointToSeconds(msgtime);
           json_raw = json_obj.dump();
         }
       }
 
       // Post the output to the event loop to remove synchronization problems between multiple subscribers
       asio::post(*ev, [json_raw]() { std::cout << json_raw << std::endl; });
-      last_echo_time_ = now;
+      last_echo_time_ = msgtime;
     });
 
     subs.push_back(sub);
