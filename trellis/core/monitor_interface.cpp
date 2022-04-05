@@ -15,7 +15,7 @@
  *
  */
 
-#include "monitoring_utils.hpp"
+#include "monitor_interface.hpp"
 
 #include <google/protobuf/descriptor.pb.h>
 
@@ -23,8 +23,7 @@
 #include <sstream>
 
 namespace trellis {
-namespace tools {
-namespace cli {
+namespace core {
 
 std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Topic& topic) {
   ostream << "tname        : " << topic.tname() << std::endl;      // topic name
@@ -82,9 +81,9 @@ std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Method& method) 
   return ostream;
 }
 
-MonitorUtil::MonitorUtil() { static_cast<void>(UpdateSnapshot()); }
+MonitorInterface::MonitorInterface() { static_cast<void>(UpdateSnapshot()); }
 
-const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {
+const eCAL::pb::Monitoring& MonitorInterface::UpdateSnapshot() {
   std::string snapshot_raw;
   eCAL::pb::Monitoring snapshot;
   if (eCAL::Monitoring::GetMonitoring(snapshot_raw)) {
@@ -95,7 +94,7 @@ const eCAL::pb::Monitoring& MonitorUtil::UpdateSnapshot() {
   return snapshot_;
 }
 
-std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(const std::string& topic) {
+std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic(const std::string& topic) {
   std::string topic_type = eCAL::Util::GetTypeName(topic);
   topic_type = topic_type.substr(topic_type.find_first_of(':') + 1, topic_type.size());
   topic_type = topic_type.substr(topic_type.find_last_of('.') + 1, topic_type.size());
@@ -127,27 +126,42 @@ std::shared_ptr<google::protobuf::Message> MonitorUtil::GetMessageFromTopic(cons
   return message;
 }
 
-void MonitorUtil::PrintTopics() const {
+std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTypeString(const std::string& type_string) {
+  const auto topic = FindFirstTopicNameForProtoType(type_string);
+  return GetMessageFromTopic(topic);
+}
+
+std::string MonitorInterface::FindFirstTopicNameForProtoType(const std::string& type_string) const {
+  const auto& topics = snapshot_.topics();
+  auto filter = [type_string](const eCAL::pb::Topic& topic) { return topic.ttype() == type_string; };
+  auto it = GetFilteredIterator<eCAL::pb::Topic>(topics, filter);
+  if (it == topics.end()) {
+    throw std::runtime_error("No topics found matching type " + type_string);
+  }
+  return it->tname();
+}
+
+void MonitorInterface::PrintTopics() const {
   const auto& topics = snapshot_.topics();
   PrintEntries<eCAL::pb::Topic>(topics);
 }
 
-void MonitorUtil::PrintNodes() const {
+void MonitorInterface::PrintNodes() const {
   const auto& nodes = snapshot_.processes();
   PrintEntries<eCAL::pb::Process>(nodes);
 }
 
-void MonitorUtil::PrintHosts() const {
+void MonitorInterface::PrintHosts() const {
   const auto& hosts = snapshot_.hosts();
   PrintEntries<eCAL::pb::Host>(hosts);
 }
 
-void MonitorUtil::PrintServices() const {
+void MonitorInterface::PrintServices() const {
   const auto& services = snapshot_.services();
   PrintEntries<eCAL::pb::Service>(services);
 }
 
-void MonitorUtil::PrintServiceInfo(const std::string service_name) const {
+void MonitorInterface::PrintServiceInfo(const std::string service_name) const {
   const auto& services = snapshot_.services();
   auto filter = [service_name](const eCAL::pb::Service& service) { return service.sname() == service_name; };
   auto it = GetFilteredIterator<eCAL::pb::Service>(services, filter);
@@ -172,6 +186,5 @@ void MonitorUtil::PrintServiceInfo(const std::string service_name) const {
   }
 }
 
-}  // namespace cli
-}  // namespace tools
+}  // namespace core
 }  // namespace trellis

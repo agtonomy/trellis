@@ -28,7 +28,8 @@ Node::Node(std::string name)
       signal_set_(*ev_loop_, SIGTERM, SIGINT) {
   // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
   // options. We won't make use of that for now. We'll just call Initialize with default arguments.
-  eCAL::Initialize();
+  // eCAL::Initialize();
+  eCAL::Initialize(0, nullptr, nullptr, eCAL::Init::All);
 
   // Instead of passing the unit name as part of Initialize above, we'll set it here explicitly. This ensures the unit
   // name gets set in cases where we may have called Initialize already, such as from logging APIs.

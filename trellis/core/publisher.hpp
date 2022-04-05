@@ -20,93 +20,46 @@
 
 #include <ecal/msg/protobuf/publisher.h>
 
+#include "proto_utils.hpp"
+#include "time.hpp"
+#include "trellis/core/timestamped_message.pb.h"
+
 namespace trellis {
 namespace core {
 
-template <typename T>
-using PublisherClass = eCAL::protobuf::CPublisher<T>;
+template <typename MSG_T>
+class PublisherClass {
+ public:
+  PublisherClass(const std::string& topic) : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {}
+  void Send(const MSG_T& msg) {
+    trellis::core::TimestampedMessage tsmsg;
+    tsmsg.mutable_timestamp()->set_seconds(trellis::core::time::NowInSeconds());
+    auto any = tsmsg.mutable_payload();
+    any->PackFrom(msg);
+    ecal_pub_.Send(tsmsg);
+  }
+
+ private:
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  static std::shared_ptr<eCAL::protobuf::CPublisher<MSG_T>> CreateRawPublisher(const std::string& topic) {
+    return std::make_shared<eCAL::protobuf::CPublisher<MSG_T>>(proto_utils::GetRawTopicString(topic));
+  }
+
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  static std::shared_ptr<eCAL::protobuf::CPublisher<MSG_T>> CreateRawPublisher(const std::string& topic) {
+    return nullptr;  // unused in dynamic publisher case
+  }
+
+  eCAL::protobuf::CPublisher<trellis::core::TimestampedMessage> ecal_pub_;
+
+  // This enables us to get our MSG_T schema into the monitoring layer
+  std::shared_ptr<eCAL::protobuf::CPublisher<MSG_T>> ecal_pub_raw_;
+};
 
 template <typename T>
 using Publisher = std::shared_ptr<PublisherClass<T>>;
 
-/**
- * A variant of the protobuf publisher which operates on the abstract
- * google::protobuf::Message. This is useful for publishing messages of
- * types determined at runtime
- *
- * This was adapted from eCAL's CPublisher<T>
- *
- * TODO(bsirang): this functionality was integrated upstream...
- * wipe this version and use the upstream implementation after the next
- * version of eCAL is released.
- */
-class DynamicPublisherImpl : public eCAL::CMsgPublisher<google::protobuf::Message> {
- public:
-  /**
-   * @brief  Constructor.
-   *
-   * @param topic_name  Unique topic name.
-   * @param msg Protobuf message
-   **/
-  DynamicPublisherImpl(const std::string& topic_name, std::shared_ptr<google::protobuf::Message> msg)
-      : CMsgPublisher<google::protobuf::Message>(topic_name, GetTypeName(msg.get()), GetDescription(msg.get())),
-        msg_{msg_} {}
-
-  DynamicPublisherImpl(const std::string& topic_name, const std::string& proto_type_name)
-      : CMsgPublisher<google::protobuf::Message>(topic_name, GetTypeName(CreateMessageByName(proto_type_name).get()),
-                                                 GetDescription(CreateMessageByName(proto_type_name).get())),
-        msg_{CreateMessageByName(proto_type_name)} {}
-
-  DynamicPublisherImpl(const DynamicPublisherImpl&) = delete;
-  DynamicPublisherImpl& operator=(const DynamicPublisherImpl&) = delete;
-  DynamicPublisherImpl(DynamicPublisherImpl&&) = default;
-  DynamicPublisherImpl& operator=(DynamicPublisherImpl&&) = default;
-
-  static std::string GetTypeName(const google::protobuf::Message* msg) { return ("proto:" + msg->GetTypeName()); }
-  std::string GetTypeName() const override { return GetTypeName(msg_.get()); }
-
-  static std::shared_ptr<google::protobuf::Message> CreateMessageByName(const std::string& type_name) {
-    const google::protobuf::Descriptor* desc =
-        google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(type_name);
-
-    if (desc == nullptr) {
-      std::stringstream errmsg;
-      errmsg << "Unable to find message type " << type_name << std::endl;
-      throw std::runtime_error(errmsg.str());
-    }
-    std::shared_ptr<google::protobuf::Message> message{
-        google::protobuf::MessageFactory::generated_factory()->GetPrototype(desc)->New()};
-
-    if (message == nullptr) {
-      std::stringstream errmsg;
-      errmsg << "Unable to create new message from type " << type_name << std::endl;
-      throw std::runtime_error(errmsg.str());
-    }
-    return message;
-  }
-
- private:
-  static std::string GetDescription(const google::protobuf::Message* msg) {
-    const google::protobuf::Descriptor* desc = msg->GetDescriptor();
-    google::protobuf::FileDescriptorSet pset;
-    if (eCAL::protobuf::GetFileDescriptor(desc, pset)) {
-      std::string desc_s = pset.SerializeAsString();
-      return (desc_s);
-    }
-    return ("");
-  }
-
-  std::string GetDescription() const override { return GetDescription(msg_.get()); }
-  size_t GetSize(const google::protobuf::Message& msg) const { return ((size_t)msg.ByteSizeLong()); }
-  bool Serialize(const google::protobuf::Message& msg, char* buffer_, size_t size_) const {
-    return (msg.SerializeToArray((void*)buffer_, (int)size_));
-  }
-
- private:
-  std::shared_ptr<google::protobuf::Message> msg_;
-};
-
-using DynamicPublisher = std::shared_ptr<DynamicPublisherImpl>;
+using DynamicPublisher = std::shared_ptr<PublisherClass<google::protobuf::Message>>;
 
 }  // namespace core
 }  // namespace trellis
