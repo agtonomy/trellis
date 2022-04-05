@@ -67,13 +67,11 @@ void TimerImpl::Reload() {
       // If we're reloading a one shot timer we simply reload to now + our delay time
       timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
     }
-  } else {
-    // simply update our expiry time
-    sim_expiry_time_ = time::Now() + std::chrono::milliseconds(interval_ms_);
   }
 }
 
 void TimerImpl::Fire() {
+  last_fire_time_ = time::Now();
   callback_();
   if (type_ != kOneShot) {
     Reload();
@@ -92,6 +90,12 @@ std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop,
 bool TimerImpl::SimulationActive() const {
   return (timer_ == nullptr);  // just use existence of timer_ as a proxy
 }
+
+time::TimePoint TimerImpl::GetExpiry() const {
+  return SimulationActive() ? last_fire_time_ + std::chrono::milliseconds(interval_ms_) : timer_->expiry();
+}
+
+unsigned TimerImpl::GetTimeInterval() const { return interval_ms_; }
 
 }  // namespace core
 }  // namespace trellis

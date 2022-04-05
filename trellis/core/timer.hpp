@@ -62,10 +62,26 @@ class TimerImpl {
    */
   bool Expired() const;
 
+  /**
+   * GetTimeInterval get the time interval for the timer (in milliseconds)
+   */
+  unsigned GetTimeInterval() const;
+
+  /**
+   * Fire fire the timer
+   *
+   * Not needed to be called externally except if simulated time is active
+   */
+  void Fire();
+
+  /**
+   * GetExpiry get the expiry time
+   */
+   time::TimePoint GetExpiry() const;
+
  private:
   void KickOff();
   void Reload();
-  void Fire();
   bool SimulationActive() const;
 
   static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms);
@@ -77,7 +93,7 @@ class TimerImpl {
   const unsigned delay_ms_;
   std::unique_ptr<asio::steady_timer> timer_;
   std::atomic<bool> expired_{true};
-  time::TimePoint sim_expiry_time_{time::Now()};
+  time::TimePoint last_fire_time_{time::Now()};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
