@@ -260,6 +260,13 @@ class Node {
    */
   void AddSignalHandler(SignalHandler handler);
 
+  /**
+   * UpdateSimulatedClock update the simulated clock
+   *
+   * Updates the simulated clock based on the given time, and immediately runs any timers that are due
+   */
+  void UpdateSimulatedClock(time::TimePoint& new_time);
+
  private:
   bool ShouldRun() const;
 
