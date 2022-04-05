@@ -26,7 +26,7 @@ TimerImpl::TimerImpl(EventLoop loop, Type type, Callback callback, unsigned inte
       callback_{callback},
       interval_ms_{interval_ms},
       delay_ms_(delay_ms),
-      timer_{*loop, asio::chrono::milliseconds(delay_ms)} {
+      timer_{CreateSteadyTimer(loop, delay_ms)} {
   KickOff();
 }
 
@@ -36,13 +36,13 @@ void TimerImpl::Reset() {
   KickOff();
 }
 
-void TimerImpl::Stop() { timer_.cancel(); }
+void TimerImpl::Stop() { timer_->cancel(); }
 
 bool TimerImpl::Expired() const { return expired_; }
 
 void TimerImpl::KickOff() {
   expired_ = false;
-  timer_.async_wait([this](const trellis::core::error_code& e) {
+  timer_->async_wait([this](const trellis::core::error_code& e) {
     expired_ = true;
     if (e) {
       return;
@@ -55,10 +55,10 @@ void TimerImpl::Reload() {
   if (type_ == kPeriodic) {
     // We calculate the new expiration time based on the last expiration
     // rather than "now" in order to avoid drift due to jitter error
-    timer_.expires_at(timer_.expiry() + asio::chrono::milliseconds(interval_ms_));
+    timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
   } else if (type_ == kOneShot) {
     // If we're reloading a one shot timer we simply reload to now + our delay time
-    timer_.expires_after(asio::chrono::milliseconds(delay_ms_));
+    timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
   }
 }
 
@@ -68,6 +68,10 @@ void TimerImpl::Fire() {
     Reload();
     KickOff();
   }
+}
+
+std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop, unsigned delay_ms) {
+  return std::make_unique<asio::steady_timer>(*loop, asio::chrono::milliseconds(delay_ms));
 }
 
 }  // namespace core

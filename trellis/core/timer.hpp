@@ -66,12 +66,14 @@ class TimerImpl {
   void Reload();
   void Fire();
 
+  static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms);
+
   EventLoop loop_;
   const Type type_;
   const Callback callback_;
   const unsigned interval_ms_;
   const unsigned delay_ms_;
-  asio::steady_timer timer_;
+  std::unique_ptr<asio::steady_timer> timer_;
   std::atomic<bool> expired_{true};
 };
 
