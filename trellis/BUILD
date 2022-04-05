@@ -18,6 +18,7 @@ cc_library(
     name = "trellis_core",
     srcs = [
         "core/config.cpp",
+        "core/timer.cpp",
     ],
     hdrs = [
         "core/bind.hpp",
