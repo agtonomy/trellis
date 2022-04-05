@@ -116,7 +116,8 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
-      : topics_{topics},
+      : node_{node},
+        topics_{topics},
         update_callback_{callback},
         new_message_callbacks_{},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
@@ -142,7 +143,8 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
-      : topics_{topics},
+      : node_{node},
+        topics_{topics},
         update_callback_{},
         new_message_callbacks_{callbacks},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
@@ -244,6 +246,9 @@ class MessageConsumer {
   void NewMessage(const std::string& topic, const time::TimePoint& time, const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time, msg}));
 
+    // Update simulated clock if necessary
+    node_.UpdateSimulatedClock(time);
+
     // Check if we have a callback to signal an update
     if (update_callback_) {
       // XXX(bsirang): are there any thread-safety issues here?
@@ -269,6 +274,7 @@ class MessageConsumer {
     }
     return output;
   }
+  const Node& node_;
   const TopicsArray topics_;
   const UniversalUpdateCallback update_callback_;
   const NewMessageCallbacks new_message_callbacks_;
