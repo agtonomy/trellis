@@ -61,3 +61,40 @@ TEST(TrellisTimeAPI, Milliseconds) {
   ASSERT_TRUE(end_millis > start_millis);
   ASSERT_TRUE(dt == 500);
 }
+
+TEST(TrellisTimeAPI, SetSimTimeWhileDisabled) {
+  trellis::core::time::TimePoint timepoint{std::chrono::milliseconds(1500)};
+  ASSERT_THROW(trellis::core::time::SetSimulatedTime(timepoint), std::runtime_error);
+}
+
+TEST(TrellisTimeAPI, EnableSimTime) {
+  ASSERT_FALSE(trellis::core::time::IsSimulatedClockEnabled());
+  auto now = trellis::core::time::Now();
+  // Real time is going to be some non-zero time
+  ASSERT_TRUE(trellis::core::time::TimePointToSeconds(now) > 0.0);
+
+  trellis::core::time::EnableSimulatedClock();
+
+  ASSERT_TRUE(trellis::core::time::IsSimulatedClockEnabled());
+  now = trellis::core::time::Now();
+  // Simulated time is going to start at exactly zero
+  ASSERT_TRUE(trellis::core::time::TimePointToSeconds(now) == 0.0);
+}
+
+TEST(TrellisTimeAPI, SetSimTime) {
+  auto now = trellis::core::time::Now();
+  ASSERT_TRUE(trellis::core::time::TimePointToSeconds(now) == 0.0);
+
+  trellis::core::time::SetSimulatedTime(now + std::chrono::milliseconds(1500));
+  ASSERT_TRUE(trellis::core::time::NowInSeconds() == 1.5);
+}
+
+TEST(TrellisTimeAPI, IncrementSimTime) {
+  auto now = trellis::core::time::Now();
+
+  trellis::core::time::IncrementSimulatedTime(std::chrono::milliseconds(1500));
+  auto future = trellis::core::time::Now();
+
+  auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(future - now);
+  ASSERT_EQ(delta.count(), 1500);
+}

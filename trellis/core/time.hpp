@@ -84,6 +84,32 @@ TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMe
  */
 google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
 
+/**
+ * EnableSimulatedClock enable the simulated system clock
+ *
+ * Subsequent calls to Now() will return a simulated time
+ */
+void EnableSimulatedClock();
+
+/**
+ * IsSimulatedClockEnabled returns true if the simulated clock is running
+ */
+bool IsSimulatedClockEnabled();
+
+/**
+ * SetSimulatedTime set the simulated system clock to the given time
+ *
+ * @param now the time point to set the simulated clock with
+ */
+void SetSimulatedTime(const trellis::core::time::TimePoint& now);
+
+/**
+ * IncrementSimulatedTime increment simulated time
+ *
+ * @param duration a time duration in milliseconds
+ */
+void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
+
 }  // namespace time
 }  // namespace core
 }  // namespace trellis

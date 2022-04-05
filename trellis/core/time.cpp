@@ -21,7 +21,14 @@ namespace trellis {
 namespace core {
 namespace time {
 
-TimePoint Now() { return eCAL::Time::ecal_clock::now(); }
+namespace {
+
+bool sim_clock_enabled_{false};
+trellis::core::time::TimePoint simulated_now_{};
+
+}  // namespace
+
+TimePoint Now() { return sim_clock_enabled_ ? simulated_now_ : eCAL::Time::ecal_clock::now(); }
 
 double TimePointToSeconds(const TimePoint& tp) {
   return (tp.time_since_epoch().count() *
@@ -57,6 +64,19 @@ google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::Time
   ts.set_nanos(duration_ns.count());
   return ts;
 }
+
+void EnableSimulatedClock() { sim_clock_enabled_ = true; }
+
+bool IsSimulatedClockEnabled() { return sim_clock_enabled_; }
+
+void SetSimulatedTime(const trellis::core::time::TimePoint& now) {
+  if (!sim_clock_enabled_) {
+    throw std::runtime_error("Attempt to set simulated time while sim_clock_enabled_ = false");
+  }
+  simulated_now_ = now;
+}
+
+void IncrementSimulatedTime(const std::chrono::milliseconds& duration) { SetSimulatedTime(simulated_now_ + duration); }
 
 }  // namespace time
 }  // namespace core
