@@ -72,13 +72,19 @@ bool Node::RunN(unsigned n) {
   return ok;
 }
 
-Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) const {
-  return std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms,
-                                     initial_delay_ms);
+Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
+  auto timer =
+      std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms, initial_delay_ms);
+
+  timers_.push_back(timer);
+  return timer;
 }
 
-Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) const {
-  return std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) {
+  auto timer = std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+
+  timers_.push_back(timer);
+  return timer;
 }
 
 void Node::Stop() {
@@ -98,6 +104,13 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) const {
     if (new_time > existing_time) {
       auto time_delta = std::chrono::duration_cast<std::chrono::milliseconds>(new_time - existing_time);
       (void)time_delta;  // TODO use time delta to drive timers
+      if (timers_.size() > 0) {
+        for (auto& timer : timers_) {
+          // for each timer, figure out if we should be firing it
+          // const auto expiry = timer.GetExpiry();
+        }
+      }
+
       time::SetSimulatedTime(new_time);
     } else {
       Log::Warn("Ignored attempt to rewind simulated clock. Current time {} Set time {}",

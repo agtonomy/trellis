@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <deque>
 
 #include "bind.hpp"
 #include "config.hpp"
@@ -193,7 +194,7 @@ class Node {
    *
    * @return a periodic timer object
    */
-  Timer CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0) const;
+  Timer CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0);
 
   /**
    * CreateOneShotTimer create a new one-shot timer.
@@ -205,7 +206,7 @@ class Node {
    *
    * @return a one-shot timer object
    */
-  Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) const;
+  Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
 
   /*
    * Run run the application
@@ -278,6 +279,7 @@ class Node {
   asio::signal_set signal_set_;
   SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
+  std::deque<Timer> timers_;
 };
 
 }  // namespace core
