@@ -22,6 +22,7 @@
 
 #include "error_code.hpp"
 #include "event_loop.hpp"
+#include "time.hpp"
 
 namespace trellis {
 namespace core {
@@ -65,6 +66,7 @@ class TimerImpl {
   void KickOff();
   void Reload();
   void Fire();
+  bool SimulationActive() const;
 
   static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms);
 
@@ -75,6 +77,7 @@ class TimerImpl {
   const unsigned delay_ms_;
   std::unique_ptr<asio::steady_timer> timer_;
   std::atomic<bool> expired_{true};
+  time::TimePoint sim_expiry_time_{time::Now()};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

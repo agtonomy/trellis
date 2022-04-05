@@ -36,29 +36,40 @@ void TimerImpl::Reset() {
   KickOff();
 }
 
-void TimerImpl::Stop() { timer_->cancel(); }
+void TimerImpl::Stop() {
+  if (!SimulationActive()) {
+    timer_->cancel();
+  }
+}
 
 bool TimerImpl::Expired() const { return expired_; }
 
 void TimerImpl::KickOff() {
-  expired_ = false;
-  timer_->async_wait([this](const trellis::core::error_code& e) {
-    expired_ = true;
-    if (e) {
-      return;
-    }
-    Fire();
-  });
+  if (!SimulationActive()) {
+    expired_ = false;
+    timer_->async_wait([this](const trellis::core::error_code& e) {
+      expired_ = true;
+      if (e) {
+        return;
+      }
+      Fire();
+    });
+  }
 }
 
 void TimerImpl::Reload() {
-  if (type_ == kPeriodic) {
-    // We calculate the new expiration time based on the last expiration
-    // rather than "now" in order to avoid drift due to jitter error
-    timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
-  } else if (type_ == kOneShot) {
-    // If we're reloading a one shot timer we simply reload to now + our delay time
-    timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
+  if (!SimulationActive()) {
+    if (type_ == kPeriodic) {
+      // We calculate the new expiration time based on the last expiration
+      // rather than "now" in order to avoid drift due to jitter error
+      timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
+    } else if (type_ == kOneShot) {
+      // If we're reloading a one shot timer we simply reload to now + our delay time
+      timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
+    }
+  } else {
+    // simply update our expiry time
+    sim_expiry_time_ = time::Now() + std::chrono::milliseconds(interval_ms_);
   }
 }
 
@@ -71,7 +82,15 @@ void TimerImpl::Fire() {
 }
 
 std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop, unsigned delay_ms) {
-  return std::make_unique<asio::steady_timer>(*loop, asio::chrono::milliseconds(delay_ms));
+  if (time::IsSimulatedClockEnabled()) {
+    return nullptr;  // we don't need an underlying timer during simulated time
+  } else {
+    return std::make_unique<asio::steady_timer>(*loop, asio::chrono::milliseconds(delay_ms));
+  }
+}
+
+bool TimerImpl::SimulationActive() const {
+  return (timer_ == nullptr);  // just use existence of timer_ as a proxy
 }
 
 }  // namespace core
