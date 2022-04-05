@@ -101,7 +101,7 @@ class Node {
    * @return a subscriber handle
    */
   template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(std::string topic, std::function<void(const MSG_T&)> callback,
+  Subscriber<MSG_T> CreateSubscriber(std::string topic, typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
                                      std::optional<double> max_frequency = {}) const {
@@ -149,7 +149,7 @@ class Node {
    * @return a subscriber handle
    */
   DynamicSubscriber CreateDynamicSubscriber(
-      std::string topic, std::function<void(const google::protobuf::Message&)> callback,
+      std::string topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
       std::optional<double> max_frequency = {}) const {

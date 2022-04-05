@@ -32,7 +32,7 @@ namespace core {
 template <typename MSG_T>
 class SubscriberImpl {
  public:
-  using Callback = std::function<void(const MSG_T&)>;
+  using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
   using WatchdogCallback = std::function<void(void)>;
 
   /**
@@ -150,16 +150,17 @@ class SubscriberImpl {
   // Common logic between dynamic and non-dynamic case
   void CallbackHelperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    const trellis::core::time::TimePoint msgtime{trellis::core::time::TimePointFromFromTimestampedMessage(msg)};
     if (interval_ms) {
       // throttle callback
       const bool enough_time_elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - last_sent_).count() > interval_ms;
+          std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_sent_).count() > interval_ms;
       if (enough_time_elapsed) {
-        callback(*user_msg_);
-        last_sent_ = trellis::core::time::Now();
+        callback(msgtime, *user_msg_);
+        last_sent_ = msgtime;
       }
     } else {
-      callback(*user_msg_);
+      callback(msgtime, *user_msg_);
     }
   }
 
