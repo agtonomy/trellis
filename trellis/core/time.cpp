@@ -28,7 +28,7 @@ trellis::core::time::TimePoint simulated_now_{};
 
 }  // namespace
 
-TimePoint Now() { return sim_clock_enabled_ ? simulated_now_ : eCAL::Time::ecal_clock::now(); }
+TimePoint Now() { return sim_clock_enabled_ ? simulated_now_ : std::chrono::steady_clock::now(); }
 
 double TimePointToSeconds(const TimePoint& tp) {
   return (tp.time_since_epoch().count() *

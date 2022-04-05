@@ -18,15 +18,13 @@
 #ifndef TRELLIS_CORE_TIME_HPP
 #define TRELLIS_CORE_TIME_HPP
 
-#include <ecal/ecal_time.h>
-
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
 namespace core {
 namespace time {
 
-using TimePoint = std::chrono::time_point<eCAL::Time::ecal_clock>;
+using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
 
 /**
  * now Get the current time

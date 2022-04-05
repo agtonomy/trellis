@@ -19,6 +19,7 @@ cc_library(
     srcs = [
         "core/config.cpp",
         "core/timer.cpp",
+        "core/time.cpp",
     ],
     hdrs = [
         "core/bind.hpp",
@@ -27,6 +28,7 @@ cc_library(
         "core/event_loop.hpp",
         "core/proto_utils.hpp",
         "core/timer.hpp",
+        "core/time.hpp",
     ],
     deps = [
         ":trellis_core_proto",
@@ -40,7 +42,6 @@ cc_library(
     srcs = [
         "core/monitor_interface.cpp",
         "core/node.cpp",
-        "core/time.cpp",
     ],
     hdrs = [
         "core/logging.hpp",
@@ -51,7 +52,6 @@ cc_library(
         "core/service_client.hpp",
         "core/service_server.hpp",
         "core/subscriber.hpp",
-        "core/time.hpp",
     ],
     deps = [
         ":trellis_containers",
