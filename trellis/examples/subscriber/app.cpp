@@ -6,7 +6,7 @@ namespace subscriber {
 
 using namespace trellis::core;
 
-App::App(const Node& node, const Config& config)
+App::App(Node& node, const Config& config)
     : inputs_{node,
               {{config["examples"]["publisher"]["topic"].as<std::string>()}},
               [this](const std::string& topic, const trellis::examples::proto::HelloWorld& msg,

@@ -7,7 +7,7 @@ namespace service_client {
 using namespace trellis::core;
 using namespace trellis::examples::proto;
 
-App::App(const Node& node, const Config& config)
+App::App(Node& node, const Config& config)
     : client_{node.CreateServiceClient<AdditionService>()},
       timer_{node.CreateTimer(
           config["examples"]["service"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },

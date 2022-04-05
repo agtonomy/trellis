@@ -10,7 +10,7 @@ namespace service_server {
 
 class App {
  public:
-  App(const trellis::core::Node& node, const trellis::core::Config& config);
+  App(trellis::core::Node& node, const trellis::core::Config& config);
 
  private:
   trellis::core::ServiceServer<trellis::examples::proto::AdditionService> server_;
