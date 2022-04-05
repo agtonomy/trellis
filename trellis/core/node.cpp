@@ -92,11 +92,12 @@ bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
 
 void Node::UpdateSimulatedClock(time::TimePoint& new_time) {
-  auto existing_time = trellis::core::time::Now();
+  //TODO (bsirang) mutex
+  auto existing_time = time::Now();
   if (new_time > existing_time) {
     auto time_delta = std::chrono::duration_cast<std::chrono::milliseconds>(new_time - existing_time);
     (void)time_delta; // TODO use time delta to drive timers
-    trellis::core::time::SetSimulatedTime(new_time);
+    time::SetSimulatedTime(new_time);
   } else {
     Log::Warn("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
               time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
