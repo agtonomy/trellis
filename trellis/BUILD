@@ -39,6 +39,7 @@ cc_library(
     srcs = [
         "core/monitor_interface.cpp",
         "core/node.cpp",
+        "core/time.cpp",
     ],
     hdrs = [
         "core/logging.hpp",
