@@ -77,7 +77,7 @@ class TimerImpl {
   /**
    * GetExpiry get the expiry time
    */
-   time::TimePoint GetExpiry() const;
+  time::TimePoint GetExpiry() const;
 
  private:
   void KickOff();
