@@ -35,6 +35,7 @@ class SubscriberImpl {
   using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
   using WatchdogCallback = std::function<void(void)>;
+  using WatchdogTimerCreateFunction = std::function<Timer(unsigned, TimerImpl::Callback)>;
 
   /**
    * Construct a subscriber for a given topic
@@ -42,8 +43,12 @@ class SubscriberImpl {
    * @param topic the topic string to subscribe to
    * @param callback the callback function to receive messages on
    */
-  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{update_sim_fn} {
+  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
+                 WatchdogTimerCreateFunction watchdog_create_fn)
+      : ecal_sub_{topic},
+        ecal_sub_raw{CreateRawTopicSubscriber(topic)},
+        update_sim_fn_{update_sim_fn},
+        watchdog_create_fn_{watchdog_create_fn} {
     SetCallbackWithoutWatchdog(callback);
   }
 
@@ -55,8 +60,8 @@ class SubscriberImpl {
    * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
    */
   SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz,
-                 UpdateSimulatedClockFunction update_sim_fn)
-      : SubscriberImpl(topic, callback, update_sim_fn) {
+                 UpdateSimulatedClockFunction update_sim_fn, WatchdogTimerCreateFunction watchdog_create_fn)
+      : SubscriberImpl(topic, callback, update_sim_fn, watchdog_create_fn) {
     SetMaxFrequencyThrottle(max_frequency_hz);
   }
 
@@ -70,8 +75,12 @@ class SubscriberImpl {
    * @param event_loop the event loop handle in which to run the watchdog on
    */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
-                 WatchdogCallback watchdog_callback, EventLoop event_loop, UpdateSimulatedClockFunction update_sim_fn)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{update_sim_fn} {
+                 WatchdogCallback watchdog_callback, EventLoop event_loop, UpdateSimulatedClockFunction update_sim_fn,
+                 WatchdogTimerCreateFunction watchdog_create_fn)
+      : ecal_sub_{topic},
+        ecal_sub_raw{CreateRawTopicSubscriber(topic)},
+        update_sim_fn_{update_sim_fn},
+        watchdog_create_fn_{watchdog_create_fn} {
     SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
@@ -87,8 +96,9 @@ class SubscriberImpl {
    */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
                  WatchdogCallback watchdog_callback, EventLoop event_loop, double max_frequency_hz,
-                 UpdateSimulatedClockFunction update_sim_fn)
-      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop, update_sim_fn) {
+                 UpdateSimulatedClockFunction update_sim_fn, WatchdogTimerCreateFunction watchdog_create_fn)
+      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop, update_sim_fn,
+                       watchdog_create_fn) {
     SetMaxFrequencyThrottle(max_frequency_hz);
   }
 
@@ -128,8 +138,7 @@ class SubscriberImpl {
                                 long long clock_, long long id_) mutable {
       if (watchdog_timer == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
-        watchdog_timer = std::make_shared<TimerImpl>(event_loop, TimerImpl::Type::kOneShot, watchdog_callback, 0,
-                                                     watchdog_timeout_ms);
+        watchdog_timer = watchdog_create_fn_(watchdog_timeout_ms, watchdog_callback);
       } else {
         watchdog_timer->Reset();
       }
@@ -205,6 +214,7 @@ class SubscriberImpl {
       ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
 
   UpdateSimulatedClockFunction update_sim_fn_;
+  WatchdogTimerCreateFunction watchdog_create_fn_;
 
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
