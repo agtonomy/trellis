@@ -17,6 +17,7 @@
 
 #include "node.hpp"
 
+#include <queue>
 #include <thread>
 
 using namespace trellis::core;
@@ -102,12 +103,30 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) const {
   if (time::IsSimulatedClockEnabled()) {
     auto existing_time = time::Now();
     if (new_time > existing_time) {
-      auto time_delta = std::chrono::duration_cast<std::chrono::milliseconds>(new_time - existing_time);
-      (void)time_delta;  // TODO use time delta to drive timers
       if (timers_.size() > 0) {
+        // Use a priority queue to store the timers we need to fire in order of expiration
+        auto timer_comp = [](const Timer& a, const Timer& b) { return a->GetExpiry() < b->GetExpiry(); };
+        std::priority_queue<Timer, std::vector<Timer>, decltype(timer_comp)> expired_timers(timer_comp);
+
+        // First find all the timers that are expiring before our new_time
         for (auto& timer : timers_) {
-          // for each timer, figure out if we should be firing it
-          // const auto expiry = timer.GetExpiry();
+          if (new_time > timer->GetExpiry()) {
+            expired_timers.push(timer);
+          }
+        }
+
+        // Step forward in time while firing the timers that are expiring until there are no more timers to fire
+        while (expired_timers.size()) {
+          auto top = expired_timers.top();
+          expired_timers.pop();
+          // Move our simulated time up to the expiration time of this timer
+          time::SetSimulatedTime(top->GetExpiry());
+          top->Fire();  // Fire the timer (which updates the expiry time also)
+
+          // If our expiry time is still earlier than our new_time, put it back in the queue for another go
+          if (new_time > top->GetExpiry()) {
+            expired_timers.push(top);
+          }
         }
       }
 

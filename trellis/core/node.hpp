@@ -24,7 +24,7 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <deque>
+#include <list>
 
 #include "bind.hpp"
 #include "config.hpp"
@@ -279,7 +279,7 @@ class Node {
   asio::signal_set signal_set_;
   SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
-  std::deque<Timer> timers_;
+  std::list<Timer> timers_;
 };
 
 }  // namespace core
