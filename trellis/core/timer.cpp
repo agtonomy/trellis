@@ -95,7 +95,7 @@ time::TimePoint TimerImpl::GetExpiry() const {
   return SimulationActive() ? last_fire_time_ + std::chrono::milliseconds(interval_ms_) : timer_->expiry();
 }
 
-unsigned TimerImpl::GetTimeInterval() const { return interval_ms_; }
+std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chrono::milliseconds(interval_ms_); }
 
 }  // namespace core
 }  // namespace trellis

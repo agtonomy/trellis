@@ -65,7 +65,7 @@ class TimerImpl {
   /**
    * GetTimeInterval get the time interval for the timer (in milliseconds)
    */
-  unsigned GetTimeInterval() const;
+  std::chrono::milliseconds GetTimeInterval() const;
 
   /**
    * Fire fire the timer
