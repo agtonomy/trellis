@@ -98,9 +98,9 @@ bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
 
-void Node::UpdateSimulatedClock(const time::TimePoint& new_time) const {
-  // TODO (bsirang) mutex
+void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
   if (time::IsSimulatedClockEnabled()) {
+    std::lock_guard<std::mutex> lock(sim_clock_update_mutex_);
     auto existing_time = time::Now();
     if (new_time > existing_time) {
       if (timers_.size() > 0) {

@@ -22,9 +22,9 @@
 
 #include <asio.hpp>
 #include <functional>
+#include <list>
 #include <optional>
 #include <string>
-#include <list>
 
 #include "bind.hpp"
 #include "config.hpp"
@@ -267,7 +267,7 @@ class Node {
    *
    * Updates the simulated clock based on the given time, and immediately runs any timers that are due
    */
-  void UpdateSimulatedClock(const time::TimePoint& new_time) const;
+  void UpdateSimulatedClock(const time::TimePoint& new_time);
 
  private:
   bool ShouldRun() const;
@@ -280,6 +280,7 @@ class Node {
   SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
   std::list<Timer> timers_;
+  std::mutex sim_clock_update_mutex_{};
 };
 
 }  // namespace core
