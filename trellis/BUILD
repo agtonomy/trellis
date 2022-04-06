@@ -18,8 +18,8 @@ cc_library(
     name = "trellis_core",
     srcs = [
         "core/config.cpp",
-        "core/timer.cpp",
         "core/time.cpp",
+        "core/timer.cpp",
     ],
     hdrs = [
         "core/bind.hpp",
@@ -27,8 +27,8 @@ cc_library(
         "core/error_code.hpp",
         "core/event_loop.hpp",
         "core/proto_utils.hpp",
-        "core/timer.hpp",
         "core/time.hpp",
+        "core/timer.hpp",
     ],
     deps = [
         ":trellis_core_proto",
@@ -217,6 +217,8 @@ cc_test(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":test_fixture",
+        ":test_proto",
         ":trellis_core_ecal",
         "@gtest//:gtest_main",
     ],
