@@ -67,11 +67,19 @@ void TimerImpl::Reload() {
       // If we're reloading a one shot timer we simply reload to now + our delay time
       timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
     }
+  } else {
+    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
   }
+  did_fire_ = false;
 }
 
 void TimerImpl::Fire() {
-  last_fire_time_ = time::Now();
+  if (did_fire_ && type_ == kOneShot) {
+    return;
+  }
+  last_fire_time_ = time::Now();  // used for sim time
+  did_fire_ = true;
+  std::cout << "TimerImpl::Fire() last_fire_time_ = " << time::TimePointToSeconds(last_fire_time_) << std::endl;
   callback_();
   if (type_ != kOneShot) {
     Reload();
@@ -92,7 +100,12 @@ bool TimerImpl::SimulationActive() const {
 }
 
 time::TimePoint TimerImpl::GetExpiry() const {
-  return SimulationActive() ? last_fire_time_ + std::chrono::milliseconds(interval_ms_) : timer_->expiry();
+  if (SimulationActive()) {
+    auto interval = (type_ == kPeriodic) ? interval_ms_ : delay_ms_;
+    return last_fire_time_ + std::chrono::milliseconds(interval);
+  } else {
+    return timer_->expiry();
+  }
 }
 
 std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chrono::milliseconds(interval_ms_); }

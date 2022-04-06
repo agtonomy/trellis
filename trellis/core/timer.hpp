@@ -79,6 +79,8 @@ class TimerImpl {
    */
   time::TimePoint GetExpiry() const;
 
+  Type GetType() const { return type_; }
+
  private:
   void KickOff();
   void Reload();
@@ -94,6 +96,7 @@ class TimerImpl {
   std::unique_ptr<asio::steady_timer> timer_;
   std::atomic<bool> expired_{true};
   time::TimePoint last_fire_time_{time::Now()};
+  bool did_fire_{false};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
