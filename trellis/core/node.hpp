@@ -110,16 +110,20 @@ class Node {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequency);
     const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
+    const auto watchdog_create_fn = [this](unsigned initial_delay_ms, TimerImpl::Callback callback) -> Timer {
+      return CreateOneShotTimer(initial_delay_ms, callback);
+    };
     if (do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), *max_frequency, update_sim_fn);
+                                                     GetEventLoop(), *max_frequency, update_sim_fn, watchdog_create_fn);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency, update_sim_fn);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency, update_sim_fn,
+                                                     watchdog_create_fn);
     } else if (!do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), update_sim_fn);
+                                                     GetEventLoop(), update_sim_fn, watchdog_create_fn);
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, update_sim_fn);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, update_sim_fn, watchdog_create_fn);
     }
   }
 
