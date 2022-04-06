@@ -99,6 +99,7 @@ bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
 
 void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
+  // TODO (bsirang) run this logic on the event loop
   if (time::IsSimulatedClockEnabled()) {
     std::lock_guard<std::mutex> lock(sim_clock_update_mutex_);
     auto existing_time = time::Now();
@@ -110,7 +111,7 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
 
         // First find all the timers that are expiring before our new_time
         for (auto& timer : timers_) {
-          if (new_time > timer->GetExpiry()) {
+          if (new_time >= timer->GetExpiry()) {
             expired_timers.push(timer);
           }
         }
@@ -124,12 +125,11 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
           top->Fire();  // Fire the timer (which updates the expiry time also)
 
           // If our expiry time is still earlier than our new_time, put it back in the queue for another go
-          if (new_time > top->GetExpiry()) {
+          if (new_time >= top->GetExpiry() && top->GetType() != TimerImpl::Type::kOneShot) {
             expired_timers.push(top);
           }
         }
       }
-
       time::SetSimulatedTime(new_time);
     } else {
       Log::Warn("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
