@@ -32,10 +32,13 @@ class PublisherClass {
  public:
   PublisherClass(const std::string& topic) : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {}
   void Send(const MSG_T& msg) {
+    const auto now = trellis::core::time::Now();
+    Send(msg, now);
+  }
+  void Send(const MSG_T& msg, const time::TimePoint& tp) {
     trellis::core::TimestampedMessage tsmsg;
     auto timestamp = tsmsg.mutable_timestamp();
-    const auto now = trellis::core::time::Now();
-    *timestamp = time::TimePointToTimestamp(now);
+    *timestamp = time::TimePointToTimestamp(tp);
     auto any = tsmsg.mutable_payload();
     any->PackFrom(msg);
     ecal_pub_.Send(tsmsg);
