@@ -209,3 +209,15 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "test_core_simtime",
+    srcs = [
+        "core/test/test_simtime.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":trellis_core_ecal",
+        "@gtest//:gtest_main",
+    ],
+)
