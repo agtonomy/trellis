@@ -116,8 +116,7 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
-      : node_{node},
-        topics_{topics},
+      : topics_{topics},
         update_callback_{callback},
         new_message_callbacks_{},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
@@ -143,8 +142,7 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
-      : node_{node},
-        topics_{topics},
+      : topics_{topics},
         update_callback_{},
         new_message_callbacks_{callbacks},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
@@ -201,10 +199,10 @@ class MessageConsumer {
 
  private:
   template <size_t I = 0>
-  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(const Node& node) {}
+  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(Node& node) {}
 
   template <size_t I = 0>
-      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(const Node& node) {
+      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(Node& node) {
     const auto& topics = topics_[I];
     const auto& watchdog_callback = watchdog_callbacks_[I];
     using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;
@@ -246,9 +244,6 @@ class MessageConsumer {
   void NewMessage(const std::string& topic, const time::TimePoint& time, const MSG_T& msg) {
     fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time, msg}));
 
-    // Update simulated clock if necessary
-    node_.UpdateSimulatedClock(time);
-
     // Check if we have a callback to signal an update
     if (update_callback_) {
       // XXX(bsirang): are there any thread-safety issues here?
@@ -274,7 +269,6 @@ class MessageConsumer {
     }
     return output;
   }
-  Node& node_;
   const TopicsArray topics_;
   const UniversalUpdateCallback update_callback_;
   const NewMessageCallbacks new_message_callbacks_;

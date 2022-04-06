@@ -106,19 +106,20 @@ class Node {
                                      typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
-                                     std::optional<double> max_frequency = {}) const {
+                                     std::optional<double> max_frequency = {}) {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequency);
+    const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     if (do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), *max_frequency);
+                                                     GetEventLoop(), *max_frequency, update_sim_fn);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency, update_sim_fn);
     } else if (!do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop());
+                                                     GetEventLoop(), update_sim_fn);
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, update_sim_fn);
     }
   }
 
@@ -154,7 +155,7 @@ class Node {
       std::string topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
-      std::optional<double> max_frequency = {}) const {
+      std::optional<double> max_frequency = {}) {
     return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
                                                        max_frequency);
   }

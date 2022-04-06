@@ -33,6 +33,7 @@ template <typename MSG_T>
 class SubscriberImpl {
  public:
   using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
+  using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
   using WatchdogCallback = std::function<void(void)>;
 
   /**
@@ -41,8 +42,8 @@ class SubscriberImpl {
    * @param topic the topic string to subscribe to
    * @param callback the callback function to receive messages on
    */
-  SubscriberImpl(const std::string& topic, Callback callback)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)} {
+  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{update_sim_fn} {
     SetCallbackWithoutWatchdog(callback);
   }
 
@@ -53,8 +54,9 @@ class SubscriberImpl {
    * @param callback the callback function to receive messages on
    * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
    */
-  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz)
-      : SubscriberImpl(topic, callback) {
+  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz,
+                 UpdateSimulatedClockFunction update_sim_fn)
+      : SubscriberImpl(topic, callback, update_sim_fn) {
     SetMaxFrequencyThrottle(max_frequency_hz);
   }
 
@@ -68,8 +70,8 @@ class SubscriberImpl {
    * @param event_loop the event loop handle in which to run the watchdog on
    */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
-                 WatchdogCallback watchdog_callback, EventLoop event_loop)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)} {
+                 WatchdogCallback watchdog_callback, EventLoop event_loop, UpdateSimulatedClockFunction update_sim_fn)
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{update_sim_fn} {
     SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
   }
 
@@ -84,8 +86,9 @@ class SubscriberImpl {
    * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
    */
   SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
-                 WatchdogCallback watchdog_callback, EventLoop event_loop, double max_frequency_hz)
-      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop) {
+                 WatchdogCallback watchdog_callback, EventLoop event_loop, double max_frequency_hz,
+                 UpdateSimulatedClockFunction update_sim_fn)
+      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop, update_sim_fn) {
     SetMaxFrequencyThrottle(max_frequency_hz);
   }
 
@@ -151,15 +154,20 @@ class SubscriberImpl {
   void CallbackHelperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     const trellis::core::time::TimePoint msgtime{trellis::core::time::TimePointFromFromTimestampedMessage(msg)};
+    // Update simulated clock if necessary
+    update_sim_fn_(msgtime);
+    bool should_callback = (interval_ms == 0);
     if (interval_ms) {
       // throttle callback
       const bool enough_time_elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_sent_).count() > interval_ms;
       if (enough_time_elapsed) {
-        callback(msgtime, *user_msg_);
+        should_callback = true;
         last_sent_ = msgtime;
       }
-    } else {
+    }
+
+    if (should_callback) {
       callback(msgtime, *user_msg_);
     }
   }
@@ -196,7 +204,8 @@ class SubscriberImpl {
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
       ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
 
-  EventLoop ev_loop_;
+  UpdateSimulatedClockFunction update_sim_fn_;
+
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
 
