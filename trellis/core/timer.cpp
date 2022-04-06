@@ -79,7 +79,6 @@ void TimerImpl::Fire() {
   }
   last_fire_time_ = time::Now();  // used for sim time
   did_fire_ = true;
-  std::cout << "TimerImpl::Fire() last_fire_time_ = " << time::TimePointToSeconds(last_fire_time_) << std::endl;
   callback_();
   if (type_ != kOneShot) {
     Reload();
