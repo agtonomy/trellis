@@ -19,22 +19,20 @@
 
 #include <thread>
 
-#include "trellis/core/message_consumer.hpp"
 #include "trellis/core/node.hpp"
-#include "trellis/core/test/test.pb.h"
-#include "trellis/core/test/test_fixture.hpp"
 
 using namespace trellis::core;
-using namespace trellis::core::test;
 
 TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   time::EnableSimulatedClock();
+  time::SetSimulatedTime(time::TimePoint{});  // reset time
 
   trellis::core::Node node("test_simtime");
 
   const unsigned timer1_interval{1000u};
   const unsigned timer2_interval{333u};
   const unsigned timer3_interval{220u};
+  static constexpr unsigned time_jump_ms{10500};
 
   unsigned timer1_ticks{0};
   unsigned timer2_ticks{0};
@@ -44,8 +42,7 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   node.CreateTimer(timer1_interval, [&timer1_ticks, &last_now]() {
     ++timer1_ticks;
     auto now = time::Now();
-    ASSERT_EQ(time::TimePointToMilliseconds(now), timer1_ticks * timer1_interval);
-    std::cout << "Timer 1 now = " << time::TimePointToMilliseconds(now) << std::endl;
+    ASSERT_EQ(time::TimePointToMilliseconds(now), (timer1_ticks * timer1_interval) + time_jump_ms);
     ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
     last_now = now;
   });
@@ -53,8 +50,7 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   node.CreateTimer(timer2_interval, [&timer2_ticks, &last_now]() {
     ++timer2_ticks;
     auto now = time::Now();
-    ASSERT_EQ(time::TimePointToMilliseconds(now), timer2_ticks * timer2_interval);
-    std::cout << "Timer 2 now = " << time::TimePointToMilliseconds(now) << std::endl;
+    ASSERT_EQ(time::TimePointToMilliseconds(now), (timer2_ticks * timer2_interval) + time_jump_ms);
     ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
     last_now = now;
   });
@@ -62,15 +58,24 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   node.CreateTimer(timer3_interval, [&timer3_ticks, &last_now]() {
     ++timer3_ticks;
     auto now = time::Now();
-    ASSERT_EQ(time::TimePointToMilliseconds(now), timer3_ticks * timer3_interval);
-    std::cout << "Timer 3 now = " << time::TimePointToMilliseconds(now) << std::endl;
+    ASSERT_EQ(time::TimePointToMilliseconds(now), (timer3_ticks * timer3_interval) + time_jump_ms);
     ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
     last_now = now;
   });
 
-  time::TimePoint time{time::Now() + std::chrono::milliseconds(10500)};
+  // The first time we update the time, we're essentially resetting all the timers
+  time::TimePoint time{time::Now() + std::chrono::milliseconds(time_jump_ms)};
   node.UpdateSimulatedClock(time);
-  node.RunOnce(); // kick the event loop
+  node.RunOnce();  // kick the event loop
+
+  ASSERT_EQ(timer1_ticks, 0);
+  ASSERT_EQ(timer2_ticks, 0);
+  ASSERT_EQ(timer3_ticks, 0);
+
+  // Now we're moving forward in time, so our timers should fire accordingly
+  time += std::chrono::milliseconds(time_jump_ms);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();  // kick the event loop
 
   // We jumped forward in time 10500 milliseconds, so...
   // our 1000ms timer should have fired 10 times
@@ -81,105 +86,83 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   ASSERT_EQ(timer3_ticks, 47);
 }
 
-// TEST_F(TrellisFixture, TestSimulatedTimeWithSubscribersAndWatchdogsAndTimers) {
-//   static constexpr unsigned send_count{5u};
-//   static constexpr unsigned timer1_interval{10u};
-//   static unsigned receive_count_1{0};
-//   static unsigned receive_count_2{0};
-//   static unsigned watchdog_count_1{0};
-//   static unsigned watchdog_count_2{0};
-//   static unsigned timer_ticks{0};
-//
-//   time::EnableSimulatedClock();
-//   StartRunnerThread();
-//
-//   // Create our two publishers
-//   auto pub = node_.CreatePublisher<test::Test>("simtime_topic_1");
-//   auto pub2 = node_.CreatePublisher<test::TestTwo>("simtime_topic_2");
-//
-//   // Create our message consumer to consume from the two publishers
-//   trellis::core::MessageConsumer<send_count, test::Test, test::TestTwo> inputs_{
-//       node_,
-//       {{"simtime_topic_1", "simtime_topic_2"}},
-//       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint& msgtime) {
-//          ASSERT_EQ(topic, "simtime_topic_1");
-//          ++receive_count_1;
-//        },
-//        [this](const std::string& topic, const test::TestTwo& msg, const time::TimePoint& msgtime) {
-//          ASSERT_EQ(topic, "simtime_topic_2");
-//          ++receive_count_2;
-//        }},
-//       {{50U, 100U}},
-//       {{[](const std::string& topic) {
-//           ++watchdog_count_1;
-//           ASSERT_EQ(topic, "simtime_topic_1");
-//         },
-//         [](const std::string& topic) {
-//           ++watchdog_count_2;
-//           ASSERT_EQ(topic, "simtime_topic_2");
-//         }}}};
-//
-//   WaitForDiscovery();
-//
-//   // Reset sim time
-//   time::SetSimulatedTime(time::TimePoint{std::chrono::milliseconds(0)});
-//
-//   node_.CreateTimer(timer1_interval, []() {
-//     ++timer_ticks;
-//   });
-//
-//   // Publish messages on both topics
-//   time::TimePoint now{time::Now()};
-//   for (unsigned i = 0; i < send_count; ++i) {
-//     test::Test test_msg;
-//     test::TestTwo test_msg2;
-//     test_msg.set_id(i);
-//     test_msg.set_msg("hello world");
-//     test_msg2.set_foo(i * 2.0);
-//
-//     now += std::chrono::milliseconds(20);
-//     pub->Send(test_msg, now);
-//     now += std::chrono::milliseconds(20);
-//     pub2->Send(test_msg2, now);
-//     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-//   }
-//
-//   ASSERT_EQ(watchdog_count_1, 0U);
-//   ASSERT_EQ(watchdog_count_2, 0U);
-//
-//   const unsigned expected_timer_ticks = (2 * 20 * send_count) / timer1_interval;
-//   ASSERT_EQ(timer_ticks, expected_timer_ticks);
-//
-//   // Advance the time past the watchdog
-//   node_.UpdateSimulatedClock(time::Now() + std::chrono::milliseconds(200));
-//
-//   ASSERT_EQ(receive_count_1, send_count);
-//   ASSERT_EQ(receive_count_2, send_count);
-//
-//   ASSERT_EQ(watchdog_count_1, 1U);
-//   ASSERT_EQ(watchdog_count_2, 1U);
-//
-//   now = time::Now();
-//   for (unsigned i = 0; i < send_count; ++i) {
-//     test::Test test_msg;
-//     test::TestTwo test_msg2;
-//     test_msg.set_id(i);
-//     test_msg.set_msg("hello world");
-//     test_msg2.set_foo(i * 2.0);
-//
-//     now += std::chrono::milliseconds(20);
-//     pub->Send(test_msg, now);
-//     now += std::chrono::milliseconds(20);
-//     pub2->Send(test_msg2, now);
-//     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-//   }
-//
-//   ASSERT_EQ(receive_count_1, 2 * send_count);
-//   ASSERT_EQ(receive_count_2, 2 * send_count);
-//
-//   // Advance past the watchdog
-//   node_.UpdateSimulatedClock(time::Now() + std::chrono::milliseconds(200));
-//
-//   ASSERT_EQ(watchdog_count_1, 2U);
-//   ASSERT_EQ(watchdog_count_2, 2U);
-// }
+TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksOneShotTimersOnce) {
+  time::EnableSimulatedClock();
+  time::SetSimulatedTime(time::TimePoint{});  // reset time
+
+  trellis::core::Node node("test_simtime");
+
+  const unsigned timer1_interval{1000u};
+  const unsigned timer2_interval{333u};
+  const unsigned timer3_interval{220u};
+  static constexpr unsigned time_jump_ms{1000u};  // matches longest interval
+
+  unsigned timer1_ticks{0};
+  unsigned timer2_ticks{0};
+  unsigned timer3_ticks{0};
+  time::TimePoint last_now;
+
+  auto timer1 = node.CreateOneShotTimer(timer1_interval, [&timer1_ticks, &last_now]() {
+    ++timer1_ticks;
+    auto now = time::Now();
+    ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
+    last_now = now;
+  });
+
+  auto timer2 = node.CreateOneShotTimer(timer2_interval, [&timer2_ticks, &last_now]() {
+    ++timer2_ticks;
+    auto now = time::Now();
+    ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
+    last_now = now;
+  });
+
+  auto timer3 = node.CreateOneShotTimer(timer3_interval, [&timer3_ticks, &last_now]() {
+    ++timer3_ticks;
+    auto now = time::Now();
+    ASSERT_TRUE(time::TimePointToMilliseconds(now) > time::TimePointToMilliseconds(last_now));
+    last_now = now;
+  });
+
+  // The first time we update the time, we're essentially resetting all the timers
+  time::TimePoint time{time::Now() + std::chrono::milliseconds(time_jump_ms)};
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();  // kick the event loop
+
+  ASSERT_EQ(timer1_ticks, 0);
+  ASSERT_EQ(timer2_ticks, 0);
+  ASSERT_EQ(timer3_ticks, 0);
+
+  // Now we're moving forward in time, so our timers should fire accordingly
+  time += std::chrono::milliseconds(time_jump_ms);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();  // kick the event loop
+
+  // One shot timers should have fired once
+  ASSERT_EQ(timer1_ticks, 1);
+  ASSERT_EQ(timer2_ticks, 1);
+  ASSERT_EQ(timer3_ticks, 1);
+
+  // Now we're moving forward in time, but our one shot timers are expired
+  time += std::chrono::milliseconds(time_jump_ms);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();  // kick the event loop
+
+  ASSERT_EQ(timer1_ticks, 1);
+  ASSERT_EQ(timer2_ticks, 1);
+  ASSERT_EQ(timer3_ticks, 1);
+
+  // Reset the timers
+  timer1->Reset();
+  timer2->Reset();
+  timer3->Reset();
+
+  // Now we're moving forward in time and our timers are reset, so our timers should fire accordingly
+  time += std::chrono::milliseconds(time_jump_ms);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();  // kick the event loop
+
+  // One shot timers should have fired once more
+  ASSERT_EQ(timer1_ticks, 2);
+  ASSERT_EQ(timer2_ticks, 2);
+  ASSERT_EQ(timer3_ticks, 2);
+}
