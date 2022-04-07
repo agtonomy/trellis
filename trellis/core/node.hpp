@@ -285,7 +285,6 @@ class Node {
   SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
   std::list<Timer> timers_;
-  std::mutex sim_clock_update_mutex_{};
 };
 
 }  // namespace core
