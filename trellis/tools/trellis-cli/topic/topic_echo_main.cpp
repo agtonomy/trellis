@@ -57,44 +57,44 @@ int topic_echo_main(int argc, char* argv[]) {
   std::vector<trellis::core::DynamicSubscriber> subs;
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {
-    auto sub = node.CreateDynamicSubscriber(topic, [ev, throttle_interval_ms, add_whitespace, timestamp](
-                                                       const trellis::core::time::TimePoint& msgtime,
-                                                       const google::protobuf::Message& msg) {
-      if (throttle_interval_ms != 0) {
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_echo_time_).count();
-        if (elapsed_ms <= throttle_interval_ms) {
-          return;  // rate throttle
-        }
-      }
+    auto sub = node.CreateDynamicSubscriber(
+        topic, [ev, throttle_interval_ms, add_whitespace, timestamp](const trellis::core::time::TimePoint& msgtime,
+                                                                     const google::protobuf::Message& msg) {
+          if (throttle_interval_ms != 0) {
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_echo_time_).count();
+            if (elapsed_ms <= throttle_interval_ms) {
+              return;  // rate throttle
+            }
+          }
 
-      // convert to JSON and print
-      std::string json_raw;
-      google::protobuf::util::JsonPrintOptions json_options;
-      json_options.add_whitespace = add_whitespace;
-      json_options.always_print_primitive_fields = true;
-      json_options.always_print_enums_as_ints = false;
-      json_options.preserve_proto_field_names = false;
-      auto status = google::protobuf::util::MessageToJsonString(msg, &json_raw, json_options);
-      if (!status.ok()) {
-        std::ostringstream ss;
-        ss << status;
-        throw std::runtime_error(ss.str());
-      }
+          // convert to JSON and print
+          std::string json_raw;
+          google::protobuf::util::JsonPrintOptions json_options;
+          json_options.add_whitespace = add_whitespace;
+          json_options.always_print_primitive_fields = true;
+          json_options.always_print_enums_as_ints = false;
+          json_options.preserve_proto_field_names = false;
+          auto status = google::protobuf::util::MessageToJsonString(msg, &json_raw, json_options);
+          if (!status.ok()) {
+            std::ostringstream ss;
+            ss << status;
+            throw std::runtime_error(ss.str());
+          }
 
-      if (timestamp) {
-        nlohmann::json json_obj = nlohmann::json::parse(json_raw);
-        auto it = json_obj.find("timestamp");
-        // Make sure timestamp key doesn't already exist...
-        if (it == json_obj.end()) {
-          json_obj["timestamp"] = time::TimePointToSeconds(msgtime);
-          json_raw = json_obj.dump();
-        }
-      }
+          if (timestamp) {
+            nlohmann::json json_obj = nlohmann::json::parse(json_raw);
+            auto it = json_obj.find("timestamp");
+            // Make sure timestamp key doesn't already exist...
+            if (it == json_obj.end()) {
+              json_obj["timestamp"] = time::TimePointToSeconds(msgtime);
+              json_raw = json_obj.dump();
+            }
+          }
 
-      // Post the output to the event loop to remove synchronization problems between multiple subscribers
-      asio::post(*ev, [json_raw]() { std::cout << json_raw << std::endl; });
-      last_echo_time_ = msgtime;
-    });
+          // Post the output to the event loop to remove synchronization problems between multiple subscribers
+          asio::post(*ev, [json_raw]() { std::cout << json_raw << std::endl; });
+          last_echo_time_ = msgtime;
+        });
 
     subs.push_back(sub);
   }

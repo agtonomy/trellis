@@ -101,7 +101,8 @@ class Node {
    * @return a subscriber handle
    */
   template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(std::string topic, typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
+  Subscriber<MSG_T> CreateSubscriber(std::string topic,
+                                     typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
                                      std::optional<double> max_frequency = {}) const {
