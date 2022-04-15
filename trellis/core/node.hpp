@@ -35,6 +35,7 @@
 #include "subscriber.hpp"
 #include "time.hpp"
 #include "timer.hpp"
+#include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
 namespace core {
@@ -88,7 +89,6 @@ class Node {
    * CreateSubscriber create a new handle for a subscriber
    *
    * @tparam MSG_T the message type that we expect to receive from the publisher
-   * @tparam ECAL_SUB_T the eCAL subscriber primitive to use (will almost always be default)
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
@@ -100,51 +100,39 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T, typename ECAL_SUB_T = eCAL::protobuf::CSubscriber<MSG_T>>
-  Subscriber<MSG_T, ECAL_SUB_T> CreateSubscriber(
-      std::string topic, std::function<void(const MSG_T&)> callback, std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<MSG_T, ECAL_SUB_T>::WatchdogCallback watchdog_callback = {},
-      std::optional<double> max_frequency = {}) const {
+  template <typename MSG_T>
+  Subscriber<MSG_T> CreateSubscriber(std::string topic,
+                                     typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
+                                     std::optional<unsigned> watchdog_timeout_ms = {},
+                                     typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
+                                     std::optional<double> max_frequency = {}) const {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequency);
     if (do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
-                                                                 watchdog_callback, GetEventLoop(), *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+                                                     GetEventLoop(), *max_frequency);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency);
     } else if (!do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback, *watchdog_timeout_ms,
-                                                                 watchdog_callback, GetEventLoop());
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+                                                     GetEventLoop());
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T, ECAL_SUB_T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
     }
   }
 
   /**
    * CreateDynamicPublisher create a handle to a publisher for message types not known at compile time.
    *
+   * In order to use the dynamic publisher, you must be able to create instances of the abstract
+   * google::protobuf::Message type at runtime.
+   *
    * @param topic the topic name to publish to
-   * @param msg an instance of google::protobuf::Message that contains the appropriate message schema
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::shared_ptr<google::protobuf::Message> msg) const {
-    return std::make_shared<DynamicPublisherImpl>(topic, msg);
-  }
-
-  /**
-   * CreateDynamicPublisher create a handle to a publisher for message types not known at compile time.
-   *
-   * @param topic the topic name to publish to
-   * @param proto_type_name a string representing the message name to be used
-   *
-   * Note: the string must be a fully qualified proto name (e.g. my.proto.package.MyMessage)
-   * The compiled message must be linked together with this library in order for it to be found at runtime.
-   *
-   * @return a publisher handle
-   */
-  DynamicPublisher CreateDynamicPublisher(std::string topic, std::string proto_type_name) const {
-    return std::make_shared<DynamicPublisherImpl>(topic, proto_type_name);
+  DynamicPublisher CreateDynamicPublisher(std::string topic) const {
+    return std::make_shared<PublisherClass<google::protobuf::Message>>(topic);
   }
 
   /**
@@ -162,13 +150,12 @@ class Node {
    * @return a subscriber handle
    */
   DynamicSubscriber CreateDynamicSubscriber(
-      std::string topic, std::function<void(const google::protobuf::Message&)> callback,
+      std::string topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>::WatchdogCallback
-          watchdog_callback = {},
+      typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
       std::optional<double> max_frequency = {}) const {
-    return CreateSubscriber<google::protobuf::Message, eCAL::protobuf::CDynamicSubscriber>(
-        topic, callback, watchdog_timeout_ms, watchdog_callback, max_frequency);
+    return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
+                                                       max_frequency);
   }
 
   /**

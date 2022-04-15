@@ -4,8 +4,6 @@ cc_binary(
         "command_handlers.hpp",
         "constants.hpp",
         "main.cpp",
-        "monitoring_utils.cpp",
-        "monitoring_utils.hpp",
         "node/node_list_main.cpp",
         "node/node_main.cpp",
         "service/service_info_main.cpp",

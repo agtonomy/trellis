@@ -1,3 +1,19 @@
+proto_library(
+    name = "trellis_core_proto_lib",
+    srcs = [
+        "core/timestamped_message.proto",
+    ],
+    deps = [
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "trellis_core_proto",
+    deps = [":trellis_core_proto_lib"],
+)
+
 cc_library(
     name = "trellis_core",
     srcs = [
@@ -8,9 +24,11 @@ cc_library(
         "core/config.hpp",
         "core/error_code.hpp",
         "core/event_loop.hpp",
+        "core/proto_utils.hpp",
         "core/timer.hpp",
     ],
     deps = [
+        ":trellis_core_proto",
         "@asio",
         "@yaml-cpp",
     ],
@@ -19,11 +37,13 @@ cc_library(
 cc_library(
     name = "trellis_core_ecal",
     srcs = [
+        "core/monitor_interface.cpp",
         "core/node.cpp",
     ],
     hdrs = [
         "core/logging.hpp",
         "core/message_consumer.hpp",
+        "core/monitor_interface.hpp",
         "core/node.hpp",
         "core/publisher.hpp",
         "core/service_client.hpp",
