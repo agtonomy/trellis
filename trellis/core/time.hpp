@@ -20,6 +20,8 @@
 
 #include "trellis/core/timestamped_message.pb.h"
 
+#include "trellis/core/timestamped_message.pb.h"
+
 namespace trellis {
 namespace core {
 namespace time {
@@ -107,6 +109,17 @@ void SetSimulatedTime(const trellis::core::time::TimePoint& now);
  * @param duration a time duration in milliseconds
  */
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
+
+/**
+ * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
+ *
+ */
+TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
+
+/**
+ * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
+ */
+google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
 
 }  // namespace time
 }  // namespace core

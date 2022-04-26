@@ -103,10 +103,10 @@ def trellis_deps():
         http_archive,
         name = "hdf5",
         build_file = Label("//third_party:hdf5.BUILD"),
-        sha256 = "a1b7c2a477090508365d79bb1356d995a90d5c75e9e3ff0f2bd09d54d8a225d0",
-        strip_prefix = "hdf5-hdf5-1_10_7",
+        sha256 = "7a1a0a54371275ce2dfc5cd093775bb025c365846512961e7e5ceaecb437ef15",
+        strip_prefix = "hdf5-1.10.7",
         urls = [
-            "https://github.com/HDFGroup/hdf5/archive/hdf5-1_10_7.tar.gz",  # Oct 16, 2020
+            "https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_10_7/src/hdf5-1.10.7.tar.gz",  # Oct 16, 2020
         ],
     )
 

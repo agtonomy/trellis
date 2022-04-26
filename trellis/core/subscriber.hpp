@@ -215,7 +215,6 @@ class SubscriberImpl {
 
   UpdateSimulatedClockFunction update_sim_fn_;
   WatchdogTimerCreateFunction watchdog_create_fn_;
-
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
 
