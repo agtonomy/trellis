@@ -150,7 +150,10 @@ class SubscriberImpl {
 
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     if (user_msg_ == nullptr) {
-      user_msg_ = CreateUserMessage(msg.payload().type_url());
+      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - construction_time_).count() >
+          kMonitorSettlingTime) {
+        user_msg_ = CreateUserMessage(msg.payload().type_url());
+      }
     }
 
     if (user_msg_ != nullptr) {
@@ -208,6 +211,10 @@ class SubscriberImpl {
     return monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(type_url));
   }
 
+  // For dynamic subscribers, how long to wait for the monitoring layer to settle
+  // before querying it
+  static constexpr unsigned kMonitorSettlingTime{1000U};
+
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
@@ -224,6 +231,8 @@ class SubscriberImpl {
   // Cache the message sent to the user, using a shared pointer here since
   // it's useful in the dynamic case where MSG_T = google::protobuf::Message
   std::shared_ptr<MSG_T> user_msg_{nullptr};
+  // Timestamp to give the monitor layer enough time to settle
+  time::TimePoint construction_time_{time::Now()};
 };
 
 template <typename MSG_T>
