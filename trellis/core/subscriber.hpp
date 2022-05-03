@@ -149,8 +149,14 @@ class SubscriberImpl {
   }
 
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
+    if (!did_receive_) {
+      first_receive_time_ = time::Now();
+      did_receive_ = true;
+    }
     if (user_msg_ == nullptr) {
-      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - construction_time_).count() >
+      // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
+      // publisher comes online and before we can retrieve the message schema
+      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
           kMonitorSettlingTime) {
         user_msg_ = CreateUserMessage(msg.payload().type_url());
       }
@@ -232,7 +238,8 @@ class SubscriberImpl {
   // it's useful in the dynamic case where MSG_T = google::protobuf::Message
   std::shared_ptr<MSG_T> user_msg_{nullptr};
   // Timestamp to give the monitor layer enough time to settle
-  time::TimePoint construction_time_{time::Now()};
+  time::TimePoint first_receive_time_{};
+  bool did_receive_{false};
 };
 
 template <typename MSG_T>
