@@ -154,11 +154,16 @@ class SubscriberImpl {
       did_receive_ = true;
     }
     if (user_msg_ == nullptr) {
-      // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
-      // publisher comes online and before we can retrieve the message schema
-      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
-          kMonitorSettlingTime) {
+      try {
         user_msg_ = CreateUserMessage(msg.payload().type_url());
+      } catch (const std::runtime_error& e) {
+        // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
+        // publisher comes online and before we can retrieve the message schema
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
+            kMonitorSettlingTime) {
+          // Only throw if enough time has passed since our first message was received
+          throw e;
+        }
       }
     }
 
