@@ -17,6 +17,7 @@
 
 #include "node.hpp"
 
+#include <queue>
 #include <thread>
 
 using namespace trellis::core;
@@ -72,13 +73,19 @@ bool Node::RunN(unsigned n) {
   return ok;
 }
 
-Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) const {
-  return std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms,
-                                     initial_delay_ms);
+Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
+  auto timer =
+      std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms, initial_delay_ms);
+
+  timers_.push_back(timer);
+  return timer;
 }
 
-Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) const {
-  return std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) {
+  auto timer = std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+
+  timers_.push_back(timer);
+  return timer;
 }
 
 void Node::Stop() {
@@ -90,3 +97,55 @@ void Node::Stop() {
 bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
+
+void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
+  if (time::IsSimulatedClockEnabled()) {
+    asio::post(*ev_loop_, [this, new_time]() {
+      auto existing_time = time::Now();
+      bool reset_timers{false};
+      if (new_time > existing_time) {
+        if (timers_.size() > 0) {
+          if (time::TimePointToMilliseconds(existing_time) != 0) {
+            // Use a priority queue to store the timers we need to fire in order of nearest expiration
+            auto timer_comp = [](const Timer& a, const Timer& b) { return a->GetExpiry() > b->GetExpiry(); };
+            std::priority_queue<Timer, std::vector<Timer>, decltype(timer_comp)> expired_timers(timer_comp);
+
+            // First find all the timers that are expiring before our new_time
+            for (auto& timer : timers_) {
+              if (new_time >= timer->GetExpiry()) {
+                expired_timers.push(timer);
+              }
+            }
+
+            // Step forward in time while firing the timers that are expiring until there are no more timers to fire
+            while (expired_timers.size()) {
+              auto top = expired_timers.top();
+              expired_timers.pop();
+              // Move our simulated time up to the expiration time of this timer
+              time::SetSimulatedTime(top->GetExpiry());
+              top->Fire();  // Fire the timer (which updates the expiry time also)
+
+              // If our expiry time is still earlier than our new_time, put it back in the queue for another go
+              if (new_time >= top->GetExpiry() && top->GetType() != TimerImpl::Type::kOneShot) {
+                expired_timers.push(top);
+              }
+            }
+          } else {
+            // This is our first jump forward in time, reset all the timers so their expiry times are sane
+            reset_timers = true;
+          }
+        }
+        time::SetSimulatedTime(new_time);
+        // If we need to reset timers, it needs to happen after the new time is updated
+        if (reset_timers) {
+          for (auto& timer : timers_) {
+            timer->Reset();
+          }
+        }
+      } else {
+        Log::Warn("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
+                  time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
+      }
+    });
+  }
+}

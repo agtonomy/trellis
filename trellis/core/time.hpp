@@ -18,90 +18,106 @@
 #ifndef TRELLIS_CORE_TIME_HPP
 #define TRELLIS_CORE_TIME_HPP
 
-#include <ecal/ecal_time.h>
-
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
 namespace core {
 namespace time {
 
-using TimePoint = std::chrono::time_point<eCAL::Time::ecal_clock>;
+using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
 
 /**
  * now Get the current time
  * @return A time point with millisecond resolution representing the current time
  */
-inline TimePoint Now() { return eCAL::Time::ecal_clock::now(); }
+TimePoint Now();
 
 /**
  * TimePointToSeconds Convert a timepoint to seconds
  * @param tp the timepoint to convert
  * @return the equivalent value in seconds
  */
-inline double TimePointToSeconds(const TimePoint& tp) {
-  return (tp.time_since_epoch().count() *
-          (static_cast<double>(TimePoint::period::num) / static_cast<double>(TimePoint::period::den)));
-}
+double TimePointToSeconds(const TimePoint& tp);
 
 /**
  * NowInSeconds Get the current time in seconds
  * @return a the time in seconds since Unix epoch as a floating point value
  */
-inline double NowInSeconds() { return TimePointToSeconds(Now()); }
+double NowInSeconds();
 
 /**
  * TimePointToNanoseconds Convert a timepoint to nanoseconds
  * @param tp the timepoint to convert
  * @return the equivalent value in nanoseconds
  */
-inline unsigned long long TimePointToNanoseconds(const TimePoint& tp) {
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
-}
+unsigned long long TimePointToNanoseconds(const TimePoint& tp);
 
 /**
  * NowInNanoseconds Get the current time in nanoseconds
  * @return a the time in nanoseconds since Unix epoch as an unsigned long long
  */
-inline unsigned long long NowInNanoseconds() { return TimePointToNanoseconds(Now()); }
+unsigned long long NowInNanoseconds();
 
 /**
  * TimePointToMilliseconds Convert a timepoint to nanoseconds
  * @param tp the timepoint to convert
  * @return the equivalent value in nanoseconds
  */
-inline unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
-}
+unsigned long long TimePointToMilliseconds(const TimePoint& tp);
 
 /**
  * NowInMilliseconds Get the current time in milliseconds
  * @return a the time in milliseconds since Unix epoch as an unsigned long long
  */
-inline unsigned long long NowInMilliseconds() { return TimePointToMilliseconds(Now()); }
+unsigned long long NowInMilliseconds();
 
 /**
  * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
  *
  */
-inline TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg) {
-  const auto duration =
-      std::chrono::seconds{msg.timestamp().seconds()} + std::chrono::nanoseconds{msg.timestamp().nanos()};
-  return TimePoint{duration};
-}
+TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
  */
-inline google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp) {
-  google::protobuf::Timestamp ts;
-  auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch());
-  const auto duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(duration_ns);
-  duration_ns -= duration_seconds;
-  ts.set_seconds(duration_seconds.count());
-  ts.set_nanos(duration_ns.count());
-  return ts;
-}
+google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
+
+/**
+ * EnableSimulatedClock enable the simulated system clock
+ *
+ * Subsequent calls to Now() will return a simulated time
+ */
+void EnableSimulatedClock();
+
+/**
+ * IsSimulatedClockEnabled returns true if the simulated clock is running
+ */
+bool IsSimulatedClockEnabled();
+
+/**
+ * SetSimulatedTime set the simulated system clock to the given time
+ *
+ * @param now the time point to set the simulated clock with
+ */
+void SetSimulatedTime(const trellis::core::time::TimePoint& now);
+
+/**
+ * IncrementSimulatedTime increment simulated time
+ *
+ * @param duration a time duration in milliseconds
+ */
+void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
+
+/**
+ * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
+ *
+ */
+TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
+
+/**
+ * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
+ */
+google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
 
 }  // namespace time
 }  // namespace core

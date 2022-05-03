@@ -76,7 +76,7 @@ class MessageConsumer {
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz) for each subscriber, use 0.0 to skip
    * rate throttling for a particular message type
    */
-  MessageConsumer(const Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
+  MessageConsumer(Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
                   OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                   WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback, watchdog_timeouts_ms,
@@ -94,7 +94,7 @@ class MessageConsumer {
    * @param watchdog_callbacks an array of optional watchdog callbacks
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
-  MessageConsumer(const Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
+  MessageConsumer(Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
                   OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                   WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks, watchdog_timeouts_ms,
@@ -112,7 +112,7 @@ class MessageConsumer {
    * @param watchdog_callbacks an array of optional watchdog callbacks
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
-  explicit MessageConsumer(const Node& node, TopicsArray topics, UniversalUpdateCallback callback = {},
+  explicit MessageConsumer(Node& node, TopicsArray topics, UniversalUpdateCallback callback = {},
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
@@ -138,7 +138,7 @@ class MessageConsumer {
    * @param watchdog_callbacks an array of optional watchdog callbacks
    * @param max_frequencies_hz an array of optional maximum frequencies (in Hz)
    */
-  explicit MessageConsumer(const Node& node, TopicsArray topics, NewMessageCallbacks callbacks,
+  explicit MessageConsumer(Node& node, TopicsArray topics, NewMessageCallbacks callbacks,
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {})
@@ -199,10 +199,10 @@ class MessageConsumer {
 
  private:
   template <size_t I = 0>
-  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(const Node& node) {}
+  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(Node& node) {}
 
   template <size_t I = 0>
-      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(const Node& node) {
+      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(Node& node) {
     const auto& topics = topics_[I];
     const auto& watchdog_callback = watchdog_callbacks_[I];
     using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;

@@ -6,7 +6,7 @@ namespace publisher {
 
 using namespace trellis::core;
 
-App::App(const Node& node, const Config& config)
+App::App(Node& node, const Config& config)
     : publisher_{node.CreatePublisher<trellis::examples::proto::HelloWorld>(
           config["examples"]["publisher"]["topic"].as<std::string>())},
       timer_{node.CreateTimer(

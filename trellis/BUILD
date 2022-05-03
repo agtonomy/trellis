@@ -18,6 +18,8 @@ cc_library(
     name = "trellis_core",
     srcs = [
         "core/config.cpp",
+        "core/time.cpp",
+        "core/timer.cpp",
     ],
     hdrs = [
         "core/bind.hpp",
@@ -25,6 +27,7 @@ cc_library(
         "core/error_code.hpp",
         "core/event_loop.hpp",
         "core/proto_utils.hpp",
+        "core/time.hpp",
         "core/timer.hpp",
     ],
     deps = [
@@ -49,7 +52,6 @@ cc_library(
         "core/service_client.hpp",
         "core/service_server.hpp",
         "core/subscriber.hpp",
-        "core/time.hpp",
     ],
     deps = [
         ":trellis_containers",
@@ -203,6 +205,20 @@ cc_test(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":trellis_core_ecal",
+        "@gtest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "test_core_simtime",
+    srcs = [
+        "core/test/test_simtime.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":test_fixture",
+        ":test_proto",
         ":trellis_core_ecal",
         "@gtest//:gtest_main",
     ],

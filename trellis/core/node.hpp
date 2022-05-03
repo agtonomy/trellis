@@ -22,6 +22,7 @@
 
 #include <asio.hpp>
 #include <functional>
+#include <list>
 #include <optional>
 #include <string>
 
@@ -105,19 +106,24 @@ class Node {
                                      typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
-                                     std::optional<double> max_frequency = {}) const {
+                                     std::optional<double> max_frequency = {}) {
     const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequency);
+    const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
+    const auto watchdog_create_fn = [this](unsigned initial_delay_ms, TimerImpl::Callback callback) -> Timer {
+      return CreateOneShotTimer(initial_delay_ms, callback);
+    };
     if (do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), *max_frequency);
+                                                     GetEventLoop(), *max_frequency, update_sim_fn, watchdog_create_fn);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency, update_sim_fn,
+                                                     watchdog_create_fn);
     } else if (!do_frequency_throttle && do_watchdog) {
       return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop());
+                                                     GetEventLoop(), update_sim_fn, watchdog_create_fn);
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, update_sim_fn, watchdog_create_fn);
     }
   }
 
@@ -153,7 +159,7 @@ class Node {
       std::string topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
-      std::optional<double> max_frequency = {}) const {
+      std::optional<double> max_frequency = {}) {
     return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
                                                        max_frequency);
   }
@@ -193,7 +199,7 @@ class Node {
    *
    * @return a periodic timer object
    */
-  Timer CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0) const;
+  Timer CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0);
 
   /**
    * CreateOneShotTimer create a new one-shot timer.
@@ -205,7 +211,7 @@ class Node {
    *
    * @return a one-shot timer object
    */
-  Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) const;
+  Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
 
   /*
    * Run run the application
@@ -261,6 +267,13 @@ class Node {
    */
   void AddSignalHandler(SignalHandler handler);
 
+  /**
+   * UpdateSimulatedClock update the simulated clock
+   *
+   * Updates the simulated clock based on the given time, and immediately runs any timers that are due
+   */
+  void UpdateSimulatedClock(const time::TimePoint& new_time);
+
  private:
   bool ShouldRun() const;
 
@@ -271,6 +284,7 @@ class Node {
   asio::signal_set signal_set_;
   SignalHandler user_handler_{nullptr};
   std::atomic<bool> should_run_{true};
+  std::list<Timer> timers_;
 };
 
 }  // namespace core

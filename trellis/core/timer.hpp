@@ -22,6 +22,7 @@
 
 #include "error_code.hpp"
 #include "event_loop.hpp"
+#include "time.hpp"
 
 namespace trellis {
 namespace core {
@@ -30,63 +31,72 @@ class TimerImpl {
  public:
   using Callback = std::function<void(void)>;
   enum Type { kOneShot = 0, kPeriodic };
-  TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms)
-      : loop_{loop},
-        type_{type},
-        callback_{callback},
-        interval_ms_{interval_ms},
-        delay_ms_(delay_ms),
-        timer_{*loop, asio::chrono::milliseconds(delay_ms)} {
-    KickOff();
-  }
 
-  void Reset() {
-    Stop();
-    Reload();
-    KickOff();
-  }
+  /**
+   * Construct a new timer and start it immediately
+   *
+   * @param loop the event loop used to process the timer
+   * @param type the timer type (one shot or periodic)
+   * @param callback the function to callwhen the timer expires
+   * @param interval_ms the timer internval in milliseconds
+   * @param delay_ms an initial delay which can be separate from the timer interval (0 is immediate)
+   */
+  TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms);
 
-  void Stop() { timer_.cancel(); }
+  /**
+   * Reset resets the timer, which extends the expiration
+   */
+  void Reset();
 
-  bool Expired() const { return expired_; }
+  /**
+   * Stop stops the timer callback from firing
+   */
+  void Stop();
+
+  /**
+   * Expired returns true if the timer is expired
+   *
+   * Useful for one-shot timers
+   *
+   * @return a boolean representing expired state
+   */
+  bool Expired() const;
+
+  /**
+   * GetTimeInterval get the time interval for the timer (in milliseconds)
+   */
+  std::chrono::milliseconds GetTimeInterval() const;
+
+  /**
+   * Fire fire the timer
+   *
+   * Not needed to be called externally except if simulated time is active
+   */
+  void Fire();
+
+  /**
+   * GetExpiry get the expiry time
+   */
+  time::TimePoint GetExpiry() const;
+
+  Type GetType() const { return type_; }
 
  private:
-  void KickOff() {
-    expired_ = false;
-    timer_.async_wait([this](const trellis::core::error_code& e) {
-      expired_ = true;
-      if (e) {
-        return;
-      }
-      Fire();
-    });
-  }
+  void KickOff();
+  void Reload();
+  bool SimulationActive() const;
 
-  void Reload() {
-    if (type_ == kPeriodic) {
-      // We calculate the new expiration time based on the last expiration
-      // rather than "now" in order to avoid drift due to jitter error
-      timer_.expires_at(timer_.expiry() + asio::chrono::milliseconds(interval_ms_));
-    } else if (type_ == kOneShot) {
-      // If we're reloading a one shot timer we simply reload to now + our delay time
-      timer_.expires_after(asio::chrono::milliseconds(delay_ms_));
-    }
-  }
+  static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms);
 
-  void Fire() {
-    callback_();
-    if (type_ != kOneShot) {
-      Reload();
-      KickOff();
-    }
-  }
   EventLoop loop_;
   const Type type_;
   const Callback callback_;
   const unsigned interval_ms_;
   const unsigned delay_ms_;
-  asio::steady_timer timer_;
+  std::unique_ptr<asio::steady_timer> timer_;
   std::atomic<bool> expired_{true};
+  time::TimePoint last_fire_time_{time::Now()};
+  bool did_fire_{false};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
