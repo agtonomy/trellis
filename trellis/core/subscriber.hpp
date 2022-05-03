@@ -222,8 +222,7 @@ class SubscriberImpl {
     return monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(type_url));
   }
 
-  // For dynamic subscribers, how long to wait for the monitoring layer to settle
-  // before querying it
+  // For dynamic subscribers, how long before we give up on metadata from the monitor layer
   static constexpr unsigned kMonitorSettlingTime{1000U};
 
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
@@ -242,7 +241,8 @@ class SubscriberImpl {
   // Cache the message sent to the user, using a shared pointer here since
   // it's useful in the dynamic case where MSG_T = google::protobuf::Message
   std::shared_ptr<MSG_T> user_msg_{nullptr};
-  // Timestamp to give the monitor layer enough time to settle
+
+  // Used to know how long to wait for the monitor layer
   time::TimePoint first_receive_time_{};
   bool did_receive_{false};
 };
