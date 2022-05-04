@@ -25,6 +25,7 @@ namespace core {
 namespace time {
 
 using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
+using SystemTimePoint = std::chrono::time_point<std::chrono::system_clock>;
 
 /**
  * now Get the current time
@@ -118,6 +119,11 @@ TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMe
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
  */
 google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
+
+/**
+ * TimePointToSystemTime get the system time associated with a given time point
+ */
+SystemTimePoint TimePointToSystemTime(const TimePoint& time);
 
 }  // namespace time
 }  // namespace core
