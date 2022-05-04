@@ -78,6 +78,13 @@ void SetSimulatedTime(const trellis::core::time::TimePoint& now) {
 
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration) { SetSimulatedTime(simulated_now_ + duration); }
 
+SystemTimePoint TimePointToSystemTime(const TimePoint& time) {
+  // Subtract a duration in trellis clock domain (steady clock) from current system clock
+  // to get the equivalent time in system clock domain
+  return std::chrono::system_clock::now() +
+         std::chrono::duration_cast<std::chrono::system_clock::duration>(time - Now());
+}
+
 }  // namespace time
 }  // namespace core
 }  // namespace trellis
