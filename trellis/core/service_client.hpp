@@ -56,7 +56,7 @@ class ServiceClientImpl {
 
     auto loop = ev_loop_;
     client->AddResponseCallback(
-        [timeout_timer, cb, loop, client](const struct eCAL::SServiceResponse& service_response, const std::string& response) {
+        [timeout_timer, cb, loop, client](const struct eCAL::SServiceResponse& service_response) {
           if (timeout_timer) {
             if (timeout_timer->Expired()) {
               // We've already timed out, bail now even if we have a response
@@ -68,7 +68,7 @@ class ServiceClientImpl {
           RESP_T resp;
           const ServiceCallStatus status = (service_response.call_state != call_state_executed) ? kFailure : kSuccess;
           if (status == kSuccess) {
-            resp.ParseFromString(response);
+            resp.ParseFromString(service_response.response);
           }
           // Invoke callback from event loop thread...
           // XXX(bsirang): look into eliiminating the copy of `resp` here
