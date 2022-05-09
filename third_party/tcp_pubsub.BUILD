@@ -27,14 +27,15 @@ cc_library(
         "include/tcp_pubsub/subscriber.h",
         "include/tcp_pubsub/subscriber_session.h",
         "include/tcp_pubsub/tcp_pubsub_logger.h",
-        "include/tcp_pubsub_version.h",
         "include/tcp_pubsub_export.h",
+        "include/tcp_pubsub_version.h",
     ],
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-      "@asio",
-    ]
+        "@asio",
+        "@recycle",
+    ],
 )
 
 genrule(

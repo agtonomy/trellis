@@ -143,6 +143,7 @@ def trellis_deps():
         ],
     )
 
+    # New eCAL dependency as of v5.10.0
     maybe(
         http_archive,
         name = "tcp_pubsub",
@@ -151,5 +152,17 @@ def trellis_deps():
         strip_prefix = "tcp_pubsub-1.0.0/tcp_pubsub",
         urls = [
             "https://github.com/continental/tcp_pubsub/archive/refs/tags/v1.0.0.tar.gz",
+        ],
+    )
+
+    # Submodule of tcp_pubsub
+    maybe(
+        http_archive,
+        name = "recycle",
+        build_file = Label("//third_party:recycle.BUILD"),
+        sha256 = "d1cf8a5256110c068f366b0e4e16ad39427b9def13876670aad9f167afd7aaee",
+        strip_prefix = "recycle-c5425709b2273ef6371647247d1a1d86aa75c2e6",
+        urls = [
+            "https://github.com/steinwurf/recycle/archive/c5425709b2273ef6371647247d1a1d86aa75c2e6.tar.gz",
         ],
     )
