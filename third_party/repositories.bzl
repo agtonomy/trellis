@@ -142,3 +142,14 @@ def trellis_deps():
             "https://github.com/nlohmann/json/releases/download/v3.10.2/include.zip",
         ],
     )
+
+    maybe(
+        http_archive,
+        name = "tcp_pubsub",
+        build_file = Label("//third_party:tcp_pubsub.BUILD"),
+        sha256 = "c335faf859219070ef67d62821a5f9ac5a308152bf7a1293a0d0cc74fefb9b58",
+        strip_prefix = "tcp_pubsub-1.0.0/tcp_pubsub",
+        urls = [
+            "https://github.com/continental/tcp_pubsub/archive/refs/tags/v1.0.0.tar.gz",
+        ],
+    )

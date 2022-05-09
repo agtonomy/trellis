@@ -16,8 +16,10 @@ cc_library(
 cc_library(
     name = "ecal_utils",
     srcs = [
+        "lib/ecal_utils/include/ecal_utils/command_line.h",
         "lib/ecal_utils/include/ecal_utils/ecal_utils.h",
         "lib/ecal_utils/include/ecal_utils/filesystem.h",
+        "lib/ecal_utils/include/ecal_utils/str_convert.h",
         "lib/ecal_utils/include/ecal_utils/string.h",
         "lib/ecal_utils/src/filesystem.cpp",
     ],
@@ -168,6 +170,7 @@ cc_library(
         ":libecaltime-localtime.so",
         "@asio",
         "@simpleini",
+        "@tcp_pubsub",
     ],
 )
 
