@@ -98,7 +98,6 @@ cc_library(
         "contrib/ecalhdf5/src/eh5_meas_file_v5.cpp",
         "contrib/ecalhdf5/src/eh5_meas_file_v5.h",
         "contrib/ecalhdf5/src/eh5_meas_impl.h",
-        "contrib/ecalhdf5/src/eh5_util.h",
         "contrib/ecalhdf5/src/escape.cpp",
         "contrib/ecalhdf5/src/escape.h",
     ],
