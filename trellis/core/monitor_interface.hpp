@@ -139,7 +139,6 @@ class MonitorInterface {
     std::cout << "=============================================================" << std::endl;
     std::cout << "Displayed " << entry_count << " entries." << std::endl;
   }
-  eCAL::protobuf::CProtoDynDecoder decoder_;
   std::string snapshot_raw_;
   eCAL::pb::Monitoring snapshot_;
 };

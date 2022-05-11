@@ -116,8 +116,9 @@ MonitorInterface::DynamicProtoMsg MonitorInterface::GetMessageFromTopic(const st
   proto_desc.ParseFromString(topic_description);
   std::string error_s;
 
+  eCAL::protobuf::CProtoDynDecoder decoder;
   auto message =
-      MonitorInterface::DynamicProtoMsg{decoder_.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
+      MonitorInterface::DynamicProtoMsg{decoder.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
 
   if (error_s.size() > 0) {
     throw std::runtime_error(error_s);
@@ -200,13 +201,20 @@ MonitorInterface::RequestResponsePair MonitorInterface::GetRequestResponseMessag
     throw std::runtime_error("Could not get service type descriptions !");
   }
 
+  std::cout << "REQUEST TYPE = " << req_type << std::endl << std::endl;
+  // std::cout << req_desc << std::endl << std::endl;
+  std::cout << "RESPONSE TYPE = " << resp_type << std::endl << std::endl;
+  // std::cout << resp_desc << std::endl << std::endl;
+
   std::string error_s;
 
-  std::shared_ptr<google::protobuf::Message> reqmsg(decoder_.GetProtoMessageFromDescriptor(req_desc, req_type, error_s));
-  if (!reqmsg) throw std::runtime_error("Could not create request message object: " + error_s);
-
-  std::shared_ptr<google::protobuf::Message> respmsg(decoder_.GetProtoMessageFromDescriptor(resp_desc, resp_type, error_s));
+  eCAL::protobuf::CProtoDynDecoder respdecoder;
+  DynamicProtoMsg respmsg(respdecoder.GetProtoMessageFromDescriptor(resp_desc, resp_type, error_s));
   if (!respmsg) throw std::runtime_error("Could not create response message object: " + error_s);
+
+  eCAL::protobuf::CProtoDynDecoder reqdecoder;
+  DynamicProtoMsg reqmsg(reqdecoder.GetProtoMessageFromDescriptor(req_desc, req_type, error_s));
+  if (!reqmsg) throw std::runtime_error("Could not create request message object: " + error_s);
 
   return RequestResponsePair{reqmsg, respmsg};
 }
