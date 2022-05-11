@@ -94,7 +94,7 @@ const eCAL::pb::Monitoring& MonitorInterface::UpdateSnapshot() {
   return snapshot_;
 }
 
-std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic(const std::string& topic) {
+MonitorInterface::DynamicProtoMsg MonitorInterface::GetMessageFromTopic(const std::string& topic) {
   std::string topic_type = eCAL::Util::GetTopicTypeName(topic);
   topic_type = topic_type.substr(topic_type.find_first_of(':') + 1, topic_type.size());
   topic_type = topic_type.substr(topic_type.find_last_of('.') + 1, topic_type.size());
@@ -116,8 +116,8 @@ std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic
   proto_desc.ParseFromString(topic_description);
   std::string error_s;
 
-  auto message = std::shared_ptr<google::protobuf::Message>{
-      decoder_.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
+  auto message =
+      MonitorInterface::DynamicProtoMsg{decoder_.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
 
   if (error_s.size() > 0) {
     throw std::runtime_error(error_s);
@@ -126,7 +126,7 @@ std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic
   return message;
 }
 
-std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTypeString(const std::string& type_string) {
+MonitorInterface::DynamicProtoMsg MonitorInterface::GetMessageFromTypeString(const std::string& type_string) {
   const auto topic = FindFirstTopicNameForProtoType(type_string);
   return GetMessageFromTopic(topic);
 }
@@ -184,6 +184,31 @@ void MonitorInterface::PrintServiceInfo(const std::string service_name) const {
     }
     ++it;
   }
+}
+
+MonitorInterface::RequestResponsePair MonitorInterface::GetRequestResponseMessageFromServiceMethod(
+    const std::string& service_name, const std::string& method_name) {
+  // get service method type names
+  std::string req_type, resp_type;
+  if (!eCAL::Util::GetServiceTypeNames(service_name, method_name, req_type, resp_type)) {
+    throw std::runtime_error("Could not get service type names !");
+  }
+
+  // get service method type descriptions
+  std::string req_desc, resp_desc;
+  if (!eCAL::Util::GetServiceDescription(service_name, method_name, req_desc, resp_desc)) {
+    throw std::runtime_error("Could not get service type descriptions !");
+  }
+
+  std::string error_s;
+
+  std::shared_ptr<google::protobuf::Message> reqmsg(decoder_.GetProtoMessageFromDescriptor(req_desc, req_type, error_s));
+  if (!reqmsg) throw std::runtime_error("Could not create request message object: " + error_s);
+
+  std::shared_ptr<google::protobuf::Message> respmsg(decoder_.GetProtoMessageFromDescriptor(resp_desc, resp_type, error_s));
+  if (!respmsg) throw std::runtime_error("Could not create response message object: " + error_s);
+
+  return RequestResponsePair{reqmsg, respmsg};
 }
 
 }  // namespace core

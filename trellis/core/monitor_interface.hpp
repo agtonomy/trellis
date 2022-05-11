@@ -37,6 +37,12 @@ class MonitorInterface {
  public:
   template <typename T>
   using FilterFunction = std::function<bool(const T&)>;
+  using DynamicProtoMsg = std::shared_ptr<google::protobuf::Message>;
+
+  struct RequestResponsePair {
+    DynamicProtoMsg request;
+    DynamicProtoMsg response;
+  };
 
   MonitorInterface();
 
@@ -54,7 +60,7 @@ class MonitorInterface {
    *
    * @return a shared pointer to a proto message
    */
-  std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
+  MonitorInterface::DynamicProtoMsg GetMessageFromTopic(const std::string& topic);
 
   /**
    * GetMessageFromTypeString create a new proto message object containing the message schema tied to the given type
@@ -67,7 +73,20 @@ class MonitorInterface {
    *
    * @return a shared pointer to a proto message
    */
-  std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& type_string);
+  DynamicProtoMsg GetMessageFromTypeString(const std::string& type_string);
+
+  /**
+   * GetRequestResponseMessageFromServiceMethod create a pair of proto messages representing the request and response
+   * message schema for the given service and method names
+   *
+   * @param service_name a string representing the name of the service
+   * @param method_name a string representing the nam ef the method within the service
+   *
+   * @return the pair of reqeust response messages
+   * @throws std::runtime_error if the messages couldn't be returned
+   */
+  RequestResponsePair GetRequestResponseMessageFromServiceMethod(const std::string& service_name,
+                                                                 const std::string& method_name);
 
   /**
    * PrintTopics print the list of topic metadata broadcasted on the monitoring layer
