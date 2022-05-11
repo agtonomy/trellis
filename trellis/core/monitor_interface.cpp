@@ -201,11 +201,6 @@ MonitorInterface::RequestResponsePair MonitorInterface::GetRequestResponseMessag
     throw std::runtime_error("Could not get service type descriptions !");
   }
 
-  std::cout << "REQUEST TYPE = " << req_type << std::endl << std::endl;
-  // std::cout << req_desc << std::endl << std::endl;
-  std::cout << "RESPONSE TYPE = " << resp_type << std::endl << std::endl;
-  // std::cout << resp_desc << std::endl << std::endl;
-
   std::string error_s;
 
   eCAL::protobuf::CProtoDynDecoder respdecoder;
