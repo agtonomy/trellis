@@ -6,6 +6,7 @@ cc_binary(
         "main.cpp",
         "node/node_list_main.cpp",
         "node/node_main.cpp",
+        "service/service_call_main.cpp",
         "service/service_info_main.cpp",
         "service/service_list_main.cpp",
         "service/service_main.cpp",

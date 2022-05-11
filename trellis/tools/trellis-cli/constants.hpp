@@ -43,8 +43,9 @@ constexpr std::string_view topic_publish_command_desc{"publish messages to a giv
 constexpr std::string_view topic_echo_command_desc{"echo messages from a given topic"};
 constexpr std::string_view topic_list_command_desc{"list info about available topics"};
 constexpr std::string_view node_list_command_desc{"list online nodes"};
-constexpr std::string_view service_list_command_desc{"list active services"};
+constexpr std::string_view service_call_command_desc{"invoke an rpc service"};
 constexpr std::string_view service_info_command_desc{"display info about an rpc service"};
+constexpr std::string_view service_list_command_desc{"list active services"};
 
 // Delay to allow discovery / monitoring information to propogage
 constexpr unsigned monitor_delay_ms = 1000U;
