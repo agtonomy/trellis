@@ -95,7 +95,7 @@ const eCAL::pb::Monitoring& MonitorInterface::UpdateSnapshot() {
 }
 
 std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic(const std::string& topic) {
-  std::string topic_type = eCAL::Util::GetTypeName(topic);
+  std::string topic_type = eCAL::Util::GetTopicTypeName(topic);
   topic_type = topic_type.substr(topic_type.find_first_of(':') + 1, topic_type.size());
   topic_type = topic_type.substr(topic_type.find_last_of('.') + 1, topic_type.size());
 
@@ -105,7 +105,7 @@ std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic
     throw std::runtime_error(msgstream.str());
   }
 
-  std::string topic_description = eCAL::Util::GetDescription(topic);
+  std::string topic_description = eCAL::Util::GetTopicDescription(topic);
   if (topic_description.size() == 0) {
     std::stringstream msgstream;
     msgstream << "Could not retrieve topic description for " << topic << ".";

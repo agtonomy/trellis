@@ -16,8 +16,11 @@ cc_library(
 cc_library(
     name = "ecal_utils",
     srcs = [
+        "lib/ecal_utils/include/ecal_utils/command_line.h",
         "lib/ecal_utils/include/ecal_utils/ecal_utils.h",
         "lib/ecal_utils/include/ecal_utils/filesystem.h",
+        "lib/ecal_utils/include/ecal_utils/portable_endian.h",
+        "lib/ecal_utils/include/ecal_utils/str_convert.h",
         "lib/ecal_utils/include/ecal_utils/string.h",
         "lib/ecal_utils/src/filesystem.cpp",
     ],
@@ -98,7 +101,6 @@ cc_library(
         "contrib/ecalhdf5/src/eh5_meas_file_v5.cpp",
         "contrib/ecalhdf5/src/eh5_meas_file_v5.h",
         "contrib/ecalhdf5/src/eh5_meas_impl.h",
-        "contrib/ecalhdf5/src/eh5_util.h",
         "contrib/ecalhdf5/src/escape.cpp",
         "contrib/ecalhdf5/src/escape.h",
     ],
@@ -126,6 +128,8 @@ cc_library(
             "ecal/**/win32/**",
             "ecal/**/*iceoryx*/**",
             "ecal/core/src/ecal_process_stub.cpp",
+            "ecal/core/src/io/udp_receiver_npcap.h",  # avoiding pcap deps
+            "ecal/core/src/io/udp_receiver_npcap.cpp",  # avoiding pcap deps
         ],
     ) + ["ecal/core/include/ecal/ecal_defs.h"],
     hdrs = glob([
@@ -169,6 +173,7 @@ cc_library(
         ":libecaltime-localtime.so",
         "@asio",
         "@simpleini",
+        "@tcp_pubsub",
     ],
 )
 

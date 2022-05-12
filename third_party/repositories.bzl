@@ -6,10 +6,10 @@ def trellis_deps():
         http_archive,
         name = "ecal",
         build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "51dc91a209e3393e085f32ddf78e6ecff31d1ce65cb71f208e5109bf634cd098",
-        strip_prefix = "ecal-5.9.5",
+        sha256 = "1d83d3accfb4a936ffd343524e4a626f0265e600226d6e997b3dbbd7f62eaac6",
+        strip_prefix = "ecal-5.10.0",
         urls = [
-            "https://github.com/continental/ecal/archive/refs/tags/v5.9.5.tar.gz",
+            "https://github.com/continental/ecal/archive/refs/tags/v5.10.0.tar.gz",
         ],
     )
 
@@ -140,5 +140,29 @@ def trellis_deps():
         strip_prefix = "single_include/nlohmann",
         urls = [
             "https://github.com/nlohmann/json/releases/download/v3.10.2/include.zip",
+        ],
+    )
+
+    # New eCAL dependency as of v5.10.0
+    maybe(
+        http_archive,
+        name = "tcp_pubsub",
+        build_file = Label("//third_party:tcp_pubsub.BUILD"),
+        sha256 = "c335faf859219070ef67d62821a5f9ac5a308152bf7a1293a0d0cc74fefb9b58",
+        strip_prefix = "tcp_pubsub-1.0.0/tcp_pubsub",
+        urls = [
+            "https://github.com/continental/tcp_pubsub/archive/refs/tags/v1.0.0.tar.gz",
+        ],
+    )
+
+    # Submodule of tcp_pubsub
+    maybe(
+        http_archive,
+        name = "recycle",
+        build_file = Label("//third_party:recycle.BUILD"),
+        sha256 = "d1cf8a5256110c068f366b0e4e16ad39427b9def13876670aad9f167afd7aaee",
+        strip_prefix = "recycle-c5425709b2273ef6371647247d1a1d86aa75c2e6",
+        urls = [
+            "https://github.com/steinwurf/recycle/archive/c5425709b2273ef6371647247d1a1d86aa75c2e6.tar.gz",
         ],
     )
