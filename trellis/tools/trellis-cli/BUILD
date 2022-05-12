@@ -1,3 +1,13 @@
+load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
+
+pkg_tar(
+    name = "trellis-cli-pkg",
+    srcs = [":trellis-cli"],
+    include_runfiles = True,
+    mode = "0755",
+    strip_prefix = "__none__",
+)
+
 cc_binary(
     name = "trellis-cli",
     srcs = [
