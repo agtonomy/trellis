@@ -18,6 +18,9 @@ RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/baz
 RUN go get github.com/bazelbuild/buildtools/buildifier && \
     cp ~/go/bin/buildifier /usr/local/bin/
 
+# Default python binary to python3
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
 COPY scripts/* /usr/local/bin/
 COPY ecal.ini /etc/ecal/ecal.ini
 COPY entrypoint.sh /root/entrypoint.sh
