@@ -203,13 +203,12 @@ MonitorInterface::RequestResponsePair MonitorInterface::GetRequestResponseMessag
 
   std::string error_s;
 
-  eCAL::protobuf::CProtoDynDecoder respdecoder;
-  DynamicProtoMsg respmsg(respdecoder.GetProtoMessageFromDescriptor(resp_desc, resp_type, error_s));
-  if (!respmsg) throw std::runtime_error("Could not create response message object: " + error_s);
-
-  eCAL::protobuf::CProtoDynDecoder reqdecoder;
-  DynamicProtoMsg reqmsg(reqdecoder.GetProtoMessageFromDescriptor(req_desc, req_type, error_s));
+  eCAL::protobuf::CProtoDynDecoder decoder;
+  DynamicProtoMsg reqmsg(decoder.GetProtoMessageFromDescriptor(req_desc, req_type, error_s));
   if (!reqmsg) throw std::runtime_error("Could not create request message object: " + error_s);
+
+  DynamicProtoMsg respmsg(decoder.GetProtoMessageFromDescriptor(resp_desc, resp_type, error_s));
+  if (!respmsg) throw std::runtime_error("Could not create response message object: " + error_s);
 
   return RequestResponsePair{reqmsg, respmsg};
 }
