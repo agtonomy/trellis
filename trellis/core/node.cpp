@@ -22,8 +22,9 @@
 
 using namespace trellis::core;
 
-Node::Node(std::string name)
+Node::Node(std::string name, trellis::core::Config config)
     : name_{name},
+      config_{config},
       ev_loop_{CreateEventLoop()},
       work_guard_{asio::make_work_guard(*ev_loop_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT) {

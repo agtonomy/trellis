@@ -53,7 +53,7 @@ int topic_echo_main(int argc, char* argv[]) {
   const bool verbose = result.count("verbose");
   const bool timestamp = result.count("stamp");
 
-  Node node(root_command.data());
+  Node node(root_command.data(), {});
   std::vector<trellis::core::DynamicSubscriber> subs;
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {

@@ -6,12 +6,12 @@ namespace publisher {
 
 using namespace trellis::core;
 
-App::App(Node& node, const Config& config)
+App::App(Node& node)
     : publisher_{node.CreatePublisher<trellis::examples::proto::HelloWorld>(
-          config["examples"]["publisher"]["topic"].as<std::string>())},
+          node.GetConfig()["examples"]["publisher"]["topic"].as<std::string>())},
       timer_{node.CreateTimer(
-          config["examples"]["publisher"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
-          config["examples"]["publisher"]["initial_delay_ms"].as<unsigned>())} {}
+          node.GetConfig()["examples"]["publisher"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
+          node.GetConfig()["examples"]["publisher"]["initial_delay_ms"].as<unsigned>())} {}
 
 void App::Tick() {
   const unsigned msg_number = send_count_++;
