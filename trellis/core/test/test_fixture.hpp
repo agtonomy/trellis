@@ -29,7 +29,7 @@ namespace test {
 class TrellisFixture : public ::testing::Test {
  protected:
   static constexpr unsigned discovery_settling_time_ms{1100};
-  TrellisFixture() : node_{"test_fixture"} {
+  TrellisFixture() : node_{"test_fixture", {}} {
     // allow pub/sub from same process, etc
     eCAL::Util::EnableLoopback(true);
   }

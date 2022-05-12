@@ -64,7 +64,8 @@ class Node {
    *
    * @param name the name of the application this instance represents
    */
-  Node(std::string name);
+  Node(std::string name, trellis::core::Config config);
+
   ~Node();
 
   // Moving/copying not allowed
@@ -274,16 +275,33 @@ class Node {
    */
   void UpdateSimulatedClock(const time::TimePoint& new_time);
 
+  const trellis::core::Config& GetConfig() { return config_; }
+
  private:
   bool ShouldRun() const;
 
+  // The name of the node
   const std::string name_;
+
+  // The active configuration
+  trellis::core::Config config_;
+
+  // The event loop handle used for asynchronous operations
   EventLoop ev_loop_;
+
   // Keeps event loop alive even when there's no work to do at the moment
   asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
+
+  // Used to manage signal handlers
   asio::signal_set signal_set_;
+
+  // User-specified signal handler
   SignalHandler user_handler_{nullptr};
+
+  // Whether or not the node should be running
   std::atomic<bool> should_run_{true};
+
+  // A list of the timers that have been created
   std::list<Timer> timers_;
 };
 

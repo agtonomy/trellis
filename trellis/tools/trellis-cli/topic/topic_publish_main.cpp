@@ -49,7 +49,7 @@ int topic_publish_main(int argc, char* argv[]) {
   const int delay_ms = result["delay"].as<int>();
   const int interval_ms = 1000 / rate;
 
-  Node node(root_command.data());
+  Node node(root_command.data(), {});
 
   // Delay to give time for discovery
   std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));

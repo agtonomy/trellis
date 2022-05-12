@@ -10,7 +10,7 @@ namespace service_client {
 
 class App {
  public:
-  App(trellis::core::Node& node, const trellis::core::Config& config);
+  App(trellis::core::Node& node);
 
  private:
   void HandleResponse(trellis::core::ServiceCallStatus status, const trellis::examples::proto::AdditionResponse* resp);

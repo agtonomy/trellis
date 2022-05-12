@@ -18,7 +18,7 @@ class AdditionServiceImpl : public AdditionService {
   }
 };
 
-App::App(Node& node, const Config& config)
+App::App(Node& node)
     : server_{node.CreateServiceServer<AdditionService>(std::make_shared<AdditionServiceImpl>())} {}
 
 }  // namespace service_server

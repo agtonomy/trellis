@@ -10,7 +10,7 @@ namespace publisher {
 
 class App {
  public:
-  App(trellis::core::Node& node, const trellis::core::Config& config);
+  App(trellis::core::Node& node);
 
  private:
   void Tick();

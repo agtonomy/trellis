@@ -11,7 +11,7 @@ namespace subscriber {
 
 class App {
  public:
-  App(trellis::core::Node& node, const trellis::core::Config& config);
+  App(trellis::core::Node& node);
 
  private:
   void NewMessage(const std::string& topic, const trellis::examples::proto::HelloWorld& msg);

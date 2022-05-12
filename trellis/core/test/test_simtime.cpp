@@ -27,7 +27,7 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   time::EnableSimulatedClock();
   time::SetSimulatedTime(time::TimePoint{});  // reset time
 
-  trellis::core::Node node("test_simtime");
+  trellis::core::Node node("test_simtime", {});
 
   const unsigned timer1_interval{1000u};
   const unsigned timer2_interval{333u};
@@ -90,7 +90,7 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksOneShotTimersOnce) {
   time::EnableSimulatedClock();
   time::SetSimulatedTime(time::TimePoint{});  // reset time
 
-  trellis::core::Node node("test_simtime");
+  trellis::core::Node node("test_simtime", {});
 
   const unsigned timer1_interval{1000u};
   const unsigned timer2_interval{333u};
