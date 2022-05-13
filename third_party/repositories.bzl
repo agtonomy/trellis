@@ -176,3 +176,13 @@ def trellis_deps():
             "https://github.com/bazelbuild/rules_pkg/releases/download/0.6.0/rules_pkg-0.6.0.tar.gz",
         ],
     )
+    maybe(
+        http_archive,
+        name = "variadic_table",
+        build_file = Label("//third_party:variadic_table.BUILD"),
+        sha256 = "6799c0ee507fb3c739bde936630fc826f3c13abeb7b3245ebf997a6446fd0cb3",
+        strip_prefix = "variadic_table-82fcf65c00c70afca95f71c0c77fba1982a20a86",
+        urls = [
+            "https://github.com/friedmud/variadic_table/archive/82fcf65c00c70afca95f71c0c77fba1982a20a86.tar.gz",
+        ],
+    )

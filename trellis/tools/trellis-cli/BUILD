@@ -30,5 +30,6 @@ cc_binary(
         "//trellis",
         "@cxxopts",
         "@json",
+        "@variadic_table",
     ],
 )

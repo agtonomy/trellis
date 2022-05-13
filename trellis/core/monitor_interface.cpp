@@ -26,12 +26,22 @@ namespace trellis {
 namespace core {
 
 std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Topic& topic) {
-  ostream << "tname        : " << topic.tname() << std::endl;      // topic name
-  ostream << "ttype        : " << topic.ttype() << std::endl;      // topic type
-  ostream << "direction    : " << topic.direction() << std::endl;  // direction (publisher, subscriber)
-  ostream << "hname        : " << topic.hname() << std::endl;      // host name
-  ostream << "pid          : " << topic.pid() << std::endl;        // process id
-  ostream << "tid          : " << topic.tid() << std::endl;        // topic id
+  ostream << "tname        : " << topic.tname() << std::endl;           // topic name
+  ostream << "ttype        : " << topic.ttype() << std::endl;           // topic type
+  ostream << "direction    : " << topic.direction() << std::endl;       // direction (publisher, subscriber)
+  ostream << "hname        : " << topic.hname() << std::endl;           // host name
+  ostream << "pid          : " << topic.pid() << std::endl;             // process id
+  ostream << "tid          : " << topic.tid() << std::endl;             // topic id
+  ostream << "dclock       : " << topic.dclock() << std::endl;          // data clock (send / receive action)
+  ostream << "pname        : " << topic.pname() << std::endl;           // process name
+  ostream << "uname        : " << topic.uname() << std::endl;           // unit name
+  ostream << "tid          : " << topic.tid() << std::endl;             // unit name
+  ostream << "dfreq        : " << topic.dfreq() / 1000.0 << std::endl;  // data freq
+
+  for (const auto& [key, val] : topic.attr()) {
+    ostream << "attr         :" << key << " = " << val << std::endl;
+  }
+
   return ostream;
 }
 std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Process& node) {
@@ -143,7 +153,19 @@ std::string MonitorInterface::FindFirstTopicNameForProtoType(const std::string& 
 
 void MonitorInterface::PrintTopics() const {
   const auto& topics = snapshot_.topics();
-  PrintEntries<eCAL::pb::Topic>(topics);
+  auto filter = [](const eCAL::pb::Topic& topic) {
+    const auto& name = topic.tname();
+    if (name.size() >= 4) {
+      const std::string suffix = name.substr(name.size() - 4, name.size());
+      // XXX (bsirang) the /raw entries are internal to trellis. These internal-only
+      // TODO improve the namespacing of these internal topic names
+      if (suffix == "/raw") {
+        return false;
+      }
+    }
+    return true;
+  };
+  PrintEntries<eCAL::pb::Topic>(topics, filter);
 }
 
 void MonitorInterface::PrintNodes() const {
