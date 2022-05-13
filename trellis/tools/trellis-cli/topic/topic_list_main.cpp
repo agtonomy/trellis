@@ -102,7 +102,7 @@ int topic_list_main(int argc, char* argv[]) {
     }
 
     VariadicTable<std::string, int, int, double, int, std::string> vt(
-        {"Name", "Num Pub", "Num Sub", "Freq", "Tx Count", "Type"});
+        {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Type"});
     for (const auto& [topic, info] : topic_map) {
       vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count,
                 StringifySet(info.types));
