@@ -81,7 +81,6 @@ int topic_list_main(int argc, char* argv[]) {
 
     for (const auto& topic : snapshot.topics()) {
       const bool is_publisher = (topic.direction() == "publisher");
-      std::string topic_name = topic.tname();
       if (IsRawTopic(topic.tname())) {
         if (is_publisher) {
           // We grab the real type from the raw topic
