@@ -31,6 +31,8 @@ struct TopicInfo {
   unsigned subscriber_count{0};
   std::unordered_set<std::string> types{};
   std::unordered_set<std::string> hostnames;
+  double pub_freq{0.0};
+  unsigned pub_count{0};
 };
 
 std::string StringifySet(const std::unordered_set<std::string>& set) {
@@ -80,24 +82,29 @@ int topic_list_main(int argc, char* argv[]) {
     for (const auto& topic : snapshot.topics()) {
       const bool is_publisher = (topic.direction() == "publisher");
       std::string topic_name = topic.tname();
-      if (IsRawTopic(topic.tname()) && is_publisher) {
-        // We grab the real type from the raw topic
-        const std::string actual_topic_name = topic.tname().substr(0, topic.tname().size() - 4);
-        topic_map[actual_topic_name].types.insert(topic.ttype());
+      if (IsRawTopic(topic.tname())) {
+        if (is_publisher) {
+          // We grab the real type from the raw topic
+          const std::string actual_topic_name = topic.tname().substr(0, topic.tname().size() - 4);
+          topic_map[actual_topic_name].types.insert(topic.ttype());
+        }
       } else {
         TopicInfo& topic_info = topic_map[topic.tname()];
         if (is_publisher) {
           ++topic_info.publisher_count;
           topic_info.hostnames.insert(topic.hname());
+          topic_info.pub_count = topic.dclock();
+          topic_info.pub_freq = topic.dfreq() / 1000.0;
         } else {
           ++topic_info.subscriber_count;
         }
       }
     }
 
-    VariadicTable<std::string, int, int, std::string, std::string> vt({"Name", "PubCnt", "SubCnt", "Host(s)", "Type"});
+    VariadicTable<std::string, int, int, double, int, std::string> vt(
+        {"Name", "Num Pub", "Num Sub", "Freq", "Tx Count", "Type"});
     for (const auto& [topic, info] : topic_map) {
-      vt.addRow(topic, info.publisher_count, info.subscriber_count, StringifySet(info.hostnames),
+      vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count,
                 StringifySet(info.types));
     }
     vt.print(std::cout);
