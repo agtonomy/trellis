@@ -5,8 +5,8 @@ package trellis.core;
 import "trellis/core/vector3.proto";
 import "trellis/core/quaternion.proto";
 
-// This message represents a 3D affine transform composed as a 3D translation followed by a 3D rotation
-message AffineTransform
+// This message represents a 3D rigid transform composed as a 3D translation followed by a 3D rotation
+message RigidTransform
 {
   string frame_from   = 1;
   string frame_to     = 2;

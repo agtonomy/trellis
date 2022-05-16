@@ -50,8 +50,8 @@ cc_library(
 proto_library(
     name = "core_proto_lib",
     srcs = [
-        "affine_transform.proto",
         "quaternion.proto",
+        "rigid_transform.proto",
         "timestamped_message.proto",
         "vector3.proto",
     ],
