@@ -50,7 +50,10 @@ cc_library(
 proto_library(
     name = "core_proto_lib",
     srcs = [
+        "affine_transform.proto",
+        "quaternion.proto",
         "timestamped_message.proto",
+        "vector3.proto",
     ],
     deps = [
         "@com_google_protobuf//:any_proto",

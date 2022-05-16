@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package trellis.core;
+
+import "trellis/core/vector3.proto";
+import "trellis/core/quaternion.proto";
+
+// This message represents a 3D affine transform composed as a 3D translation followed by a 3D rotation
+message AffineTransform
+{
+  string frame_from   = 1;
+  string frame_to     = 2;
+  Vector3 translation = 3;
+  Quaternion rotation = 4;
+}
