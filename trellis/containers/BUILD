@@ -1,10 +1,10 @@
 cc_library(
     name = "containers",
-    visibility = ["//visibility:public"],
     hdrs = [
         "fifo.hpp",
         "multi_fifo.hpp",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_test(
