@@ -46,7 +46,8 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to) {
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,
                               const trellis::core::time::TimePoint& when, const std::chrono::milliseconds max_delta) {
-  return false;
+  const auto timestamp = FindNearestTransformTimestamp(from, to, when, max_delta);
+  return !timestamp ? false : true;
 }
 
 const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
@@ -115,8 +116,11 @@ void Transforms::PurgeStaleTransforms() {
     if (transform_map.empty()) {
       continue;
     }
-    for (auto it = transform_map.lower_bound(cutoff); it != transform_map.end(); it = std::prev(it)) {
+    auto it = transform_map.lower_bound(cutoff);
+    while (it != transform_map.end()) {
+      auto prev = std::prev(it);
       transform_map.erase(it);
+      it = prev;
     }
   }
 }
