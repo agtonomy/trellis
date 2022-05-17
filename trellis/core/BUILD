@@ -4,6 +4,7 @@ cc_library(
         "config.cpp",
         "time.cpp",
         "timer.cpp",
+        "transforms.cpp",
     ],
     hdrs = [
         "bind.hpp",
@@ -13,6 +14,7 @@ cc_library(
         "proto_utils.hpp",
         "time.hpp",
         "timer.hpp",
+        "transforms.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
