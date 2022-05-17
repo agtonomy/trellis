@@ -70,6 +70,9 @@ class Transforms {
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(
       const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when,
       const std::chrono::milliseconds max_delta);
+
+  void PurgeStaleTransforms();
+
   using KeyType = std::string;
 
   struct FrameNames {

@@ -96,15 +96,29 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
   }
 
   // At this point we're not looking at the most recent timestamp so we can look at the previous as well
-  auto it_prev = std::prev(it);
-  auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
-  auto time_delta_prev = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
+  const auto it_prev = std::prev(it);
+  const auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
+  const auto time_delta_prev =
+      std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
 
   if (time_delta <= max_delta || time_delta_prev <= max_delta) {
     return (time_delta < time_delta_prev) ? it->first : it_prev->first;
   }
 
   return {};  // these times are still too far away
+}
+
+void Transforms::PurgeStaleTransforms() {
+  const trellis::core::time::TimePoint cutoff = trellis::core::time::Now() - max_history_duration_;
+
+  for (auto& [key, transform_map] : transforms_) {
+    if (transform_map.empty()) {
+      continue;
+    }
+    for (auto it = transform_map.lower_bound(cutoff); it != transform_map.end(); it = std::prev(it)) {
+      transform_map.erase(it);
+    }
+  }
 }
 
 }  // namespace core
