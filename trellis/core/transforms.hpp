@@ -28,12 +28,18 @@ namespace trellis {
 namespace core {
 class Transforms {
  public:
+  /**
+   * Tranlsation represents a translation in 3D space
+   */
   struct Translation {
     double x;
     double y;
     double z;
   };
 
+  /**
+   * Rotation represents a rotation in 3D space represented as a quaternion
+   */
   struct Rotation {
     double x;
     double y;
@@ -41,32 +47,83 @@ class Transforms {
     double w;
   };
 
+  /**
+   * RigidTransform represents a transformation comprised of a tranlsation and rotation
+   */
   struct RigidTransform {
     Translation translation;
     Rotation rotation;
   };
 
-  struct TransformData {
-    RigidTransform transform;
-    std::chrono::milliseconds validity_window;
-  };
-
   static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
 
-  Transforms() {}
+  Transforms() = default;
 
+  /**
+   * UpdateTransform update a transform associated with the current time
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @param transform the actual transformation in terms of a translation and a rotation
+   * @param validity_window how long the transform is valid for (static transforms should use kForever)
+   */
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                        std::chrono::milliseconds validity_window = kForever);
 
+  /**
+   * UpdateTransform update a transform associated with the given time
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @param transform the actual transformation in terms of a translation and a rotation
+   * @param validity_window how long the transform is valid for (static transforms should use kForever)
+   * @param when the time point to associate with the transform
+   */
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                        std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
 
+  /**
+   * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
+   * window
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @return true if the transform exists and is valid
+   *
+   */
   bool HasTransform(const std::string& from, const std::string& to);
 
+  /**
+   * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
+   * window relative to the given time
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @param when the time point to associate with the transform
+   * @return true if the transform exists and is valid
+   *
+   */
   bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
 
+  /**
+   * GetTransform retrieve the most recent transform for a given pair of reference frames
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @return the rigid transformation between the two reference frames
+   * @throws std::runtime_error if no valid transform exists
+   */
   RigidTransform GetTransform(const std::string& from, const std::string& to);
 
+  /**
+   * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
+   *
+   * @param from the starting reference frame for the transform
+   * @param to the ending reference frame for the transform
+   * @return the rigid transformation between the two reference frames
+   * @param when the time point with which to find the nearest transform
+   * @throws std::runtime_error if no valid transform exists
+   */
   RigidTransform GetTransform(const std::string& from, const std::string& to,
                               const trellis::core::time::TimePoint& when);
 
@@ -81,6 +138,11 @@ class Transforms {
   struct FrameNames {
     const std::string from;
     const std::string to;
+  };
+
+  struct TransformData {
+    RigidTransform transform;
+    std::chrono::milliseconds validity_window;
   };
 
   static KeyType CalculateKeyFromFrames(const std::string& from, const std::string& to);
