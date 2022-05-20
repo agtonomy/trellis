@@ -51,10 +51,12 @@ class Transforms {
     std::chrono::milliseconds validity_window;
   };
 
+  static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
+
   Transforms(std::chrono::milliseconds max_history_duration) : max_history_duration_{max_history_duration} {}
 
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
-                       std::chrono::milliseconds validity_window = std::chrono::milliseconds::max());
+                       std::chrono::milliseconds validity_window = kForever);
 
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                        std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
