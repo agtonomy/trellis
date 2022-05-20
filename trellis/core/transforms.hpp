@@ -53,7 +53,7 @@ class Transforms {
 
   static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
 
-  Transforms(std::chrono::milliseconds max_history_duration) : max_history_duration_{max_history_duration} {}
+  Transforms() {}
 
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                        std::chrono::milliseconds validity_window = kForever);
@@ -85,8 +85,6 @@ class Transforms {
 
   static KeyType CalculateKeyFromFrames(const std::string& from, const std::string& to);
   static FrameNames GetFrameNamesFromKey(const KeyType& key);
-
-  const std::chrono::milliseconds max_history_duration_;
 
   using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, TransformData>;
   std::unordered_map<KeyType, TransformHistoryContainer> transforms_;

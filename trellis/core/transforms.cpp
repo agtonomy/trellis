@@ -107,18 +107,11 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
 }
 
 void Transforms::PurgeStaleTransforms() {
-  const trellis::core::time::TimePoint cutoff = trellis::core::time::Now() - max_history_duration_;
-
   for (auto& [key, transform_map] : transforms_) {
     if (transform_map.empty()) {
       continue;
     }
-    auto it = transform_map.lower_bound(cutoff);
-    while (it != transform_map.end()) {
-      auto prev = std::prev(it);
-      transform_map.erase(it);
-      it = prev;
-    }
+    // remove oldest entries
   }
 }
 
