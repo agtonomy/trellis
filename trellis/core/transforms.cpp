@@ -33,6 +33,10 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   auto& transform_map = transforms_[CalculateKeyFromFrames(from, to)];
   TransformData entry{transform, validity_window};
   transform_map.insert({when, entry});
+  if (transform_map.size() > max_transform_length_) {
+    auto last = std::prev(transform_map.end());
+    transform_map.erase(last);
+  }
 }
 
 Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to) {
@@ -104,15 +108,6 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
   }
 
   return {};  // these times are still too far away
-}
-
-void Transforms::PurgeStaleTransforms() {
-  for (auto& [key, transform_map] : transforms_) {
-    if (transform_map.empty()) {
-      continue;
-    }
-    // remove oldest entries
-  }
 }
 
 Transforms::KeyType Transforms::CalculateKeyFromFrames(const std::string& from, const std::string& to) {

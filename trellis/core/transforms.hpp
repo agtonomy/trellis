@@ -56,8 +56,9 @@ class Transforms {
   };
 
   static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
+  static constexpr std::size_t kMaxTransformLength = 100U;
 
-  Transforms() = default;
+  Transforms(std::size_t max_transform_length = kMaxTransformLength) : max_transform_length_{max_transform_length} {}
 
   /**
    * UpdateTransform update a transform associated with the current time
@@ -131,8 +132,6 @@ class Transforms {
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(
       const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
 
-  void PurgeStaleTransforms();
-
   using KeyType = std::string;
 
   struct FrameNames {
@@ -150,6 +149,7 @@ class Transforms {
 
   using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, TransformData>;
   std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
+  const std::size_t max_transform_length_;
 };
 }  // namespace core
 }  // namespace trellis
