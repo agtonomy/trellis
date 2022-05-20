@@ -46,30 +46,31 @@ class Transforms {
     Rotation rotation;
   };
 
-  static constexpr std::chrono::milliseconds kMaxDeltaDefault = std::chrono::milliseconds(50);
+  struct TransformData {
+    RigidTransform transform;
+    std::chrono::milliseconds validity_window;
+  };
 
   Transforms(std::chrono::milliseconds max_history_duration) : max_history_duration_{max_history_duration} {}
 
-  void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform);
+  void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
+                       std::chrono::milliseconds validity_window = std::chrono::milliseconds::max());
 
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
-                       const trellis::core::time::TimePoint& when);
+                       std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
 
   bool HasTransform(const std::string& from, const std::string& to);
 
-  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when,
-                    const std::chrono::milliseconds max_delta = kMaxDeltaDefault);
+  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
 
-  const RigidTransform& GetTransform(const std::string& from, const std::string& to);
+  RigidTransform GetTransform(const std::string& from, const std::string& to);
 
-  const RigidTransform& GetTransform(const std::string& from, const std::string& to,
-                                     const trellis::core::time::TimePoint& when,
-                                     const std::chrono::milliseconds max_delta = kMaxDeltaDefault);
+  RigidTransform GetTransform(const std::string& from, const std::string& to,
+                              const trellis::core::time::TimePoint& when);
 
  private:
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(
-      const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when,
-      const std::chrono::milliseconds max_delta);
+      const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
 
   void PurgeStaleTransforms();
 
@@ -83,10 +84,10 @@ class Transforms {
   static KeyType CalculateKeyFromFrames(const std::string& from, const std::string& to);
   static FrameNames GetFrameNamesFromKey(const KeyType& key);
 
-  using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, RigidTransform>;
-  std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
-
   const std::chrono::milliseconds max_history_duration_;
+
+  using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, TransformData>;
+  std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
 };
 }  // namespace core
 }  // namespace trellis

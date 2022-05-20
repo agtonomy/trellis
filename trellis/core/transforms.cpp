@@ -22,21 +22,20 @@
 namespace trellis {
 namespace core {
 
-void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform) {
-  UpdateTransform(from, to, transform, time::Now());
+void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
+                                 std::chrono::milliseconds validity_window) {
+  UpdateTransform(from, to, transform, validity_window, time::Now());
 }
 
 void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
+                                 std::chrono::milliseconds validity_window,
                                  const trellis::core::time::TimePoint& when) {
   auto& transform_map = transforms_[CalculateKeyFromFrames(from, to)];
-  transform_map.insert({when, transform});
+  TransformData entry{transform, validity_window};
+  transform_map.insert({when, entry});
 }
 
-Transforms::KeyType Transforms::CalculateKeyFromFrames(const std::string& from, const std::string& to) {
-  return from + "|" + to;
-}
-
-const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) {
+Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to) {
   return GetTransform(from, to, time::Now());
 }
 
@@ -45,15 +44,14 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to) {
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,
-                              const trellis::core::time::TimePoint& when, const std::chrono::milliseconds max_delta) {
-  const auto timestamp = FindNearestTransformTimestamp(from, to, when, max_delta);
+                              const trellis::core::time::TimePoint& when) {
+  const auto timestamp = FindNearestTransformTimestamp(from, to, when);
   return !timestamp ? false : true;
 }
 
-const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                           const trellis::core::time::TimePoint& when,
-                                                           const std::chrono::milliseconds max_delta) {
-  auto timestamp = FindNearestTransformTimestamp(from, to, when, max_delta);
+Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to,
+                                                    const trellis::core::time::TimePoint& when) {
+  auto timestamp = FindNearestTransformTimestamp(from, to, when);
 
   if (!timestamp) {
     std::stringstream msg;
@@ -63,12 +61,11 @@ const Transforms::RigidTransform& Transforms::GetTransform(const std::string& fr
 
   // Our value is guaranteed to exist at this point
   const auto& transform_map = transforms_.at(CalculateKeyFromFrames(from, to));
-  return transform_map.at(*timestamp);
+  return transform_map.at(*timestamp).transform;
 }
 
 std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTimestamp(
-    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when,
-    const std::chrono::milliseconds max_delta) {
+    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) {
   const auto transform_map_it = transforms_.find(CalculateKeyFromFrames(from, to));
   if (transform_map_it == transforms_.end()) {
     return {};  // transform doesn't exist at all
@@ -89,7 +86,7 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
   if (it == transform_map.begin()) {
     // If we're looking at the most recent time, we just have this one item to evaluate
     auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
-    if (time_delta <= max_delta) {
+    if (time_delta <= it->second.validity_window) {
       return it->first;
     } else {
       return {};
@@ -102,7 +99,7 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
   const auto time_delta_prev =
       std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
 
-  if (time_delta <= max_delta || time_delta_prev <= max_delta) {
+  if (time_delta <= it->second.validity_window || time_delta_prev <= it_prev->second.validity_window) {
     return (time_delta < time_delta_prev) ? it->first : it_prev->first;
   }
 
@@ -123,6 +120,10 @@ void Transforms::PurgeStaleTransforms() {
       it = prev;
     }
   }
+}
+
+Transforms::KeyType Transforms::CalculateKeyFromFrames(const std::string& from, const std::string& to) {
+  return from + "|" + to;
 }
 
 }  // namespace core
