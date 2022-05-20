@@ -97,7 +97,7 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
   const auto it_prev = std::prev(it);
   const auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
   const auto time_delta_prev =
-      std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
+      std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it_prev->first));
 
   if (time_delta <= it->second.validity_window || time_delta_prev <= it_prev->second.validity_window) {
     return (time_delta < time_delta_prev) ? it->first : it_prev->first;
