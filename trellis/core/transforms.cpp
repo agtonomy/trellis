@@ -86,8 +86,8 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
     it = std::prev(transform_map.end());
   }
 
-  if (it == std::prev(transform_map.end()) || it == transform_map.begin()) {
-    // If we're looking at the most recent time, we just have this one item to evaluate
+  if (it == transform_map.begin()) {
+    // We're looking at the oldest timestamp in this case
     auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
     if (time_delta <= it->second.validity_window) {
       return it->first;
@@ -96,7 +96,7 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
     }
   }
 
-  // At this point we're not looking at the most recent timestamp so we can look at the previous as well
+  // At this point we're not looking at the oldest timestamp so we can look at the previous as well
   const auto it_prev = std::prev(it);
   const auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
   const auto time_delta_prev =
