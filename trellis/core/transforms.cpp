@@ -34,8 +34,7 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   TransformData entry{transform, validity_window};
   transform_map.insert({when, entry});
   if (transform_map.size() > max_transform_length_) {
-    auto last = std::prev(transform_map.end());
-    transform_map.erase(last);
+    transform_map.erase(transform_map.begin());
   }
 }
 
@@ -79,15 +78,15 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
     return {};  // no records exist
   }
 
-  // At this point we know the map has at least one item in it, so we can count on .begin()
+  // At this point we know the map has at least one item in it, so we can count on std::prev(transform_map.end())
   auto it = transform_map.lower_bound(when);
 
   if (it == transform_map.end()) {
     // In this case there was nothing greater than or equal to our time point, so let's just look at the most recent
-    it = transform_map.begin();
+    it = std::prev(transform_map.end());
   }
 
-  if (it == transform_map.begin()) {
+  if (it == std::prev(transform_map.end()) || it == transform_map.begin()) {
     // If we're looking at the most recent time, we just have this one item to evaluate
     auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
     if (time_delta <= it->second.validity_window) {
