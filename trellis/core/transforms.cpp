@@ -31,8 +31,7 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
                                  std::chrono::milliseconds validity_window,
                                  const trellis::core::time::TimePoint& when) {
   auto& transform_map = transforms_[CalculateKeyFromFrames(from, to)];
-  TransformData entry{transform, validity_window};
-  transform_map.insert({when, entry});
+  transform_map.emplace(std::make_pair(when, TransformData{transform, validity_window}));
   if (transform_map.size() > max_transform_length_) {
     transform_map.erase(transform_map.begin());
   }
@@ -54,7 +53,7 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to,
 
 Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to,
                                                     const trellis::core::time::TimePoint& when) {
-  auto timestamp = FindNearestTransformTimestamp(from, to, when);
+  const auto timestamp = FindNearestTransformTimestamp(from, to, when);
 
   if (!timestamp) {
     std::stringstream msg;
