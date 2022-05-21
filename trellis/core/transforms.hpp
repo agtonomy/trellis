@@ -114,7 +114,7 @@ class Transforms {
    * @return the rigid transformation between the two reference frames
    * @throws std::runtime_error if no valid transform exists
    */
-  RigidTransform GetTransform(const std::string& from, const std::string& to);
+  const RigidTransform& GetTransform(const std::string& from, const std::string& to);
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
@@ -125,8 +125,8 @@ class Transforms {
    * @param when the time point with which to find the nearest transform
    * @throws std::runtime_error if no valid transform exists
    */
-  RigidTransform GetTransform(const std::string& from, const std::string& to,
-                              const trellis::core::time::TimePoint& when);
+  const RigidTransform& GetTransform(const std::string& from, const std::string& to,
+                                     const trellis::core::time::TimePoint& when);
 
  private:
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(

@@ -86,27 +86,27 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
 
   {
     // We're back in time before the first transform by just within the validity window
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
     ASSERT_EQ(result.translation.x, 1.0);
   }
   {
     // We're right in between the 1000 and 1050 sample, older sample wins
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1025)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1025)));
     ASSERT_EQ(result.translation.x, 1.0);
   }
   {
     // Now we're closer to the 1050ms sample
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1026)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1026)));
     ASSERT_EQ(result.translation.x, 2.0);
   }
   {
     // Let's go near the 8th (1350ms) transform
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1326)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1326)));
     ASSERT_EQ(result.translation.x, 8.0);
   }
   {
     // Let's go just past the last one
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1451)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1451)));
     ASSERT_EQ(result.translation.x, 10.0);
   }
 
@@ -135,7 +135,7 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
 
   {
     // The oldest transform should now be at 1250ms, so we'll go back to 1250ms - 200ms validity window
-    const auto result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050)));
+    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050)));
     ASSERT_EQ(result.translation.x, 6.0);  // 1 - 5 should have been truncated
   }
 }

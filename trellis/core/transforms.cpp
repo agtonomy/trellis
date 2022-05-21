@@ -37,7 +37,7 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   }
 }
 
-Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to) {
+const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) {
   return GetTransform(from, to, time::Now());
 }
 
@@ -51,8 +51,8 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to,
   return !timestamp ? false : true;
 }
 
-Transforms::RigidTransform Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                    const trellis::core::time::TimePoint& when) {
+const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
+                                                           const trellis::core::time::TimePoint& when) {
   const auto timestamp = FindNearestTransformTimestamp(from, to, when);
 
   if (!timestamp) {
