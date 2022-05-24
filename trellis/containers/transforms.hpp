@@ -91,6 +91,8 @@ class Transforms {
              this->rotation.z == other.rotation.z;
     }
 
+    bool operator!=(const RigidTransform& other) const { return !(*this == other); }
+
     Translation translation;
     Rotation rotation;
 
