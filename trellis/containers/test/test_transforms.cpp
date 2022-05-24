@@ -139,3 +139,37 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
     ASSERT_EQ(result.translation.x, 6.0);  // 1 - 5 should have been truncated
   }
 }
+
+TEST(TrellisTransforms, InverseTransformIsInserted) {
+  time::EnableSimulatedClock();
+  time::SetSimulatedTime(time::TimePoint(std::chrono::milliseconds(5000)));  // initial time
+  trellis::containers::Transforms transforms;
+
+  // Initially we don't have this transform
+  ASSERT_FALSE(transforms.HasTransform("foo", "bar"));
+  ASSERT_FALSE(transforms.HasTransform("bar", "foo"));
+
+  trellis::containers::Transforms::RigidTransform transform;
+  transform.translation.x = 1.0;
+  transform.translation.y = 2.0;
+  transform.translation.z = 3.0;
+  transform.rotation.w = 0.70710678118;
+  transform.rotation.x = 0.0;
+  transform.rotation.y = 0.0;
+  transform.rotation.z = 0.70710678118;
+  // Even with a 0 ms validity we expect this to pass because our simulated clock didn't change
+  transforms.UpdateTransform("foo", "bar", transform, std::chrono::milliseconds(0));
+  ASSERT_TRUE(transforms.HasTransform("foo", "bar"));
+  ASSERT_TRUE(transforms.HasTransform("bar", "foo"));  // inverse also exists
+
+  const auto transform_out = transforms.GetTransform("foo", "bar").GetAffineRepresentation();
+  const auto transform_inv_out = transforms.GetTransform("bar", "foo").GetAffineRepresentation();
+
+  const Eigen::Vector3d vec(1.0, 0.0, 0.0);
+  const Eigen::Vector3d rotated = transform_inv_out * (transform_out * vec);
+
+  // We transformed and then back via the inverse, expect to be equal essentially
+  ASSERT_TRUE(std::fabs(vec.x() - rotated.x()) < 0.0000001);
+  ASSERT_TRUE(std::fabs(vec.y() - rotated.y()) < 0.0000001);
+  ASSERT_TRUE(std::fabs(vec.z() - rotated.z()) < 0.0000001);
+}
