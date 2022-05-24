@@ -104,15 +104,3 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
-
-cc_test(
-    name = "test_core_transforms",
-    srcs = [
-        "test_transforms.cpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//trellis/core:core_ecal",
-        "@gtest//:gtest_main",
-    ],
-)

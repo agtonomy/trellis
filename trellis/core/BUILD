@@ -2,9 +2,7 @@ cc_library(
     name = "core",
     srcs = [
         "config.cpp",
-        "time.cpp",
         "timer.cpp",
-        "transforms.cpp",
     ],
     hdrs = [
         "bind.hpp",
@@ -12,15 +10,27 @@ cc_library(
         "error_code.hpp",
         "event_loop.hpp",
         "proto_utils.hpp",
-        "time.hpp",
         "timer.hpp",
-        "transforms.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_time",
+        "@asio",
+        "@yaml-cpp",
+    ],
+)
+
+cc_library(
+    name = "core_time",
+    srcs = [
+        "time.cpp",
+    ],
+    hdrs = [
+        "time.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":core_proto",
-        "@asio",
-        "@yaml-cpp",
     ],
 )
 

@@ -17,7 +17,7 @@
 
 #include <gtest/gtest.h>
 
-#include "trellis/core/transforms.hpp"
+#include "trellis/containers/transforms.hpp"
 
 using namespace trellis::core;
 
