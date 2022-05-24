@@ -84,6 +84,13 @@ class Transforms {
      */
     RigidTransform Inverse() const { return Transforms::RigidTransform(GetAffineRepresentation().inverse()); }
 
+    bool operator==(const RigidTransform& other) const {
+      return this->translation.x == other.translation.x && this->translation.y == other.translation.y &&
+             this->translation.z == other.translation.z && this->rotation.w == other.rotation.w &&
+             this->rotation.x == other.rotation.x && this->rotation.y == other.rotation.y &&
+             this->rotation.z == other.rotation.z;
+    }
+
     Translation translation;
     Rotation rotation;
 
