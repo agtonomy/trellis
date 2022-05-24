@@ -20,11 +20,11 @@
 #include <sstream>
 
 namespace trellis {
-namespace core {
+namespace containers {
 
 void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                                  std::chrono::milliseconds validity_window) {
-  UpdateTransform(from, to, transform, validity_window, time::Now());
+  UpdateTransform(from, to, transform, validity_window, core::time::Now());
 }
 
 void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
@@ -38,11 +38,11 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
 }
 
 const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) {
-  return GetTransform(from, to, time::Now());
+  return GetTransform(from, to, core::time::Now());
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to) {
-  return HasTransform(from, to, time::Now());
+  return HasTransform(from, to, core::time::Now());
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,

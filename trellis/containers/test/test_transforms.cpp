@@ -26,12 +26,12 @@ static constexpr std::chrono::milliseconds kTransformHistoryWindow(1000);
 TEST(TrellisTransforms, HasTransformTestSuccessCase) {
   time::EnableSimulatedClock();
   time::SetSimulatedTime(time::TimePoint(std::chrono::milliseconds(5000)));  // initial time
-  trellis::core::Transforms transforms;
+  trellis::containers::Transforms transforms;
 
   // Initially we don't have this transform
   ASSERT_FALSE(transforms.HasTransform("foo", "bar"));
 
-  trellis::core::Transforms::RigidTransform transform;
+  trellis::containers::Transforms::RigidTransform transform;
   // Even with a 0 ms validity we expect this to pass because our simulated clock didn't change
   transforms.UpdateTransform("foo", "bar", transform, std::chrono::milliseconds(0));
   ASSERT_TRUE(transforms.HasTransform("foo", "bar"));
@@ -40,12 +40,12 @@ TEST(TrellisTransforms, HasTransformTestSuccessCase) {
 TEST(TrellisTransforms, HasTransformTestTimeExpired) {
   time::EnableSimulatedClock();
   time::SetSimulatedTime(time::TimePoint(std::chrono::milliseconds(5000)));  // initial time
-  trellis::core::Transforms transforms;
+  trellis::containers::Transforms transforms;
 
   // Initially we don't have this transform
   ASSERT_FALSE(transforms.HasTransform("foo", "bar"));
 
-  trellis::core::Transforms::RigidTransform transform;
+  trellis::containers::Transforms::RigidTransform transform;
   transforms.UpdateTransform("foo", "bar", transform, std::chrono::milliseconds(0));
 
   // One millisecond later and we should fail to retrieve the transform
@@ -56,12 +56,12 @@ TEST(TrellisTransforms, HasTransformTestTimeExpired) {
 TEST(TrellisTransforms, HasTransformStaticTransformCase) {
   time::EnableSimulatedClock();
   time::SetSimulatedTime(time::TimePoint(std::chrono::milliseconds(0)));  // initial time
-  trellis::core::Transforms transforms;
+  trellis::containers::Transforms transforms;
 
   // Initially we don't have this transform
   ASSERT_FALSE(transforms.HasTransform("foo", "bar"));
 
-  trellis::core::Transforms::RigidTransform transform;
+  trellis::containers::Transforms::RigidTransform transform;
   transforms.UpdateTransform("foo", "bar", transform);
 
   // Jump forward as much as possible, we expect to be able to retrieve this transform
@@ -74,8 +74,8 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
   auto now = time::TimePoint(std::chrono::milliseconds(1000));  // initial time
   constexpr auto validity_window = std::chrono::milliseconds(200);
 
-  trellis::core::Transforms transforms;
-  trellis::core::Transforms::RigidTransform transform;
+  trellis::containers::Transforms transforms;
+  trellis::containers::Transforms::RigidTransform transform;
   for (unsigned i = 0; i < 10U; ++i) {
     transform.translation.x = static_cast<double>(i + 1);
     time::SetSimulatedTime(now);  // initial time
@@ -124,8 +124,8 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
   auto now = time::TimePoint(std::chrono::milliseconds(1000));  // initial time
   constexpr auto validity_window = std::chrono::milliseconds(200);
 
-  trellis::core::Transforms transforms(5);  // 5 transforms max
-  trellis::core::Transforms::RigidTransform transform;
+  trellis::containers::Transforms transforms(5);  // 5 transforms max
+  trellis::containers::Transforms::RigidTransform transform;
   for (unsigned i = 0; i < 10U; ++i) {
     transform.translation.x = static_cast<double>(i + 1);
     time::SetSimulatedTime(now);  // initial time

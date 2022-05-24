@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_TRANSFORMS_HPP
-#define TRELLIS_CORE_TRANSFORMS_HPP
+#ifndef TRELLIS_CONTAINERS_TRANSFORMS_HPP
+#define TRELLIS_CONTAINERS_TRANSFORMS_HPP
 
 #include <string>
 #include <unordered_map>
@@ -25,7 +25,7 @@
 #include "trellis/core/time.hpp"
 
 namespace trellis {
-namespace core {
+namespace containers {
 class Transforms {
  public:
   /**
@@ -153,7 +153,7 @@ class Transforms {
   std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
   const std::size_t max_transform_length_;
 };
-}  // namespace core
+}  // namespace containers
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_TRANSFORMS_HPP
+#endif  // TRELLIS_CONTAINERS_TRANSFORMS_HPP
