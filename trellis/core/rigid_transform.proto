@@ -12,5 +12,5 @@ message RigidTransform
   string frame_to     = 2;
   Vector3 translation = 3;
   Quaternion rotation = 4;
-  uint32 validity_window_ms = 5;
+  uint64 validity_window_ms = 5;
 }
