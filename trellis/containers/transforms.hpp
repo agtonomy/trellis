@@ -18,6 +18,7 @@
 #ifndef TRELLIS_CONTAINERS_TRANSFORMS_HPP
 #define TRELLIS_CONTAINERS_TRANSFORMS_HPP
 
+#include <Eigen/Geometry>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -47,20 +48,63 @@ class Transforms {
     double w;
   };
 
+  using AffineTransform3D = Eigen::Transform<double, 3, Eigen::Affine>;
+
   /**
    * RigidTransform represents a transformation comprised of a tranlsation and rotation
    *
    * NOTE: The convention is such that the translation is performed before the rotation
    */
   struct RigidTransform {
+    RigidTransform() = default;
+
+    /**
+     * RigidTransform construct a rigid transfrom from an Eigen affine transform representation
+     *
+     * @param transform the Eigen affine transform
+     */
+    RigidTransform(const AffineTransform3D& transform)
+        : translation{GetTranslationFromAffineTransform(transform)},
+          rotation{GetRotationFromAffineTransform(transform)} {}
+
+    /**
+     * GetAffineRepresentation return an Eigen affine transform representation of this rigid transform
+     *
+     * @return the Eigen affine transform
+     */
+    AffineTransform3D GetAffineRepresentation() const {
+      return AffineTransform3D(Eigen::Translation<double, 3>(translation.x, translation.y, translation.z) *
+                               Eigen::Quaterniond(rotation.w, rotation.x, rotation.y, rotation.z));
+    }
+
+    /**
+     * Inverse retrieve the inverse transform
+     *
+     * @return the inverse transform
+     */
+    RigidTransform Inverse() const { return Transforms::RigidTransform(GetAffineRepresentation().inverse()); }
+
     Translation translation;
     Rotation rotation;
+
+   private:
+    static Translation GetTranslationFromAffineTransform(const AffineTransform3D& transform) {
+      return Translation{transform.translation().x(), transform.translation().y(), transform.translation().z()};
+    }
+    static Rotation GetRotationFromAffineTransform(const AffineTransform3D& transform) {
+      const Eigen::Quaterniond q(transform.rotation());
+      return Rotation{q.x(), q.y(), q.z(), q.w()};
+    }
   };
 
+  /**
+   * kForever Sentinel value representing forever in time for static (unchanging) transforms
+   */
   static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
-  static constexpr std::size_t kMaxTransformLength = 100U;
+  static constexpr std::size_t kMaxTransformLengthDefault = 100U;
 
-  Transforms(std::size_t max_transform_length = kMaxTransformLength) : max_transform_length_{max_transform_length} {}
+  Transforms(std::size_t max_transform_length = kMaxTransformLengthDefault)
+      : max_transform_length_{max_transform_length} {}
 
   /**
    * UpdateTransform update a transform associated with the current time
@@ -133,6 +177,9 @@ class Transforms {
  private:
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(
       const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
+
+  void Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
+              std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
 
   using KeyType = std::string;
 

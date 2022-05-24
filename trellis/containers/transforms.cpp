@@ -30,11 +30,9 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
 void Transforms::UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
                                  std::chrono::milliseconds validity_window,
                                  const trellis::core::time::TimePoint& when) {
-  auto& transform_map = transforms_[CalculateKeyFromFrames(from, to)];
-  transform_map.emplace(std::make_pair(when, TransformData{transform, validity_window}));
-  if (transform_map.size() > max_transform_length_) {
-    transform_map.erase(transform_map.begin());
-  }
+  Insert(from, to, transform, validity_window, when);
+  // We will derive and insert the inverse transform as well
+  Insert(to, from, transform.Inverse(), validity_window, when);
 }
 
 const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) {
@@ -112,5 +110,14 @@ Transforms::KeyType Transforms::CalculateKeyFromFrames(const std::string& from, 
   return from + "|" + to;
 }
 
-}  // namespace core
+void Transforms::Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
+                        std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when) {
+  auto& transform_map = transforms_[CalculateKeyFromFrames(from, to)];
+  transform_map.emplace(std::make_pair(when, TransformData{transform, validity_window}));
+  if (transform_map.size() > max_transform_length_) {
+    transform_map.erase(transform_map.begin());
+  }
+}
+
+}  // namespace containers
 }  // namespace trellis
