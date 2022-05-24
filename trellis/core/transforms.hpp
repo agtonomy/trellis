@@ -49,6 +49,8 @@ class Transforms {
 
   /**
    * RigidTransform represents a transformation comprised of a tranlsation and rotation
+   *
+   * NOTE: The convention is such that the translation is performed before the rotation
    */
   struct RigidTransform {
     Translation translation;
