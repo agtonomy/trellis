@@ -29,12 +29,12 @@ namespace proto_utils {
  *
  * This is useful for working with the type_url field from google.protobuf.Any messages
  */
-static std::string GetTypeFromURL(const std::string& type_url) {
+inline std::string GetTypeFromURL(const std::string& type_url) {
   // Example string: type.googleapis.com/trellis.examples.proto.HelloWorld
   return "proto:" + type_url.substr(type_url.find_first_of('/') + 1, type_url.size());
 }
 
-static std::string GetRawTopicString(const std::string& topic) { return topic + "/raw"; }
+inline std::string GetRawTopicString(const std::string& topic) { return topic + "/raw"; }
 
 }  // namespace proto_utils
 }  // namespace core
