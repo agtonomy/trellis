@@ -39,6 +39,7 @@ cc_library(
     srcs = [
         "monitor_interface.cpp",
         "node.cpp",
+        "transforms.cpp",
     ],
     hdrs = [
         "logging.hpp",
@@ -49,6 +50,7 @@ cc_library(
         "service_client.hpp",
         "service_server.hpp",
         "subscriber.hpp",
+        "transforms.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
