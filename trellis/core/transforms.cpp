@@ -104,16 +104,6 @@ containers::Transforms::RigidTransform Transforms::CreateTransformFromConfig(con
   transform.rotation.y = config["rotation"]["y"].as<double>();
   transform.rotation.z = config["rotation"]["z"].as<double>();
   return transform;
-  // msg.mutable_translation()->set_x(config["translation"]["x"].as<double>());
-  // msg.mutable_translation()->set_y(config["translation"]["y"].as<double>());
-  // msg.mutable_translation()->set_z(config["translation"]["z"].as<double>());
-  // msg.mutable_rotation()->set_w(config["rotation"]["w"].as<double>());
-  // msg.mutable_rotation()->set_x(config["rotation"]["x"].as<double>());
-  // msg.mutable_rotation()->set_y(config["rotation"]["y"].as<double>());
-  // msg.mutable_rotation()->set_z(config["rotation"]["z"].as<double>());
-  // msg.set_frame_from(config["from"].as<std::string>());
-  // msg.set_frame_to(config["to"].as<std::string>());
-  // return msg;
 }
 
 }  // namespace core
