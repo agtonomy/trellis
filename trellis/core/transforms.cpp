@@ -30,18 +30,19 @@ Transforms::Transforms(trellis::core::Node& node)
               [this](const std::string& topic, const trellis::core::RigidTransform& msg, const time::TimePoint& when) {
                 NewTransform(msg, when);
               }} {
-  // TODO pull static transforms from config
+  if (node.GetConfig()["transforms"]) {
+    // Load static transforms from configuration into the container
+    const auto& transforms_cfg = node.GetConfig()["transforms"];
+    for (const auto& config : transforms_cfg) {
+      const auto transform = CreateTransformFromConfig(config);
+      container_.UpdateTransform(config["from"].as<std::string>(), config["to"].as<std::string>(), transform,
+                                 containers::Transforms::kForever);
+    }
+  }
 }
 
 void Transforms::NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when) {
-  containers::Transforms::RigidTransform transform;
-  transform.translation.x = msg.translation().x();
-  transform.translation.y = msg.translation().y();
-  transform.translation.z = msg.translation().z();
-  transform.rotation.w = msg.rotation().w();
-  transform.rotation.x = msg.rotation().x();
-  transform.rotation.y = msg.rotation().y();
-  transform.rotation.z = msg.rotation().z();
+  auto transform = CreateTransformFromMessage(msg);
   container_.UpdateTransform(msg.frame_from(), msg.frame_to(), transform,
                              std::chrono::milliseconds(msg.validity_window_ms()), when);
 }
@@ -54,6 +55,18 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to,
 void Transforms::UpdateTransform(const std::string& from, const std::string& to,
                                  const containers::Transforms::RigidTransform& transform,
                                  std::chrono::milliseconds validity_window) {
+  auto msg = CreateMessageFromTransform(from, to, transform, validity_window);
+  publisher_->Send(msg);
+}
+
+const containers::Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
+                                                                       const trellis::core::time::TimePoint& when) {
+  return container_.GetTransform(from, to, when);
+}
+
+trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
+    const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform,
+    std::chrono::milliseconds validity_window) {
   trellis::core::RigidTransform msg;
   msg.mutable_translation()->set_x(transform.translation.x);
   msg.mutable_translation()->set_y(transform.translation.y);
@@ -65,12 +78,42 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   msg.set_frame_from(from);
   msg.set_frame_to(to);
   msg.set_validity_window_ms(validity_window.count());
-  publisher_->Send(msg);
+  return msg;
 }
 
-const containers::Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                                       const trellis::core::time::TimePoint& when) {
-  return container_.GetTransform(from, to, when);
+containers::Transforms::RigidTransform Transforms::CreateTransformFromMessage(
+    const trellis::core::RigidTransform& msg) {
+  containers::Transforms::RigidTransform transform;
+  transform.translation.x = msg.translation().x();
+  transform.translation.y = msg.translation().y();
+  transform.translation.z = msg.translation().z();
+  transform.rotation.w = msg.rotation().w();
+  transform.rotation.x = msg.rotation().x();
+  transform.rotation.y = msg.rotation().y();
+  transform.rotation.z = msg.rotation().z();
+  return transform;
+}
+
+containers::Transforms::RigidTransform Transforms::CreateTransformFromConfig(const trellis::core::Config& config) {
+  containers::Transforms::RigidTransform transform;
+  transform.translation.x = config["translation"]["x"].as<double>();
+  transform.translation.y = config["translation"]["y"].as<double>();
+  transform.translation.z = config["translation"]["z"].as<double>();
+  transform.rotation.w = config["rotation"]["w"].as<double>();
+  transform.rotation.x = config["rotation"]["x"].as<double>();
+  transform.rotation.y = config["rotation"]["y"].as<double>();
+  transform.rotation.z = config["rotation"]["z"].as<double>();
+  return transform;
+  // msg.mutable_translation()->set_x(config["translation"]["x"].as<double>());
+  // msg.mutable_translation()->set_y(config["translation"]["y"].as<double>());
+  // msg.mutable_translation()->set_z(config["translation"]["z"].as<double>());
+  // msg.mutable_rotation()->set_w(config["rotation"]["w"].as<double>());
+  // msg.mutable_rotation()->set_x(config["rotation"]["x"].as<double>());
+  // msg.mutable_rotation()->set_y(config["rotation"]["y"].as<double>());
+  // msg.mutable_rotation()->set_z(config["rotation"]["z"].as<double>());
+  // msg.set_frame_from(config["from"].as<std::string>());
+  // msg.set_frame_to(config["to"].as<std::string>());
+  // return msg;
 }
 
 }  // namespace core

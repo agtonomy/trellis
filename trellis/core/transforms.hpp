@@ -69,6 +69,12 @@ class Transforms {
 
  private:
   void NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when);
+  static trellis::core::RigidTransform CreateMessageFromTransform(
+      const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform,
+      std::chrono::milliseconds validity_window);
+  static containers::Transforms::RigidTransform CreateTransformFromMessage(const trellis::core::RigidTransform& msg);
+  static containers::Transforms::RigidTransform CreateTransformFromConfig(const trellis::core::Config& config);
+
   static constexpr unsigned kQueueDepth = 10u;
   containers::Transforms container_;
 
