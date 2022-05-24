@@ -11,5 +11,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_time",
+        "@eigen",
     ],
 )
