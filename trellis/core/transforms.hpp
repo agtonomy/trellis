@@ -53,7 +53,7 @@ class Transforms {
    * @return true if the transform exists and is valid
    *
    */
-  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
+  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
@@ -65,7 +65,7 @@ class Transforms {
    * @throws std::runtime_error if no valid transform exists
    */
   const containers::Transforms::RigidTransform& GetTransform(const std::string& from, const std::string& to,
-                                                             const trellis::core::time::TimePoint& when);
+                                                             const trellis::core::time::TimePoint& when) const;
 
  private:
   void NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when);

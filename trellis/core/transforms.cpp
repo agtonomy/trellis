@@ -48,7 +48,7 @@ void Transforms::NewTransform(const trellis::core::RigidTransform& msg, const ti
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,
-                              const trellis::core::time::TimePoint& when) {
+                              const trellis::core::time::TimePoint& when) const {
   return container_.HasTransform(from, to, when);
 }
 
@@ -59,8 +59,8 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   publisher_->Send(msg);
 }
 
-const containers::Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                                       const trellis::core::time::TimePoint& when) {
+const containers::Transforms::RigidTransform& Transforms::GetTransform(
+    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const {
   return container_.GetTransform(from, to, when);
 }
 
