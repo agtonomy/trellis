@@ -128,7 +128,7 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
   trellis::containers::Transforms::RigidTransform transform;
   for (unsigned i = 0; i < 10U; ++i) {
     transform.translation.x = static_cast<double>(i + 1);
-    time::SetSimulatedTime(now);  // initial time
+    time::SetSimulatedTime(now);
     transforms.UpdateTransform("foo", "bar", transform, validity_window);
     now += std::chrono::milliseconds(50);  // 20 Hz update rate
   }
@@ -172,4 +172,14 @@ TEST(TrellisTransforms, InverseTransformIsInserted) {
   EXPECT_NEAR(vec.x(), rotated.x(), 0.0000001);
   EXPECT_NEAR(vec.y(), rotated.y(), 0.0000001);
   EXPECT_NEAR(vec.z(), rotated.z(), 0.0000001);
+}
+
+TEST(TrellisTransforms, InvalidTransformNamesThrows) {
+  time::EnableSimulatedClock();
+  time::SetSimulatedTime(time::TimePoint(std::chrono::milliseconds(5000)));  // initial time
+  trellis::containers::Transforms transforms;
+
+  // using the delimiter in the name is invalid
+  ASSERT_THROW(transforms.HasTransform("fo|o", "bar"), std::invalid_argument);
+  ASSERT_THROW(transforms.HasTransform("fo|o", "bar|"), std::invalid_argument);
 }

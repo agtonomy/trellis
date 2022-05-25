@@ -35,10 +35,6 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   Insert(to, from, transform.Inverse(), validity_window, when);
 }
 
-const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) const {
-  return GetTransform(from, to, core::time::Now());
-}
-
 bool Transforms::HasTransform(const std::string& from, const std::string& to) const {
   return HasTransform(from, to, core::time::Now());
 }
@@ -47,6 +43,10 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to,
                               const trellis::core::time::TimePoint& when) const {
   const auto timestamp = FindNearestTransformTimestamp(from, to, when);
   return !timestamp ? false : true;
+}
+
+const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) const {
+  return GetTransform(from, to, core::time::Now());
 }
 
 const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
@@ -85,7 +85,7 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
 
   if (it == transform_map.begin()) {
     // We're looking at the oldest timestamp in this case
-    auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
+    const auto time_delta = std::chrono::abs(std::chrono::duration_cast<std::chrono::milliseconds>(when - it->first));
     if (time_delta <= it->second.validity_window) {
       return it->first;
     } else {
@@ -107,7 +107,9 @@ std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTi
 }
 
 Transforms::KeyType Transforms::CalculateKeyFromFrames(const std::string& from, const std::string& to) {
-  return from + "|" + to;
+  ValidateFrameName(from);
+  ValidateFrameName(to);
+  return from + kDelimiter + to;
 }
 
 void Transforms::Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
@@ -116,6 +118,14 @@ void Transforms::Insert(const std::string& from, const std::string& to, const Ri
   transform_map.emplace(std::make_pair(when, TransformData{transform, validity_window}));
   if (transform_map.size() > max_transform_length_) {
     transform_map.erase(transform_map.begin());
+  }
+}
+
+void Transforms::ValidateFrameName(const std::string& frame) {
+  if (frame.find(kDelimiter) != std::string::npos) {
+    std::stringstream msg;
+    msg << "Frame name must not contain '" << kDelimiter << "'. Got " << frame;
+    throw std::invalid_argument(msg.str());
   }
 }
 

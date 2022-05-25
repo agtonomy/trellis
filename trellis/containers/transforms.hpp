@@ -204,6 +204,8 @@ class Transforms {
   void Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
               std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
 
+  static void ValidateFrameName(const std::string& frame);
+
   using KeyType = std::string;
 
   struct FrameNames {
@@ -218,6 +220,8 @@ class Transforms {
 
   static KeyType CalculateKeyFromFrames(const std::string& from, const std::string& to);
   static FrameNames GetFrameNamesFromKey(const KeyType& key);
+
+  static constexpr char kDelimiter = '|';
 
   using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, TransformData>;
   std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
