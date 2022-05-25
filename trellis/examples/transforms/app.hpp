@@ -33,8 +33,10 @@ class App {
  private:
   void Tick();
   void CheckAndPrint(const std::string& from, const std::string& to) const;
+
   const Witch witch_;  // which node are we
   const unsigned validity_window_ms;
+
   trellis::core::Transforms transforms_;
   trellis::core::Timer timer_;
 };
