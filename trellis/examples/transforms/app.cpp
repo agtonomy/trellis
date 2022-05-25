@@ -23,8 +23,8 @@ namespace transforms {
 
 using namespace trellis::core;
 
-App::App(Witch witch, Node& node)
-    : witch_{witch},
+App::App(Which which, Node& node)
+    : which_{which},
       validity_window_ms{node.GetConfig()["examples"]["transforms"]["validity_window_ms"].as<unsigned>()},
       transforms_{node},
       timer_{node.CreateTimer(
@@ -34,15 +34,15 @@ App::App(Witch witch, Node& node)
 void App::Tick() {
   // Send a different transform depending on which instance we are for the sake of demonstration
   const trellis::containers::Transforms::RigidTransform transform =
-      (witch_ == Witch::kNodeA)
+      (which_ == Which::kNodeA)
           ? trellis::containers::Transforms::RigidTransform(Eigen::Translation<double, 3>(3.0, 4.0, 5.0) *
                                                             Eigen::Quaterniond(0.70710678118, 0.0, 0.0, 0.70710678118))
           : trellis::containers::Transforms::RigidTransform(Eigen::Translation<double, 3>(1.0, 2.0, 3.0) *
                                                             Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0));
 
   // Use a different "from" coordinate frame based on which node we are
-  const std::string from = (witch_ == Witch::kNodeA) ? "nodea_sensor" : "nodeb_sensor";
-  const std::string other_from = (witch_ == Witch::kNodeA) ? "nodeb_sensor" : "nodea_sensor";
+  const std::string from = (which_ == Which::kNodeA) ? "nodea_sensor" : "nodeb_sensor";
+  const std::string other_from = (which_ == Which::kNodeA) ? "nodeb_sensor" : "nodea_sensor";
   const std::string to = "base";
 
   // We update the transform, which will also update any other node that has a transform object
