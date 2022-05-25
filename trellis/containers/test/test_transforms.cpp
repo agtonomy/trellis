@@ -160,16 +160,16 @@ TEST(TrellisTransforms, InverseTransformIsInserted) {
   // Even with a 0 ms validity we expect this to pass because our simulated clock didn't change
   transforms.UpdateTransform("foo", "bar", transform, std::chrono::milliseconds(0));
   ASSERT_TRUE(transforms.HasTransform("foo", "bar"));
-  ASSERT_TRUE(transforms.HasTransform("bar", "foo"));  // inverse also exists
+  ASSERT_TRUE(transforms.HasTransform("bar", "foo"));  // inverse also should exist
 
   const auto transform_out = transforms.GetTransform("foo", "bar").GetAffineRepresentation();
   const auto transform_inv_out = transforms.GetTransform("bar", "foo").GetAffineRepresentation();
 
-  const Eigen::Vector3d vec(1.0, 0.0, 0.0);
-  const Eigen::Vector3d rotated = transform_inv_out * (transform_out * vec);
+  const Eigen::Vector3d vec(1.0, 2.5, 10.0);
 
   // We transformed and then back via the inverse, expect to be equal essentially
-  ASSERT_TRUE(std::fabs(vec.x() - rotated.x()) < 0.0000001);
-  ASSERT_TRUE(std::fabs(vec.y() - rotated.y()) < 0.0000001);
-  ASSERT_TRUE(std::fabs(vec.z() - rotated.z()) < 0.0000001);
+  const Eigen::Vector3d rotated = transform_inv_out * (transform_out * vec);
+  EXPECT_NEAR(vec.x(), rotated.x(), 0.0000001);
+  EXPECT_NEAR(vec.y(), rotated.y(), 0.0000001);
+  EXPECT_NEAR(vec.z(), rotated.z(), 0.0000001);
 }
