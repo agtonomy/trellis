@@ -56,6 +56,9 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
                                  const containers::Transforms::RigidTransform& transform,
                                  std::chrono::milliseconds validity_window) {
   auto msg = CreateMessageFromTransform(from, to, transform, validity_window);
+  // We'll add the transform to our container now since our publishes don't seem to be looping
+  // back through our subscriber
+  NewTransform(msg, trellis::core::time::Now());
   publisher_->Send(msg);
 }
 
