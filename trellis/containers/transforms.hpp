@@ -147,7 +147,7 @@ class Transforms {
    * @return true if the transform exists and is valid
    *
    */
-  bool HasTransform(const std::string& from, const std::string& to);
+  bool HasTransform(const std::string& from, const std::string& to) const;
 
   /**
    * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
@@ -159,7 +159,7 @@ class Transforms {
    * @return true if the transform exists and is valid
    *
    */
-  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
+  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
 
   /**
    * GetTransform retrieve the most recent transform for a given pair of reference frames
@@ -169,7 +169,7 @@ class Transforms {
    * @return the rigid transformation between the two reference frames
    * @throws std::runtime_error if no valid transform exists
    */
-  const RigidTransform& GetTransform(const std::string& from, const std::string& to);
+  const RigidTransform& GetTransform(const std::string& from, const std::string& to) const;
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
@@ -181,11 +181,11 @@ class Transforms {
    * @throws std::runtime_error if no valid transform exists
    */
   const RigidTransform& GetTransform(const std::string& from, const std::string& to,
-                                     const trellis::core::time::TimePoint& when);
+                                     const trellis::core::time::TimePoint& when) const;
 
  private:
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(
-      const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when);
+      const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
 
   void Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
               std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);

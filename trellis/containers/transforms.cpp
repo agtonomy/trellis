@@ -35,22 +35,22 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   Insert(to, from, transform.Inverse(), validity_window, when);
 }
 
-const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) {
+const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to) const {
   return GetTransform(from, to, core::time::Now());
 }
 
-bool Transforms::HasTransform(const std::string& from, const std::string& to) {
+bool Transforms::HasTransform(const std::string& from, const std::string& to) const {
   return HasTransform(from, to, core::time::Now());
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,
-                              const trellis::core::time::TimePoint& when) {
+                              const trellis::core::time::TimePoint& when) const {
   const auto timestamp = FindNearestTransformTimestamp(from, to, when);
   return !timestamp ? false : true;
 }
 
 const Transforms::RigidTransform& Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                           const trellis::core::time::TimePoint& when) {
+                                                           const trellis::core::time::TimePoint& when) const {
   const auto timestamp = FindNearestTransformTimestamp(from, to, when);
 
   if (!timestamp) {
@@ -65,7 +65,7 @@ const Transforms::RigidTransform& Transforms::GetTransform(const std::string& fr
 }
 
 std::optional<trellis::core::time::TimePoint> Transforms::FindNearestTransformTimestamp(
-    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) {
+    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const {
   const auto transform_map_it = transforms_.find(CalculateKeyFromFrames(from, to));
   if (transform_map_it == transforms_.end()) {
     return {};  // transform doesn't exist at all
