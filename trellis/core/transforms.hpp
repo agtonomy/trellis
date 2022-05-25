@@ -27,6 +27,29 @@
 namespace trellis {
 namespace core {
 
+/**
+ * Transforms a utility to distribute and receive rigid coordinate frame transforms
+ *
+ * This uses pub/sub under the hood to distribute coordinate transforms that are updated during runtime. It also loads
+ * and stores transforms from configuration that are static and unchanging during runtime.
+ *
+ * Configuration:
+ * - This module will check the node's configuration for the toplevel "transforms" key and expect a list of transforms
+ * underneath.
+ * Example...
+ * transforms:
+ *  - from: "sensor"
+ *    to: "base"
+ *    translation:
+ *      x: 1.0
+ *      y: 0.0
+ *      z: 0.5
+ *    rotation:
+ *      w: 0.707
+ *      x: 0.0
+ *      y: 0.0
+ *      z: 0.707
+ */
 class Transforms {
  public:
   Transforms(trellis::core::Node& node);
@@ -53,7 +76,8 @@ class Transforms {
    * @return true if the transform exists and is valid
    *
    */
-  bool HasTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
+  bool HasTransform(const std::string& from, const std::string& to,
+                    const trellis::core::time::TimePoint& when = trellis::core::time::Now()) const;
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
@@ -64,8 +88,9 @@ class Transforms {
    * @param when the time point with which to find the nearest transform
    * @throws std::runtime_error if no valid transform exists
    */
-  const containers::Transforms::RigidTransform& GetTransform(const std::string& from, const std::string& to,
-                                                             const trellis::core::time::TimePoint& when) const;
+  const containers::Transforms::RigidTransform& GetTransform(
+      const std::string& from, const std::string& to,
+      const trellis::core::time::TimePoint& when = trellis::core::time::Now()) const;
 
  private:
   void NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when);
