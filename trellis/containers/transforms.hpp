@@ -65,7 +65,7 @@ class Transforms {
   using AffineTransform3D = Eigen::Transform<double, 3, Eigen::Affine>;
 
   /**
-   * RigidTransform represents a transformation comprised of a tranlsation and rotation
+   * RigidTransform represents a transformation comprised of a translation and rotation
    *
    * NOTE: The convention is such that the translation is performed before the rotation
    */
