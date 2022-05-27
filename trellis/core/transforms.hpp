@@ -86,7 +86,7 @@ class Transforms {
    * @param when the time point with which to find the nearest transform
    * @throws std::runtime_error if no valid transform exists
    */
-  const containers::Transforms::RigidTransform& GetTransform(
+  const containers::Transforms::Sample GetTransform(
       const std::string& from, const std::string& to,
       const trellis::core::time::TimePoint& when = trellis::core::time::Now()) const;
 

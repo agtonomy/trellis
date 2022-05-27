@@ -111,6 +111,11 @@ class Transforms {
     }
   };
 
+  struct Sample {
+    const trellis::core::time::TimePoint& timestamp;
+    const RigidTransform& transform;
+  };
+
   static constexpr std::size_t kMaxTransformLengthDefault = 100U;
 
   Transforms(std::size_t max_transform_length = kMaxTransformLengthDefault)
@@ -164,22 +169,21 @@ class Transforms {
    *
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
-   * @return the rigid transformation between the two reference frames
+   * @return the rigid transformation between the two reference frames with associated timestamp
    * @throws std::runtime_error if no valid transform exists
    */
-  const RigidTransform& GetTransform(const std::string& from, const std::string& to) const;
+  Sample GetTransform(const std::string& from, const std::string& to) const;
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
    *
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
-   * @return the rigid transformation between the two reference frames
    * @param when the time point with which to find the nearest transform
+   * @return the rigid transformation between the two reference frames with associated timestamp
    * @throws std::runtime_error if no valid transform exists
    */
-  const RigidTransform& GetTransform(const std::string& from, const std::string& to,
-                                     const trellis::core::time::TimePoint& when) const;
+  Sample GetTransform(const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
 
  private:
   std::optional<trellis::core::time::TimePoint> FindNearestTransformTimestamp(

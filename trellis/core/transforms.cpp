@@ -59,8 +59,8 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   publisher_->Send(msg);
 }
 
-const containers::Transforms::RigidTransform& Transforms::GetTransform(
-    const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const {
+const containers::Transforms::Sample Transforms::GetTransform(const std::string& from, const std::string& to,
+                                                              const trellis::core::time::TimePoint& when) const {
   return container_.GetTransform(from, to, when);
 }
 

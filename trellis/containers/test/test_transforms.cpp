@@ -52,28 +52,38 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
 
   {
     // We're back in time before the first transform by just within the validity window
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
+    const auto& [timestamp, result] =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
     ASSERT_EQ(result.translation.x(), 1.0);
+    ASSERT_EQ(timestamp, time::TimePoint(std::chrono::milliseconds(1000)));
   }
   {
     // We're right in between the 1000 and 1050 sample, older sample wins
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1025)));
+    const auto& [timestamp, result] =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1025)));
     ASSERT_EQ(result.translation.x(), 1.0);
+    ASSERT_EQ(timestamp, time::TimePoint(std::chrono::milliseconds(1000)));
   }
   {
     // Now we're closer to the 1050ms sample
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1026)));
+    const auto& [timestamp, result] =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1026)));
     ASSERT_EQ(result.translation.x(), 2.0);
+    ASSERT_EQ(timestamp, time::TimePoint(std::chrono::milliseconds(1050)));
   }
   {
     // Let's go near the 8th (1350ms) transform
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1326)));
+    const auto& [timestamp, result] =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1326)));
     ASSERT_EQ(result.translation.x(), 8.0);
+    ASSERT_EQ(timestamp, time::TimePoint(std::chrono::milliseconds(1350)));
   }
   {
     // Let's go just past the last one
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1451)));
+    const auto& [timestamp, result] =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1451)));
     ASSERT_EQ(result.translation.x(), 10.0);
+    ASSERT_EQ(timestamp, time::TimePoint(std::chrono::milliseconds(1450)));
   }
 }
 
@@ -92,7 +102,8 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
 
   {
     // The oldest transform should now be at 1250ms, so we'll go back to 1250ms - 200ms validity window
-    const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050)));
+    const auto& result =
+        transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050))).transform;
     ASSERT_EQ(result.translation.x(), 6.0);  // 1 - 5 should have been truncated
   }
 }
@@ -118,8 +129,8 @@ TEST(TrellisTransforms, InverseTransformIsInserted) {
   ASSERT_TRUE(transforms.HasTransform("foo", "bar"));
   ASSERT_TRUE(transforms.HasTransform("bar", "foo"));  // inverse also should exist
 
-  const auto transform_out = transforms.GetTransform("foo", "bar").GetAffineRepresentation();
-  const auto transform_inv_out = transforms.GetTransform("bar", "foo").GetAffineRepresentation();
+  const auto transform_out = transforms.GetTransform("foo", "bar").transform.GetAffineRepresentation();
+  const auto transform_inv_out = transforms.GetTransform("bar", "foo").transform.GetAffineRepresentation();
 
   const Eigen::Vector3d vec(1.0, 2.5, 10.0);
 

@@ -57,7 +57,7 @@ void App::Tick() {
 
 void App::CheckAndPrint(const std::string& from, const std::string& to) const {
   if (transforms_.HasTransform(from, to)) {
-    const auto& transform = transforms_.GetTransform(from, to);
+    const auto& transform = transforms_.GetTransform(from, to).transform;
     Log::Info("We have the {} -> {} transform [{}, {}, {}] [{}, {}, {}, {}]", from, to, transform.translation.x(),
               transform.translation.y(), transform.translation.z(), transform.rotation.w(), transform.rotation.x(),
               transform.rotation.y(), transform.rotation.z());
