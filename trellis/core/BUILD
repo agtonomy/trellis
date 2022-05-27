@@ -2,7 +2,6 @@ cc_library(
     name = "core",
     srcs = [
         "config.cpp",
-        "time.cpp",
         "timer.cpp",
     ],
     hdrs = [
@@ -11,14 +10,27 @@ cc_library(
         "error_code.hpp",
         "event_loop.hpp",
         "proto_utils.hpp",
-        "time.hpp",
         "timer.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_proto",
+        ":core_time",
         "@asio",
         "@yaml-cpp",
+    ],
+)
+
+cc_library(
+    name = "core_time",
+    srcs = [
+        "time.cpp",
+    ],
+    hdrs = [
+        "time.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_proto",
     ],
 )
 
@@ -27,6 +39,7 @@ cc_library(
     srcs = [
         "monitor_interface.cpp",
         "node.cpp",
+        "transforms.cpp",
     ],
     hdrs = [
         "logging.hpp",
@@ -37,6 +50,7 @@ cc_library(
         "service_client.hpp",
         "service_server.hpp",
         "subscriber.hpp",
+        "transforms.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -50,7 +64,10 @@ cc_library(
 proto_library(
     name = "core_proto_lib",
     srcs = [
+        "quaternion.proto",
+        "rigid_transform.proto",
         "timestamped_message.proto",
+        "vector3.proto",
     ],
     deps = [
         "@com_google_protobuf//:any_proto",

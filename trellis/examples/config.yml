@@ -7,3 +7,27 @@ examples:
     interval_ms: 2000
     timeout_ms: 100
     initial_delay_ms: 2000
+  transforms:
+    interval_ms: 1000
+    initial_delay_ms: 2000
+    nodea:
+      from: "base"
+      to: "world"
+    nodeb:
+      from: "rear"
+      to: "base"
+
+
+# Example of static transform configuration
+transforms:
+  - from: "sensor"
+    to: "base"
+    translation:
+      x: 1.0
+      y: 0.0
+      z: 0.5
+    rotation:
+      w: 0.707
+      x: 0.0
+      y: 0.0
+      z: 0.707

@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package trellis.core;
+
+message Vector3
+{
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
