@@ -53,6 +53,9 @@ class Transforms {
    */
   using Rotation = Eigen::Vector4d;
 
+  /**
+   * AffineTransform3D an Eigen 3-dimensional affine transform representation
+   */
   using AffineTransform3D = Eigen::Transform<double, 3, Eigen::Affine>;
 
   /**
