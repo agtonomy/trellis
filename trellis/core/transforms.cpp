@@ -71,13 +71,13 @@ trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
     const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform,
     std::chrono::milliseconds validity_window) {
   trellis::core::RigidTransform msg;
-  msg.mutable_translation()->set_x(transform.translation.x);
-  msg.mutable_translation()->set_y(transform.translation.y);
-  msg.mutable_translation()->set_z(transform.translation.z);
-  msg.mutable_rotation()->set_w(transform.rotation.w);
-  msg.mutable_rotation()->set_x(transform.rotation.x);
-  msg.mutable_rotation()->set_y(transform.rotation.y);
-  msg.mutable_rotation()->set_z(transform.rotation.z);
+  msg.mutable_translation()->set_x(transform.translation.x());
+  msg.mutable_translation()->set_y(transform.translation.y());
+  msg.mutable_translation()->set_z(transform.translation.z());
+  msg.mutable_rotation()->set_w(transform.rotation.w());
+  msg.mutable_rotation()->set_x(transform.rotation.x());
+  msg.mutable_rotation()->set_y(transform.rotation.y());
+  msg.mutable_rotation()->set_z(transform.rotation.z());
   msg.set_frame_from(from);
   msg.set_frame_to(to);
   msg.set_validity_window_ms(validity_window.count());
@@ -87,25 +87,25 @@ trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
 containers::Transforms::RigidTransform Transforms::CreateTransformFromMessage(
     const trellis::core::RigidTransform& msg) {
   containers::Transforms::RigidTransform transform;
-  transform.translation.x = msg.translation().x();
-  transform.translation.y = msg.translation().y();
-  transform.translation.z = msg.translation().z();
-  transform.rotation.w = msg.rotation().w();
-  transform.rotation.x = msg.rotation().x();
-  transform.rotation.y = msg.rotation().y();
-  transform.rotation.z = msg.rotation().z();
+  transform.translation.x() = msg.translation().x();
+  transform.translation.y() = msg.translation().y();
+  transform.translation.z() = msg.translation().z();
+  transform.rotation.w() = msg.rotation().w();
+  transform.rotation.x() = msg.rotation().x();
+  transform.rotation.y() = msg.rotation().y();
+  transform.rotation.z() = msg.rotation().z();
   return transform;
 }
 
 containers::Transforms::RigidTransform Transforms::CreateTransformFromConfig(const trellis::core::Config& config) {
   containers::Transforms::RigidTransform transform;
-  transform.translation.x = config["translation"]["x"].as<double>();
-  transform.translation.y = config["translation"]["y"].as<double>();
-  transform.translation.z = config["translation"]["z"].as<double>();
-  transform.rotation.w = config["rotation"]["w"].as<double>();
-  transform.rotation.x = config["rotation"]["x"].as<double>();
-  transform.rotation.y = config["rotation"]["y"].as<double>();
-  transform.rotation.z = config["rotation"]["z"].as<double>();
+  transform.translation.x() = config["translation"]["x"].as<double>();
+  transform.translation.y() = config["translation"]["y"].as<double>();
+  transform.translation.z() = config["translation"]["z"].as<double>();
+  transform.rotation.w() = config["rotation"]["w"].as<double>();
+  transform.rotation.x() = config["rotation"]["x"].as<double>();
+  transform.rotation.y() = config["rotation"]["y"].as<double>();
+  transform.rotation.z() = config["rotation"]["z"].as<double>();
   return transform;
 }
 

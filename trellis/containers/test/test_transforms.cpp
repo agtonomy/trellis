@@ -77,7 +77,7 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
   trellis::containers::Transforms transforms;
   trellis::containers::Transforms::RigidTransform transform;
   for (unsigned i = 0; i < 10U; ++i) {
-    transform.translation.x = static_cast<double>(i + 1);
+    transform.translation.x() = static_cast<double>(i + 1);
     time::SetSimulatedTime(now);  // initial time
     transforms.UpdateTransform("foo", "bar", transform, validity_window);
     now += std::chrono::milliseconds(50);  // 20 Hz update rate
@@ -87,27 +87,27 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
   {
     // We're back in time before the first transform by just within the validity window
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
-    ASSERT_EQ(result.translation.x, 1.0);
+    ASSERT_EQ(result.translation.x(), 1.0);
   }
   {
     // We're right in between the 1000 and 1050 sample, older sample wins
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1025)));
-    ASSERT_EQ(result.translation.x, 1.0);
+    ASSERT_EQ(result.translation.x(), 1.0);
   }
   {
     // Now we're closer to the 1050ms sample
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1026)));
-    ASSERT_EQ(result.translation.x, 2.0);
+    ASSERT_EQ(result.translation.x(), 2.0);
   }
   {
     // Let's go near the 8th (1350ms) transform
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1326)));
-    ASSERT_EQ(result.translation.x, 8.0);
+    ASSERT_EQ(result.translation.x(), 8.0);
   }
   {
     // Let's go just past the last one
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1451)));
-    ASSERT_EQ(result.translation.x, 10.0);
+    ASSERT_EQ(result.translation.x(), 10.0);
   }
 
   // Just ahead of the validity window of the newest sample
@@ -127,7 +127,7 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
   trellis::containers::Transforms transforms(5);  // 5 transforms max
   trellis::containers::Transforms::RigidTransform transform;
   for (unsigned i = 0; i < 10U; ++i) {
-    transform.translation.x = static_cast<double>(i + 1);
+    transform.translation.x() = static_cast<double>(i + 1);
     time::SetSimulatedTime(now);
     transforms.UpdateTransform("foo", "bar", transform, validity_window);
     now += std::chrono::milliseconds(50);  // 20 Hz update rate
@@ -136,7 +136,7 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
   {
     // The oldest transform should now be at 1250ms, so we'll go back to 1250ms - 200ms validity window
     const auto& result = transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050)));
-    ASSERT_EQ(result.translation.x, 6.0);  // 1 - 5 should have been truncated
+    ASSERT_EQ(result.translation.x(), 6.0);  // 1 - 5 should have been truncated
   }
 }
 
@@ -150,13 +150,13 @@ TEST(TrellisTransforms, InverseTransformIsInserted) {
   ASSERT_FALSE(transforms.HasTransform("bar", "foo"));
 
   trellis::containers::Transforms::RigidTransform transform;
-  transform.translation.x = 1.0;
-  transform.translation.y = 2.0;
-  transform.translation.z = 3.0;
-  transform.rotation.w = 0.70710678118;
-  transform.rotation.x = 0.0;
-  transform.rotation.y = 0.0;
-  transform.rotation.z = 0.70710678118;
+  transform.translation.x() = 1.0;
+  transform.translation.y() = 2.0;
+  transform.translation.z() = 3.0;
+  transform.rotation.w() = 0.70710678118;
+  transform.rotation.x() = 0.0;
+  transform.rotation.y() = 0.0;
+  transform.rotation.z() = 0.70710678118;
   // Even with a 0 ms validity we expect this to pass because our simulated clock didn't change
   transforms.UpdateTransform("foo", "bar", transform, std::chrono::milliseconds(0));
   ASSERT_TRUE(transforms.HasTransform("foo", "bar"));

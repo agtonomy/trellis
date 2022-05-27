@@ -46,21 +46,12 @@ class Transforms {
   /**
    * Tranlsation represents a translation in 3D space
    */
-  struct Translation {
-    double x;
-    double y;
-    double z;
-  };
+  using Translation = Eigen::Vector3d;
 
   /**
    * Rotation represents a rotation in 3D space represented as a quaternion
    */
-  struct Rotation {
-    double x;
-    double y;
-    double z;
-    double w;
-  };
+  using Rotation = Eigen::Vector4d;
 
   using AffineTransform3D = Eigen::Transform<double, 3, Eigen::Affine>;
 
@@ -87,8 +78,8 @@ class Transforms {
      * @return the Eigen affine transform
      */
     AffineTransform3D GetAffineRepresentation() const {
-      return AffineTransform3D(Eigen::Translation<double, 3>(translation.x, translation.y, translation.z) *
-                               Eigen::Quaterniond(rotation.w, rotation.x, rotation.y, rotation.z));
+      return AffineTransform3D(Eigen::Translation<double, 3>(translation.x(), translation.y(), translation.z()) *
+                               Eigen::Quaterniond(rotation.w(), rotation.x(), rotation.y(), rotation.z()));
     }
 
     /**
@@ -99,10 +90,10 @@ class Transforms {
     RigidTransform Inverse() const { return Transforms::RigidTransform(GetAffineRepresentation().inverse()); }
 
     bool operator==(const RigidTransform& other) const {
-      return this->translation.x == other.translation.x && this->translation.y == other.translation.y &&
-             this->translation.z == other.translation.z && this->rotation.w == other.rotation.w &&
-             this->rotation.x == other.rotation.x && this->rotation.y == other.rotation.y &&
-             this->rotation.z == other.rotation.z;
+      return this->translation.x() == other.translation.x() && this->translation.y() == other.translation.y() &&
+             this->translation.z() == other.translation.z() && this->rotation.w() == other.rotation.w() &&
+             this->rotation.x() == other.rotation.x() && this->rotation.y() == other.rotation.y() &&
+             this->rotation.z() == other.rotation.z();
     }
 
     bool operator!=(const RigidTransform& other) const { return !(*this == other); }
