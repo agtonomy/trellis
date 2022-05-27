@@ -10,7 +10,6 @@ examples:
   transforms:
     interval_ms: 1000
     initial_delay_ms: 2000
-    validity_window_ms: 2000
     nodea:
       from: "base"
       to: "world"

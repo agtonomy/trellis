@@ -60,11 +60,9 @@ class Transforms {
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
    * @param transform the actual transformation in terms of a translation and a rotation
-   * @param validity_window how long the transform is valid for (static transforms should use kForever)
    */
   void UpdateTransform(const std::string& from, const std::string& to,
-                       const containers::Transforms::RigidTransform& transform,
-                       std::chrono::milliseconds validity_window);
+                       const containers::Transforms::RigidTransform& transform);
 
   /**
    * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
@@ -95,8 +93,7 @@ class Transforms {
  private:
   void NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when);
   static trellis::core::RigidTransform CreateMessageFromTransform(
-      const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform,
-      std::chrono::milliseconds validity_window);
+      const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform);
   static containers::Transforms::RigidTransform CreateTransformFromMessage(const trellis::core::RigidTransform& msg);
   static containers::Transforms::RigidTransform CreateTransformFromConfig(const trellis::core::Config& config);
 

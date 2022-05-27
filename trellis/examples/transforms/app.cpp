@@ -25,7 +25,6 @@ using namespace trellis::core;
 
 App::App(Which which, Node& node)
     : which_{which},
-      validity_window_ms{node.GetConfig()["examples"]["transforms"]["validity_window_ms"].as<unsigned>()},
       transforms_{node},
       timer_{node.CreateTimer(
           node.GetConfig()["examples"]["transforms"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
@@ -46,7 +45,7 @@ void App::Tick() {
   const std::string to = "base";
 
   // We update the transform, which will also update any other node that has a transform object
-  transforms_.UpdateTransform(from, to, transform, std::chrono::milliseconds(validity_window_ms));
+  transforms_.UpdateTransform(from, to, transform);
 
   // Print the valid transorms we have
   CheckAndPrint("sensor", "base");  // static transform from config

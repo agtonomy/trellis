@@ -111,10 +111,6 @@ class Transforms {
     }
   };
 
-  /**
-   * kForever Sentinel value representing forever in time for static (unchanging) transforms
-   */
-  static constexpr std::chrono::milliseconds kForever = std::chrono::milliseconds::max();
   static constexpr std::size_t kMaxTransformLengthDefault = 100U;
 
   Transforms(std::size_t max_transform_length = kMaxTransformLengthDefault)
@@ -126,10 +122,8 @@ class Transforms {
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
    * @param transform the actual transformation in terms of a translation and a rotation
-   * @param validity_window how long the transform is valid for (static transforms should use kForever)
    */
-  void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
-                       std::chrono::milliseconds validity_window = kForever);
+  void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform);
 
   /**
    * UpdateTransform update a transform associated with the given time
@@ -137,11 +131,10 @@ class Transforms {
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
    * @param transform the actual transformation in terms of a translation and a rotation
-   * @param validity_window how long the transform is valid for (static transforms should use kForever)
    * @param when the time point to associate with the transform
    */
   void UpdateTransform(const std::string& from, const std::string& to, const RigidTransform& transform,
-                       std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
+                       const trellis::core::time::TimePoint& when);
 
   /**
    * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
@@ -193,7 +186,7 @@ class Transforms {
       const std::string& from, const std::string& to, const trellis::core::time::TimePoint& when) const;
 
   void Insert(const std::string& from, const std::string& to, const RigidTransform& transform,
-              std::chrono::milliseconds validity_window, const trellis::core::time::TimePoint& when);
+              const trellis::core::time::TimePoint& when);
 
   static void ValidateFrameName(const std::string& frame);
 
@@ -204,17 +197,12 @@ class Transforms {
     const std::string to;
   };
 
-  struct TransformData {
-    RigidTransform transform;
-    std::chrono::milliseconds validity_window;
-  };
-
   static KeyType CalculateKeyFromFrames(const std::string& from, const std::string& to);
   static FrameNames GetFrameNamesFromKey(const KeyType& key);
 
   static constexpr char kDelimiter = '|';
 
-  using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, TransformData>;
+  using TransformHistoryContainer = std::map<trellis::core::time::TimePoint, RigidTransform>;
   std::unordered_map<KeyType, TransformHistoryContainer> transforms_;
   const std::size_t max_transform_length_;
 };

@@ -35,16 +35,14 @@ Transforms::Transforms(trellis::core::Node& node)
     const auto& transforms_cfg = node.GetConfig()["transforms"];
     for (const auto& config : transforms_cfg) {
       const auto transform = CreateTransformFromConfig(config);
-      container_.UpdateTransform(config["from"].as<std::string>(), config["to"].as<std::string>(), transform,
-                                 containers::Transforms::kForever);
+      container_.UpdateTransform(config["from"].as<std::string>(), config["to"].as<std::string>(), transform);
     }
   }
 }
 
 void Transforms::NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when) {
   auto transform = CreateTransformFromMessage(msg);
-  container_.UpdateTransform(msg.frame_from(), msg.frame_to(), transform,
-                             std::chrono::milliseconds(msg.validity_window_ms()), when);
+  container_.UpdateTransform(msg.frame_from(), msg.frame_to(), transform, when);
 }
 
 bool Transforms::HasTransform(const std::string& from, const std::string& to,
@@ -53,9 +51,8 @@ bool Transforms::HasTransform(const std::string& from, const std::string& to,
 }
 
 void Transforms::UpdateTransform(const std::string& from, const std::string& to,
-                                 const containers::Transforms::RigidTransform& transform,
-                                 std::chrono::milliseconds validity_window) {
-  auto msg = CreateMessageFromTransform(from, to, transform, validity_window);
+                                 const containers::Transforms::RigidTransform& transform) {
+  auto msg = CreateMessageFromTransform(from, to, transform);
   // We'll add the transform to our container now since our publishes don't seem to be looping
   // back through our subscriber
   NewTransform(msg, trellis::core::time::Now());
@@ -68,8 +65,7 @@ const containers::Transforms::RigidTransform& Transforms::GetTransform(
 }
 
 trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
-    const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform,
-    std::chrono::milliseconds validity_window) {
+    const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform) {
   trellis::core::RigidTransform msg;
   msg.mutable_translation()->set_x(transform.translation.x());
   msg.mutable_translation()->set_y(transform.translation.y());
@@ -80,7 +76,6 @@ trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
   msg.mutable_rotation()->set_z(transform.rotation.z());
   msg.set_frame_from(from);
   msg.set_frame_to(to);
-  msg.set_validity_window_ms(validity_window.count());
   return msg;
 }
 

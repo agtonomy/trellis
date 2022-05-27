@@ -2,15 +2,13 @@ syntax = "proto3";
 
 package trellis.core;
 
-import "trellis/core/vector3.proto";
 import "trellis/core/quaternion.proto";
+import "trellis/core/vector3.proto";
 
 // This message represents a 3D rigid transform composed as a 3D translation followed by a 3D rotation
-message RigidTransform
-{
-  string frame_from   = 1;
-  string frame_to     = 2;
+message RigidTransform {
+  string frame_from = 1;
+  string frame_to = 2;
   Vector3 translation = 3;
   Quaternion rotation = 4;
-  uint64 validity_window_ms = 5;
 }
