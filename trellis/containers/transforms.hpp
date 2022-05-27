@@ -92,6 +92,13 @@ class Transforms {
      */
     RigidTransform Inverse() const { return Transforms::RigidTransform(GetAffineRepresentation().inverse()); }
 
+    /**
+     * Exact quality operator.
+     *
+     * Note: for approximations use Eigen's GetAffineRepresentation().isApprox() instead
+     *
+     * @returns true if both operands are exact copies of each other
+     */
     bool operator==(const RigidTransform& other) const {
       return this->translation.x() == other.translation.x() && this->translation.y() == other.translation.y() &&
              this->translation.z() == other.translation.z() && this->rotation.w() == other.rotation.w() &&

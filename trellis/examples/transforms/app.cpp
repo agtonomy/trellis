@@ -58,7 +58,8 @@ void App::Tick() {
 void App::CheckAndPrint(const std::string& from, const std::string& to) const {
   if (transforms_.HasTransform(from, to)) {
     const auto& [timestamp, transform] = transforms_.GetTransform(from, to);
-    const double delta_sec = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - timestamp).count() / 1000.0;
+    const double delta_sec =
+        std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - timestamp).count() / 1000.0;
     Log::Info("We have the {} -> {} transform [{}, {}, {}] [{}, {}, {}, {}] which is {} seconds old", from, to,
               transform.translation.x(), transform.translation.y(), transform.translation.z(), transform.rotation.w(),
               transform.rotation.x(), transform.rotation.y(), transform.rotation.z(), delta_sec);
