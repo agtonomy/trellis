@@ -57,10 +57,11 @@ void App::Tick() {
 
 void App::CheckAndPrint(const std::string& from, const std::string& to) const {
   if (transforms_.HasTransform(from, to)) {
-    const auto& transform = transforms_.GetTransform(from, to).transform;
-    Log::Info("We have the {} -> {} transform [{}, {}, {}] [{}, {}, {}, {}]", from, to, transform.translation.x(),
-              transform.translation.y(), transform.translation.z(), transform.rotation.w(), transform.rotation.x(),
-              transform.rotation.y(), transform.rotation.z());
+    const auto& [timestamp, transform] = transforms_.GetTransform(from, to);
+    const double delta_sec = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - timestamp).count() / 1000.0;
+    Log::Info("We have the {} -> {} transform [{}, {}, {}] [{}, {}, {}, {}] which is {} seconds old", from, to,
+              transform.translation.x(), transform.translation.y(), transform.translation.z(), transform.rotation.w(),
+              transform.rotation.x(), transform.rotation.y(), transform.rotation.z(), delta_sec);
 
     // Demonstrating how we can use the transform on an Eigen 3D vector
     const Eigen::Vector3d rotated = transform.GetAffineRepresentation() * Eigen::Vector3d(1.0, 0.0, 0.0);
