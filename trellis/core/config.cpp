@@ -20,7 +20,13 @@
 namespace trellis {
 namespace core {
 
-Config LoadFromFile(std::string filename) { return YAML::LoadFile(filename); }
+Config::Config(const std::string& file) : root_{YAML::LoadFile(file)} {}
+
+Config::Config(const YAML::Node& root) : root_{root} {}
+
+YAML::Node Config::operator[](const std::string& key) { return root_[key]; }
+
+const YAML::Node Config::operator[](const std::string& key) const { return root_[key]; }
 
 }  // namespace core
 }  // namespace trellis
