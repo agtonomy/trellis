@@ -20,7 +20,7 @@
 using namespace trellis::examples;
 
 int main(int argc, char* argv[]) {
-  trellis::core::Node node("transforms_node_b", trellis::core::LoadFromFile("trellis/examples/config.yml"));
+  trellis::core::Node node("transforms_node_b", trellis::core::Config("trellis/examples/config.yml"));
   transforms::App app(transforms::App::kNodeB, node);
   return node.Run();
 }
