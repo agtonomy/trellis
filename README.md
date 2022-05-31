@@ -25,8 +25,8 @@ state indirectly through the passing of messages.
 See: https://en.wikipedia.org/wiki/Actor_model
 
 ## Asynchronous, event-driven architecture
-Trellis applications are intended to be purely event-driven with callbacks firing in response to events.
-The most common being in response to inbound messages and/or the passage of time.
+Trellis applications are intended to be purely event-driven with callbacks firing in response to events. Most commonly due to inbound messages and/or the passage of time in the case of timers.
+
 Trellis uses [Asio](https://think-async.com/Asio/) under the hood to run an event loop.
 
 ## eCAL Core
