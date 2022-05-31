@@ -24,6 +24,11 @@ state indirectly through the passing of messages.
 
 See: https://en.wikipedia.org/wiki/Actor_model
 
+## Asynchronous, event-driven architecture
+Trellis applications are intended to be purely event-driven with callbacks firing in response to events.
+The most common being in response to inbound messages and/or the passage of time.
+Trellis uses [Asio](https://think-async.com/Asio/) under the hood to run an event loop.
+
 ## eCAL Core
 At the core, Trellis is built on top of [Continental's enhanced Communication Abstraction Layer](https://github.com/continental/ecal) (eCAL) library. This brings in a core set of functionality:
 
@@ -35,14 +40,15 @@ At the core, Trellis is built on top of [Continental's enhanced Communication Ab
 1. Data recording and replay tools
 
 ## Additional Features
-In addition to the functionality provided by eCAL, Trellis aims to provide
-the following:
+In addition to the functionality provided by eCAL, Trellis aims to provide additional functionality including but not limited to:
 
 1. Configuration and parameter management framework
-1. A framework for developing applications that behave deterministically
-1. Data visualization tools
-1. An integration testing framework
+1. Deterministic replay of messages
+1. A framework for integration tests that span across applications
 1. An abstraction layer for common forms of I/O
+1. A framework for broadcasting reference frame transformations
+
+Note: Some of these features are either not yet implemented or partially implemented.
 
 ## Middleware Primitives
 Trellis provides the following core primitives
@@ -54,6 +60,7 @@ Trellis provides the following core primitives
 1. Service Server - for providing remotely callable procedures
 1. Timer - for invoking callbacks at fixed time intervals
 1. MessageConsumer - for receiving messages from many publishers in a thread-safe way with minimal boilerplate
+1. Transforms - for caching reference frame transformations and broadcasting updates
 
 ### Services (RPC)
 Services are implemented using Protobuf's RPC syntax, which declares a method
