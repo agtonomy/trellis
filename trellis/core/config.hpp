@@ -23,8 +23,53 @@
 namespace trellis {
 namespace core {
 
-using Config = YAML::Node;
-Config LoadFromFile(std::string filename);
+/**
+ * Config class to represent the configuration structure used by applications
+ */
+class Config {
+ public:
+  /**
+   * Default construct an empty config object
+   */
+  Config() = default;
+
+  /*
+   * Construct a config object from the contents of a YAML file
+   *
+   * @param file the file path to read from
+   * @throws YAML::BadFile on error
+   */
+  Config(const std::string& file);
+
+  /*
+   * Construct a config object based on the given YAML node
+   * @param root the YAML node that represents the root of the configuration
+   */
+  Config(const YAML::Node& root);
+
+  /**
+   * Retrieve a child node via the given key
+   * @param key a string representing the key name
+   * @return the YAML node at the key
+   */
+  YAML::Node operator[](const std::string& key);
+
+  /**
+   * Retrieve a child node via the given key (const)
+   * @param key a string representing the key name
+   * @return the YAML node at the key
+   */
+  const YAML::Node operator[](const std::string& key) const;
+
+  /**
+   * Root get the root YAML node
+   * @return the YAML node pointing to the root of the structure
+   */
+  const YAML::Node& Root() const { return root_; }
+
+ private:
+  YAML::Node root_;
+};
 
 }  // namespace core
 }  // namespace trellis
