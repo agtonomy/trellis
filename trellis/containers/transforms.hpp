@@ -31,11 +31,8 @@ namespace containers {
 /**
  * Transforms a container to hold rigid coordinate frame transformations
  *
- * This class holds transforms with associated timestamps. It also maintains a validity window, which is a duration of
- * time that the transform is valid for. Lookups are done based on a timestamp. The algorithm will first find the
- * transform with the timestamp nearest the requested one. Then the validity window is used to determine if the
- * timestamp is close enough in time. There is also a notion of forever in which a transform is always valid. This is
- * useful for transforms that are known to be unchanging.
+ * This class holds transforms with associated timestamps. Lookups are done based on a timestamp. The algorithm will
+ * find the transform with the timestamp nearest the requested one.
  *
  * Future improvements:
  * - Support a graph structure to allow lookups that are transitive. Say we know A -> B -> C, we should support a lookup
