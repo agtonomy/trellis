@@ -51,7 +51,7 @@ TEST(TrellisTransforms, RetrieveCorrectTransformGivenATime) {
   // Now we have transforms with timestamps starting from 1000ms with 50ms increments
 
   {
-    // We're back in time before the first transform by just within the validity window
+    // We're back in time before the first transform
     const auto& [timestamp, result] =
         transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(800)));
     ASSERT_EQ(result.translation.x(), 1.0);
@@ -101,7 +101,7 @@ TEST(TrellisTransforms, OldTransformsShouldBePurged) {
   }
 
   {
-    // The oldest transform should now be at 1250ms, so we'll go back to 1250ms - 200ms validity window
+    // The oldest transform should now be at 1250ms, so we'll go back in time some
     const auto& result =
         transforms.GetTransform("foo", "bar", time::TimePoint(std::chrono::milliseconds(1050))).transform;
     ASSERT_EQ(result.translation.x(), 6.0);  // 1 - 5 should have been truncated
