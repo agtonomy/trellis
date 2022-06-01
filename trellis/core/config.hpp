@@ -50,14 +50,22 @@ class Config {
   /**
    * Retrieve a child node via the given key
    * @param key a string representing the key name
+   * @return the YAML node at the key
    */
   YAML::Node operator[](const std::string& key);
 
   /**
    * Retrieve a child node via the given key (const)
    * @param key a string representing the key name
+   * @return the YAML node at the key
    */
   const YAML::Node operator[](const std::string& key) const;
+
+  /**
+   * Root get the root YAML node
+   * @return the YAML node pointing to the root of the structure
+   */
+  const YAML::Node& Root() const { return root_; }
 
  private:
   YAML::Node root_;
