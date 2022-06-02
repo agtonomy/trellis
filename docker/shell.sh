@@ -10,11 +10,11 @@ DOCKER_IMAGE_NAME="trellis-docker"
 
 case $ARCHITECTURE in
     x86_64)
-        DOCKER_IMAGE_NAME+="amd64";;
+        DOCKER_IMAGE_NAME+=":amd64";;
     arm64)
-        DOCKER_IMAGE_NAME+="arm64";;
+        DOCKER_IMAGE_NAME+=":arm64";;
     aarch64)
-        DOCKER_IMAGE_NAME+="arm64";;
+        DOCKER_IMAGE_NAME+=":arm64";;
     *)
         echo "Unexpected architecture: $ARCHITECTURE"; exit 1;;
 esac
