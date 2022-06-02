@@ -1,5 +1,10 @@
 FROM ubuntu:20.04
 
+ARG TARGETARCH
+ARG TARGETPLATFORM
+
+RUN echo "I'm building for $TARGETARCH, $TARGETPLATFORM"
+
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
   curl \
   vim \
@@ -10,9 +15,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
   golang \
   && rm -rf /var/lib/apt/lists/*
 
-# TODO(bsirang): this assumes amd64, instead detect arch
-RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-amd64 -O && \
-    mv bazelisk-linux-amd64 /usr/local/bin/bazel && \
+# Install bazelisk for target architecture
+RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/bazelisk-linux-$TARGETARCH -O && \
+    mv bazelisk-linux-$TARGETARCH /usr/local/bin/bazel && \
     chmod +x /usr/local/bin/bazel
 
 RUN go get github.com/bazelbuild/buildtools/buildifier && \
