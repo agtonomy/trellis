@@ -16,7 +16,7 @@ case $ARCHITECTURE in
     aarch64)
         DOCKER_IMAGE_NAME+="arm64";;
     *)
-        echo "Failed to build. Unexpected architecture: $ARCHITECTURE"; exit 1;;
+        echo "Unexpected architecture: $ARCHITECTURE"; exit 1;;
 esac
 
 # shellcheck disable=SC2068
