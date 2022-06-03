@@ -1,0 +1,8 @@
+# Config used to overlay on top of base config for testing
+root_key:
+  option1:
+    string_value: "updated_foo_bar"
+    boolean_list: [true, true, true]
+    floating_scalar: -4.0
+    integral_scalar: -100
+    new_value: 23.0

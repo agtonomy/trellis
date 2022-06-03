@@ -104,3 +104,19 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "test_core_config",
+    srcs = [
+        "test_config.cpp",
+    ],
+    data = [
+        ":test_base_config.yml",
+        ":test_overlay_config.yml",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_config",
+        "@gtest//:gtest_main",
+    ],
+)
