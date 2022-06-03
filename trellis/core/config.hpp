@@ -39,13 +39,13 @@ class Config {
    * @param file the file path to read from
    * @throws YAML::BadFile on error
    */
-  Config(const std::string& file);
+  explicit Config(const std::string& file);
 
   /*
    * Construct a config object based on the given YAML node
    * @param root the YAML node that represents the root of the configuration
    */
-  Config(const YAML::Node& root);
+  explicit Config(const YAML::Node& root);
 
   /**
    * Retrieve a child node via the given key
