@@ -67,7 +67,15 @@ class Config {
    */
   const YAML::Node& Root() const { return root_; }
 
+  /**
+   * Overlay overlay the given Node on top of the existing configuration
+   *
+   * For any keys that overlap, they will be overwritten.
+   */
+  void Overlay(const YAML::Node& overlay);
+
  private:
+  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay);
   YAML::Node root_;
 };
 

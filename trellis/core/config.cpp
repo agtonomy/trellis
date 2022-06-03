@@ -17,6 +17,8 @@
 
 #include "config.hpp"
 
+#include <iostream>
+
 namespace trellis {
 namespace core {
 
@@ -27,6 +29,45 @@ Config::Config(const YAML::Node& root) : root_{root} {}
 YAML::Node Config::operator[](const std::string& key) { return root_[key]; }
 
 const YAML::Node Config::operator[](const std::string& key) const { return root_[key]; }
+
+void Config::Overlay(const YAML::Node& overlay) { RecursiveOverlay(root_, overlay); }
+
+void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay) {
+  if (!overlay.IsMap()) {
+    throw std::invalid_argument("Overlay yaml root node must be a map");
+  }
+  if (overlay.size() == 0) {
+    return;
+  }
+
+  for (const auto& it : overlay) {
+    const std::string key = it.first.as<std::string>();
+    const YAML::Node value = it.second;
+    const bool exists_in_base = static_cast<bool>(base[key]);
+    const bool value_is_map = value.IsMap();
+    if (exists_in_base) {
+      std::cout << "key = " << key << " exists in base config" << std::endl;
+    } else {
+      std::cout << "key = " << key << " does not exist in base config" << std::endl;
+    }
+    if (value_is_map) {
+      std::cout << "value is a map" << std::endl;
+    } else {
+      std::cout << "value is not a map" << std::endl;
+    }
+
+    if (exists_in_base && value_is_map) {
+      std::cout << " key " << key << " already exists... recursing" << std::endl;
+      // If this particular key exists in the base config, and the value is a map itself, let's recurse
+      RecursiveOverlay(base[key], value);
+    } else {
+      // std::cout << " key " << key << " doesn't exists in base config or overlay value is not a map" << std::endl;
+      // If this key didn't exist in the base, our job is easy, let's just attach this branch
+      // Also, if the value is not a map, then we want to overwrite the value in the base layer
+      base[key] = value;
+    }
+  }
+}
 
 }  // namespace core
 }  // namespace trellis
