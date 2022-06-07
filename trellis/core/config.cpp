@@ -40,8 +40,6 @@ void Config::Overlay(const std::string raw_yaml) { Overlay(YAML::Load(raw_yaml))
 
 void Config::OverlayFromFile(const std::string filename) { Overlay(YAML::LoadFile(filename)); }
 
-
-
 void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay) {
   if (!overlay.IsMap()) {
     throw std::invalid_argument("Overlay YAML root node must be a map");
