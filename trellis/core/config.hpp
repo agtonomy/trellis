@@ -74,6 +74,22 @@ class Config {
    */
   void Overlay(const YAML::Node& overlay);
 
+  /**
+   * Overlay overlay the given config tree as a YAML string on top of the existing configuration
+   *
+   * @param raw_YAML a string containing YAML
+   * @see Overlay(const YAML::Node&)
+   */
+  void Overlay(const std::string raw_yaml);
+
+  /**
+   * Overlay overlay the config tree from the given file
+   *
+   * @param filename the file name containing the configuration
+   * @see Overlay(const YAML::Node&)
+   */
+  void OverlayFromFile(const std::string filename);
+
  private:
   static void RecursiveOverlay(YAML::Node base, YAML::Node overlay);
   YAML::Node root_;

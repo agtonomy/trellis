@@ -34,8 +34,7 @@ TEST(TrellisConfigAPI, OverlaySmokeTest) {
   ASSERT_EQ(config["root_key"]["option1"]["integral_scalar"].as<int>(), 1);
 
   // Feed in another configuration tree as an overlay
-  YAML::Node overlay(YAML::LoadFile("trellis/core/test/test_overlay_config.yml"));
-  config.Overlay(overlay);
+  config.OverlayFromFile("trellis/core/test/test_overlay_config.yml");
 
   // Make sure the overlay sits on top of the base configuration properly
   ASSERT_EQ(config["root_key"]["option1"]["string_value"].as<std::string>(), "updated_foo_bar");
