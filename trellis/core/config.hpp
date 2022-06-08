@@ -39,13 +39,13 @@ class Config {
    * @param file the file path to read from
    * @throws YAML::BadFile on error
    */
-  Config(const std::string& file);
+  explicit Config(const std::string& file);
 
   /*
    * Construct a config object based on the given YAML node
    * @param root the YAML node that represents the root of the configuration
    */
-  Config(const YAML::Node& root);
+  explicit Config(const YAML::Node& root);
 
   /**
    * Retrieve a child node via the given key
@@ -67,7 +67,31 @@ class Config {
    */
   const YAML::Node& Root() const { return root_; }
 
+  /**
+   * Overlay overlay the given Node on top of the existing configuration
+   *
+   * For any keys that overlap, they will be overwritten.
+   */
+  void Overlay(const YAML::Node& overlay);
+
+  /**
+   * Overlay overlay the given config tree as a YAML string on top of the existing configuration
+   *
+   * @param raw_YAML a string containing YAML
+   * @see Overlay(const YAML::Node&)
+   */
+  void Overlay(const std::string raw_yaml);
+
+  /**
+   * Overlay overlay the config tree from the given file
+   *
+   * @param filename the file name containing the configuration
+   * @see Overlay(const YAML::Node&)
+   */
+  void OverlayFromFile(const std::string filename);
+
  private:
+  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay);
   YAML::Node root_;
 };
 

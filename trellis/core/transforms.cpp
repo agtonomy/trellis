@@ -34,7 +34,7 @@ Transforms::Transforms(trellis::core::Node& node)
     // Load static transforms from configuration into the container
     const auto& transforms_cfg = node.GetConfig()["transforms"];
     for (const auto& config : transforms_cfg) {
-      const auto transform = CreateTransformFromConfig(config);
+      const auto transform = CreateTransformFromConfig(trellis::core::Config(config.second));
       container_.UpdateTransform(config["from"].as<std::string>(), config["to"].as<std::string>(), transform);
     }
   }

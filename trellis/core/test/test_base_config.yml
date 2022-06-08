@@ -1,0 +1,11 @@
+# Configuration structure used in tests
+root_key:
+  option1:
+    string_value: "foo_bar"
+    boolean_vector: [true, true, false,
+                     false, false, true,
+                     true, true, false,
+                     false, false, false,
+                     false, false, false]
+    floating_scalar: 10.0
+    integral_scalar: 1

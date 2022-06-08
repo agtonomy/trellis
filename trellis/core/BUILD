@@ -1,12 +1,10 @@
 cc_library(
     name = "core",
     srcs = [
-        "config.cpp",
         "timer.cpp",
     ],
     hdrs = [
         "bind.hpp",
-        "config.hpp",
         "error_code.hpp",
         "event_loop.hpp",
         "proto_utils.hpp",
@@ -14,8 +12,22 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_config",
         ":core_time",
         "@asio",
+    ],
+)
+
+cc_library(
+    name = "core_config",
+    srcs = [
+        "config.cpp",
+    ],
+    hdrs = [
+        "config.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
         "@yaml-cpp",
     ],
 )
