@@ -257,8 +257,8 @@ class MessageConsumer {
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
       auto cb = new_message_callback;
-      const auto& newest = Newest<MSG_T>();
-      asio::post(*loop_, [topic, cb, &newest]() { cb(topic, newest.message, newest.timestamp); });
+      const auto newest(std::move(Newest<MSG_T>()));
+      asio::post(*loop_, [topic, cb, newest]() { cb(topic, newest.message, newest.timestamp); });
     }
   }
 
