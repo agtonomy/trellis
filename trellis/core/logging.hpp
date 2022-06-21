@@ -59,6 +59,7 @@ template <typename... Args>
 inline void Fatal(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[FATAL] ", log_level_fatal);
+  abort();
 }
 
 template <typename... Args>
