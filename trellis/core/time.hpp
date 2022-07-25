@@ -73,10 +73,10 @@ unsigned long long TimePointToMilliseconds(const TimePoint& tp);
 unsigned long long NowInMilliseconds();
 
 /**
- * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
+ * TimePointFromTimestampedMessage create a time point from a TimestampedMessage
  *
  */
-TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
+TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
@@ -110,10 +110,10 @@ void SetSimulatedTime(const trellis::core::time::TimePoint& now);
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
 
 /**
- * TimePointFromFromTimestampedMessage create a time point from a TimestampedMessage
+ * TimePointFromTimestampedMessage create a time point from a TimestampedMessage
  *
  */
-TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
+TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point

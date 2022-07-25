@@ -49,7 +49,7 @@ unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
 
 unsigned long long NowInMilliseconds() { return TimePointToMilliseconds(Now()); }
 
-TimePoint TimePointFromFromTimestampedMessage(const trellis::core::TimestampedMessage& msg) {
+TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg) {
   const auto duration =
       std::chrono::seconds{msg.timestamp().seconds()} + std::chrono::nanoseconds{msg.timestamp().nanos()};
   return TimePoint{duration};

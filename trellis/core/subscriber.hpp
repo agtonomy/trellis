@@ -176,7 +176,7 @@ class SubscriberImpl {
   // Common logic between dynamic and non-dynamic case
   void CallbackHelperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    const trellis::core::time::TimePoint msgtime{trellis::core::time::TimePointFromFromTimestampedMessage(msg)};
+    const trellis::core::time::TimePoint msgtime{trellis::core::time::TimePointFromTimestampedMessage(msg)};
     // Update simulated clock if necessary
     update_sim_fn_(msgtime);
     bool should_callback = (interval_ms == 0);
