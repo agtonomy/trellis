@@ -60,6 +60,8 @@ template <typename... Args>
 inline void Fatal(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[FATAL] ", log_level_fatal);
+  // Sleep briefly because DoLog is not necessarily synchronous, so without sleeping this could abort before the fatal
+  // log can be fully dispatched.
   sleep(1);
   abort();
 }
