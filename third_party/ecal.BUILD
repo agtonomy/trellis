@@ -224,6 +224,7 @@ cc_library(
         "app/rec/rec_client_core/include",
         "app/rec/rec_client_core/src",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":ecal",
         ":ecal_hdf5",
