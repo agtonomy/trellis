@@ -18,48 +18,41 @@
 #ifndef TRELLIS_CORE_LOGGING_HPP
 #define TRELLIS_CORE_LOGGING_HPP
 
-#include <ecal/ecal.h>
 #include <fmt/core.h>
 #include <unistd.h>
+
+#include <string>
 
 namespace trellis {
 namespace core {
 namespace Log {
 
-namespace {
+enum LogLevel { kInfo = 0, kWarn, kError, kFatal, kDebug };
 
-void DoLog(const std::string& msg, const std::string& prefix, eCAL_Logging_eLogLevel level) {
-  if (!eCAL::IsInitialized(eCAL::Init::Logging)) {
-    eCAL::Initialize(0, nullptr, nullptr, eCAL::Init::Logging);
-  }
-  const std::string full_msg = prefix + msg;
-  eCAL::Logging::Log(level, full_msg);
-}
-
-}  // namespace
+void DoLog(const std::string& msg, const std::string& prefix, LogLevel level);
 
 template <typename... Args>
 inline void Info(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[INFO]  ", log_level_info);
+  DoLog(msg, "[INFO]  ", LogLevel::kInfo);
 }
 
 template <typename... Args>
 inline void Warn(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[WARN]  ", log_level_warning);
+  DoLog(msg, "[WARN]  ", LogLevel::kWarn);
 }
 
 template <typename... Args>
 inline void Error(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[ERROR] ", log_level_error);
+  DoLog(msg, "[ERROR] ", LogLevel::kError);
 }
 
 template <typename... Args>
 inline void Fatal(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[FATAL] ", log_level_fatal);
+  DoLog(msg, "[FATAL] ", LogLevel::kFatal);
   // Sleep briefly because DoLog is not necessarily synchronous, so without sleeping this could abort before the fatal
   // log can be fully dispatched.
   sleep(1);
@@ -69,7 +62,7 @@ inline void Fatal(const std::string& fmt_msg, Args&&... args) {
 template <typename... Args>
 inline void Debug(const std::string& fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[DEBUG] ", log_level_debug1);
+  DoLog(msg, "[DEBUG] ", LogLevel::kDebug);
 }
 
 }  // namespace Log

@@ -47,6 +47,21 @@ cc_library(
 )
 
 cc_library(
+    name = "core_logging",
+    srcs = [
+        "logging.cpp",
+    ],
+    hdrs = [
+        "logging.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@ecal",
+        "@fmt",
+    ],
+)
+
+cc_library(
     name = "core_ecal",
     srcs = [
         "monitor_interface.cpp",
@@ -54,7 +69,6 @@ cc_library(
         "transforms.cpp",
     ],
     hdrs = [
-        "logging.hpp",
         "message_consumer.hpp",
         "monitor_interface.hpp",
         "node.hpp",
@@ -67,9 +81,9 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core",
+        ":core_logging",
         "//trellis/containers",
         "@ecal",
-        "@fmt",
     ],
 )
 
