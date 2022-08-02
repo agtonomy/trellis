@@ -49,6 +49,7 @@ cc_library(
 cc_library(
     name = "core_ecal",
     srcs = [
+        "logging.cpp",
         "monitor_interface.cpp",
         "node.cpp",
         "transforms.cpp",
