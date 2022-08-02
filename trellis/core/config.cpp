@@ -36,13 +36,13 @@ YAML::Node Config::operator[](const std::string& key) { return root_[key]; }
 
 const YAML::Node Config::operator[](const std::string& key) const { return root_[key]; }
 
-void Config::Overlay(const YAML::Node& overlay, bool do_log) { RecursiveOverlay(root_, overlay, do_log); }
+void Config::Overlay(const YAML::Node& overlay, bool verbose) { RecursiveOverlay(root_, overlay, verbose); }
 
-void Config::Overlay(const std::string raw_yaml, bool do_log) { Overlay(YAML::Load(raw_yaml), do_log); }
+void Config::Overlay(const std::string raw_yaml, bool verbose) { Overlay(YAML::Load(raw_yaml), verbose); }
 
-void Config::OverlayFromFile(const std::string filename, bool do_log) { Overlay(YAML::LoadFile(filename), do_log); }
+void Config::OverlayFromFile(const std::string filename, bool verbose) { Overlay(YAML::LoadFile(filename), verbose); }
 
-void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool do_log, std::string key_prefix) {
+void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose, std::string key_prefix) {
   if (!overlay.IsMap()) {
     throw std::invalid_argument("Overlay YAML root node must be a map");
   }
@@ -62,7 +62,7 @@ void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool do_log, 
       } else {
         key_prefix += "." + key;
       }
-      RecursiveOverlay(base[key], value, do_log, key_prefix);
+      RecursiveOverlay(base[key], value, verbose, key_prefix);
     } else {
       // If this key didn't exist in the base, our job is easy, let's just attach this branch from the overlay on to the
       // base configuration. Also, if the value is not a map (scalar or sequence), then we want to overwrite the value
@@ -74,8 +74,7 @@ void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool do_log, 
         throw std::invalid_argument("Overlay key " + key + " does not match the base key type!");
       }
       base[key] = value;
-      if (do_log) {
-        // XXX (bsirang)
+      if (verbose) {
         const std::string full_key = key_prefix + "." + key;
         std::stringstream value_str;
         value_str << value;
