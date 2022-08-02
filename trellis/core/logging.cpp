@@ -26,11 +26,11 @@ namespace Log {
 namespace {
 
 eCAL_Logging_eLogLevel LogLevelToEcalLevel(LogLevel level) {
-  static const std::unordered_map<LogLevel, eCAL_Logging_eLogLevel> logmap {
-    {kInfo, log_level_info}, {kWarn, log_level_warning}, {kError, log_level_error}, {kFatal, log_level_fatal},
-        {kDebug, log_level_debug1},
-  }
-  return logmap[level];
+  static const std::unordered_map<LogLevel, eCAL_Logging_eLogLevel> logmap{
+      {kInfo, log_level_info},   {kWarn, log_level_warning}, {kError, log_level_error},
+      {kFatal, log_level_fatal}, {kDebug, log_level_debug1},
+  };
+  return logmap.at(level);
 }
 
 }  // namespace
