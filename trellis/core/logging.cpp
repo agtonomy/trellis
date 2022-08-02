@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Agtonomy
+ * Copyright (C) 2022 Agtonomy
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,11 @@ namespace Log {
 namespace {
 
 eCAL_Logging_eLogLevel LogLevelToEcalLevel(LogLevel level) {
-  return std::unordered_map<LogLevel, eCAL_Logging_eLogLevel>{
-      {kInfo, log_level_info},   {kWarn, log_level_warning}, {kError, log_level_error},
-      {kFatal, log_level_fatal}, {kDebug, log_level_debug1},
-  }[level];
+  static const std::unordered_map<LogLevel, eCAL_Logging_eLogLevel> logmap {
+    {kInfo, log_level_info}, {kWarn, log_level_warning}, {kError, log_level_error}, {kFatal, log_level_fatal},
+        {kDebug, log_level_debug1},
+  }
+  return logmap[level];
 }
 
 }  // namespace
