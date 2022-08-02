@@ -28,6 +28,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_logging",
         "@yaml-cpp",
     ],
 )
