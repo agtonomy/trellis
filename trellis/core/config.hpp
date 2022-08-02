@@ -72,7 +72,7 @@ class Config {
    *
    * For any keys that overlap, they will be overwritten.
    */
-  void Overlay(const YAML::Node& overlay);
+  void Overlay(const YAML::Node& overlay, bool do_log = true);
 
   /**
    * Overlay overlay the given config tree as a YAML string on top of the existing configuration
@@ -80,7 +80,7 @@ class Config {
    * @param raw_YAML a string containing YAML
    * @see Overlay(const YAML::Node&)
    */
-  void Overlay(const std::string raw_yaml);
+  void Overlay(const std::string raw_yaml, bool do_log = true);
 
   /**
    * Overlay overlay the config tree from the given file
@@ -88,10 +88,10 @@ class Config {
    * @param filename the file name containing the configuration
    * @see Overlay(const YAML::Node&)
    */
-  void OverlayFromFile(const std::string filename);
+  void OverlayFromFile(const std::string filename, bool do_log = true);
 
  private:
-  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay);
+  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool do_log, std::string key_prefix = "");
   YAML::Node root_;
 };
 

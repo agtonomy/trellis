@@ -19,6 +19,8 @@
 
 #include <iostream>
 
+#include "logging.hpp"
+
 namespace trellis {
 namespace core {
 
@@ -34,13 +36,13 @@ YAML::Node Config::operator[](const std::string& key) { return root_[key]; }
 
 const YAML::Node Config::operator[](const std::string& key) const { return root_[key]; }
 
-void Config::Overlay(const YAML::Node& overlay) { RecursiveOverlay(root_, overlay); }
+void Config::Overlay(const YAML::Node& overlay, bool do_log) { RecursiveOverlay(root_, overlay, do_log); }
 
-void Config::Overlay(const std::string raw_yaml) { Overlay(YAML::Load(raw_yaml)); }
+void Config::Overlay(const std::string raw_yaml, bool do_log) { Overlay(YAML::Load(raw_yaml), do_log); }
 
-void Config::OverlayFromFile(const std::string filename) { Overlay(YAML::LoadFile(filename)); }
+void Config::OverlayFromFile(const std::string filename, bool do_log) { Overlay(YAML::LoadFile(filename), do_log); }
 
-void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay) {
+void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool do_log, std::string key_prefix) {
   if (!overlay.IsMap()) {
     throw std::invalid_argument("Overlay YAML root node must be a map");
   }
@@ -55,7 +57,12 @@ void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay) {
     const bool value_is_map = value.IsMap();
     if (exists_in_base && value_is_map) {
       // If this particular key exists in the base config, and the value is a map itself, let's recurse
-      RecursiveOverlay(base[key], value);
+      if (key_prefix.empty()) {
+        key_prefix = key;
+      } else {
+        key_prefix += "." + key;
+      }
+      RecursiveOverlay(base[key], value, do_log, key_prefix);
     } else {
       // If this key didn't exist in the base, our job is easy, let's just attach this branch from the overlay on to the
       // base configuration. Also, if the value is not a map (scalar or sequence), then we want to overwrite the value
@@ -67,6 +74,13 @@ void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay) {
         throw std::invalid_argument("Overlay key " + key + " does not match the base key type!");
       }
       base[key] = value;
+      if (do_log) {
+        // XXX (bsirang)
+        const std::string full_key = key_prefix + "." + key;
+        std::stringstream value_str;
+        value_str << value;
+        Log::Info("Configuration overlay overwriting {} = {}", full_key, value_str.str());
+      }
     }
   }
 }
