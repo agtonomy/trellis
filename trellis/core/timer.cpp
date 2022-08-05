@@ -43,7 +43,7 @@ void TimerImpl::Stop() {
   }
 }
 
-bool TimerImpl::Expired() const { return (type_ == kOneShot) ? (did_fire_.load() || cancelled_.load()) : false; }
+bool TimerImpl::Expired() const { return did_fire_.load() || cancelled_.load(); }
 
 void TimerImpl::KickOff() {
   if (!SimulationActive()) {
