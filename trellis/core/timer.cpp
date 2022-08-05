@@ -42,13 +42,11 @@ void TimerImpl::Stop() {
   }
 }
 
-bool TimerImpl::Expired() const { return expired_; }
+bool TimerImpl::Expired() const { return (type_ == kOneShot) ? did_fire_.load() : false; }
 
 void TimerImpl::KickOff() {
   if (!SimulationActive()) {
-    expired_ = false;
     timer_->async_wait([this](const trellis::core::error_code& e) {
-      expired_ = true;
       if (e) {
         return;
       }
