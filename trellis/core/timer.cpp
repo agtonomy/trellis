@@ -38,11 +38,12 @@ void TimerImpl::Reset() {
 
 void TimerImpl::Stop() {
   if (!SimulationActive()) {
+    cancelled_ = true;
     timer_->cancel();
   }
 }
 
-bool TimerImpl::Expired() const { return (type_ == kOneShot) ? did_fire_.load() : false; }
+bool TimerImpl::Expired() const { return (type_ == kOneShot) ? (did_fire_.load() || cancelled_.load()) : false; }
 
 void TimerImpl::KickOff() {
   if (!SimulationActive()) {
@@ -69,6 +70,7 @@ void TimerImpl::Reload() {
     last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
   }
   did_fire_ = false;
+  cancelled_ = false;
 }
 
 void TimerImpl::Fire() {
