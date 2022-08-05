@@ -94,9 +94,9 @@ class TimerImpl {
   const unsigned interval_ms_;
   const unsigned delay_ms_;
   std::unique_ptr<asio::steady_timer> timer_;
-  std::atomic<bool> expired_{true};
   time::TimePoint last_fire_time_{time::Now()};
-  bool did_fire_{false};
+  std::atomic<bool> did_fire_{false};
+  std::atomic<bool> cancelled_{false};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

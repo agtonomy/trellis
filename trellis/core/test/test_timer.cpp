@@ -52,19 +52,26 @@ TEST_F(TrellisFixture, OneShotTimerReset) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateOneShotTimer(30, []() { ++fire_count; });
+  auto timer = node_.CreateOneShotTimer(200, []() { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
+
+  // Now it should still fire once after we wait
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  ASSERT_EQ(fire_count, 1U);
+  ASSERT_EQ(timer->Expired(), true);
+
   // Keep rapidly resetting the timer and let more time pass than the timer was
   // originally set for
-  for (unsigned i = 0; i < 100; ++i) {
+  for (unsigned i = 0; i < 1000; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     timer->Reset();
   }
 
-  // Now it should still fire once after we wait
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  ASSERT_EQ(fire_count, 1U);
+  ASSERT_EQ(timer->Expired(), false);
+  // Now it should still fire once more after we wait
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  ASSERT_EQ(fire_count, 2U);
+  ASSERT_EQ(timer->Expired(), true);
 }
 
 TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {

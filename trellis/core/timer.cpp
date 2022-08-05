@@ -38,17 +38,16 @@ void TimerImpl::Reset() {
 
 void TimerImpl::Stop() {
   if (!SimulationActive()) {
+    cancelled_ = true;
     timer_->cancel();
   }
 }
 
-bool TimerImpl::Expired() const { return expired_; }
+bool TimerImpl::Expired() const { return did_fire_.load() || cancelled_.load(); }
 
 void TimerImpl::KickOff() {
   if (!SimulationActive()) {
-    expired_ = false;
     timer_->async_wait([this](const trellis::core::error_code& e) {
-      expired_ = true;
       if (e) {
         return;
       }
@@ -71,6 +70,7 @@ void TimerImpl::Reload() {
     last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
   }
   did_fire_ = false;
+  cancelled_ = false;
 }
 
 void TimerImpl::Fire() {
