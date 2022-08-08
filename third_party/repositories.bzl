@@ -18,10 +18,10 @@ def trellis_deps():
         http_archive,
         name = "fmt",
         build_file = Label("//third_party:fmt.BUILD"),
-        sha256 = "36016a75dd6e0a9c1c7df5edb98c93a3e77dabcf122de364116efb9f23c6954a",
-        strip_prefix = "fmt-8.0.0",
+        sha256 = "fc96dd2d2fdf2bded630787adba892c23cb9e35c6fd3273c136b0c57d4651ad6",
+        strip_prefix = "fmt-9.0.0",
         urls = [
-            "https://github.com/fmtlib/fmt/releases/download/8.0.0/fmt-8.0.0.zip",
+            "https://github.com/fmtlib/fmt/releases/download/9.0.0/fmt-9.0.0.zip",
         ],
     )
 
