@@ -18,6 +18,7 @@
 #include <google/protobuf/util/json_util.h>
 
 #include <cxxopts.hpp>
+#include <thread>
 
 #include "trellis/core/monitor_interface.hpp"
 #include "trellis/core/node.hpp"

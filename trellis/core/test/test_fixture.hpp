@@ -20,6 +20,8 @@
 
 #include <gtest/gtest.h>
 
+#include <thread>
+
 #include "trellis/core/node.hpp"
 
 namespace trellis {
