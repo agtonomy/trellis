@@ -27,30 +27,33 @@ namespace trellis {
 namespace core {
 namespace Log {
 
+// use this for format strings that can't be constexpr and need to be evaluated at runtime
+inline auto runtime(std::string_view s) { return fmt::runtime(s); }
+
 enum LogLevel { kInfo = 0, kWarn, kError, kFatal, kDebug };
 
 void DoLog(const std::string& msg, const std::string& prefix, LogLevel level);
 
 template <typename... Args>
-inline void Info(const std::string& fmt_msg, Args&&... args) {
+inline void Info(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[INFO]  ", LogLevel::kInfo);
 }
 
 template <typename... Args>
-inline void Warn(const std::string& fmt_msg, Args&&... args) {
+inline void Warn(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[WARN]  ", LogLevel::kWarn);
 }
 
 template <typename... Args>
-inline void Error(const std::string& fmt_msg, Args&&... args) {
+inline void Error(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[ERROR] ", LogLevel::kError);
 }
 
 template <typename... Args>
-inline void Fatal(const std::string& fmt_msg, Args&&... args) {
+inline void Fatal(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[FATAL] ", LogLevel::kFatal);
   // Sleep briefly because DoLog is not necessarily synchronous, so without sleeping this could abort before the fatal
@@ -60,7 +63,7 @@ inline void Fatal(const std::string& fmt_msg, Args&&... args) {
 }
 
 template <typename... Args>
-inline void Debug(const std::string& fmt_msg, Args&&... args) {
+inline void Debug(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[DEBUG] ", LogLevel::kDebug);
 }
