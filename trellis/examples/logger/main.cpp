@@ -14,11 +14,11 @@ int main(int argc, char* argv[]) {
 
     // Pick and choose different log levels at different iteration counts for demonstration
     if (count % 10 == 0) {
-      trellis::core::Log::Error(msg.str());
+      trellis::core::Log::Error(trellis::core::Log::runtime(msg.str()));
     } else if (count % 3 == 0) {
-      trellis::core::Log::Warn(msg.str());
+      trellis::core::Log::Warn(trellis::core::Log::runtime(msg.str()));
     } else {
-      trellis::core::Log::Info(msg.str());
+      trellis::core::Log::Info(trellis::core::Log::runtime(msg.str()));
     }
 
     ++count;

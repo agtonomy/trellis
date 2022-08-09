@@ -19,6 +19,7 @@
 #define TRELLIS_CONTAINERS_TRANSFORMS_HPP
 
 #include <Eigen/Geometry>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>

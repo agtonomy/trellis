@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 ARG TARGETARCH
 ARG TARGETPLATFORM
@@ -20,7 +20,7 @@ RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/baz
     mv bazelisk-linux-$TARGETARCH /usr/local/bin/bazel && \
     chmod +x /usr/local/bin/bazel
 
-RUN go get github.com/bazelbuild/buildtools/buildifier && \
+RUN go install github.com/bazelbuild/buildtools/buildifier@latest && \
     cp ~/go/bin/buildifier /usr/local/bin/
 
 # Default python binary to python3

@@ -6,10 +6,11 @@ def trellis_deps():
         http_archive,
         name = "ecal",
         build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "1d83d3accfb4a936ffd343524e4a626f0265e600226d6e997b3dbbd7f62eaac6",
-        strip_prefix = "ecal-5.10.0",
+        sha256 = "2893f3e62cfcaaa11a052df18ae6b48d894f57c5c31f340327969bb74cd77b0b",
+        strip_prefix = "ecal-5.10.1",
         urls = [
-            "https://github.com/continental/ecal/archive/refs/tags/v5.10.0.tar.gz",
+            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.10.1.tar.gz",
+            "https://github.com/continental/ecal/archive/refs/tags/v5.10.1.tar.gz",
         ],
     )
 
@@ -17,10 +18,10 @@ def trellis_deps():
         http_archive,
         name = "fmt",
         build_file = Label("//third_party:fmt.BUILD"),
-        sha256 = "36016a75dd6e0a9c1c7df5edb98c93a3e77dabcf122de364116efb9f23c6954a",
-        strip_prefix = "fmt-8.0.0",
+        sha256 = "fc96dd2d2fdf2bded630787adba892c23cb9e35c6fd3273c136b0c57d4651ad6",
+        strip_prefix = "fmt-9.0.0",
         urls = [
-            "https://github.com/fmtlib/fmt/releases/download/8.0.0/fmt-8.0.0.zip",
+            "https://github.com/fmtlib/fmt/releases/download/9.0.0/fmt-9.0.0.zip",
         ],
     )
 
@@ -91,11 +92,10 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "com_google_protobuf",
-        sha256 = "cf63d46ef743f4c30b0e36a562caf83cabed3f10e6ca49eb476913c4655394d5",
-        strip_prefix = "protobuf-436bd7880e458532901c58f4d9d1ea23fa7edd52",
+        sha256 = "3bd7828aa5af4b13b99c191e8b1e884ebfa9ad371b0ce264605d347f135d2568",
+        strip_prefix = "protobuf-3.19.4",
         urls = [
-            "https://storage.googleapis.com/grpc-bazel-mirror/github.com/google/protobuf/archive/436bd7880e458532901c58f4d9d1ea23fa7edd52.tar.gz",
-            "https://github.com/google/protobuf/archive/436bd7880e458532901c58f4d9d1ea23fa7edd52.tar.gz",
+            "https://github.com/protocolbuffers/protobuf/archive/v3.19.4.tar.gz",
         ],
     )
 

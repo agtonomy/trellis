@@ -70,6 +70,9 @@ cc_library(
         "lib/CustomTclap/src/fuzzy_value_switch_arg_double.cpp",
         "lib/CustomTclap/src/fuzzy_value_switch_arg_unsigned_longlong.cpp",
     ],
+    copts = [
+        "--std=c++17",
+    ],
     includes = [
         "lib/CustomTclap/include",
     ],
@@ -139,6 +142,7 @@ cc_library(
     ]),
     copts = [
         "-Iexternal/ecal/ecal/core/src",
+        "--std=c++17",
     ],
     defines = [
         "ECAL_THIRDPARTY_BUILD_SPDLOG=OFF",
@@ -284,6 +288,9 @@ cc_library(
         "app/rec/rec_client_cli/src/ecal_rec_service.cpp",
         "app/rec/rec_client_cli/src/ecal_rec_service.h",
     ],
+    copts = [
+        "--std=c++17",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":rec_client_core",
@@ -299,6 +306,9 @@ cc_library(
         "app/play/play_cli/src/ecal_play_cli.cpp",
         "app/play/play_cli/src/ecal_play_service.cpp",
         "app/play/play_cli/src/ecal_play_service.h",
+    ],
+    copts = [
+        "--std=c++17",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -398,6 +408,9 @@ cc_library(
         "app/sys/sys_client_cli/src/ecal_sys_client_cli.cpp",
         "app/sys/sys_client_cli/src/ecal_sys_client_service.cpp",
         "app/sys/sys_client_cli/src/ecal_sys_client_service.h",
+    ],
+    copts = [
+        "--std=c++17",
     ],
     visibility = ["//visibility:public"],
     deps = [":sys_client_core"],

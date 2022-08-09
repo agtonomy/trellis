@@ -1,5 +1,4 @@
-# Default to C++17
-build --cxxopt=--std=c++17
+build --cxxopt=--std=c++20
 build --verbose_failures
 
 # Default all tests to show errors
