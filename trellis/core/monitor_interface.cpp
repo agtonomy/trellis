@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <sstream>
 
+#include "proto_utils.hpp"
+
 namespace trellis {
 namespace core {
 
@@ -153,18 +155,7 @@ std::string MonitorInterface::FindFirstTopicNameForProtoType(const std::string& 
 
 void MonitorInterface::PrintTopics() const {
   const auto& topics = snapshot_.topics();
-  auto filter = [](const eCAL::pb::Topic& topic) {
-    const auto& name = topic.tname();
-    if (name.size() >= 4) {
-      const std::string suffix = name.substr(name.size() - 4, name.size());
-      // XXX (bsirang) the /raw entries are internal to trellis. These internal-only
-      // TODO improve the namespacing of these internal topic names
-      if (suffix == "/raw") {
-        return false;
-      }
-    }
-    return true;
-  };
+  auto filter = [](const eCAL::pb::Topic& topic) { return !proto_utils::IsRawTopic(topic.tname()); };
   PrintEntries<eCAL::pb::Topic>(topics, filter);
 }
 
