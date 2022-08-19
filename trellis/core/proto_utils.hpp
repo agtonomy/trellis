@@ -39,18 +39,23 @@ inline std::string GetTypeFromURL(const std::string& type_url) {
 }
 
 /**
+ * IsRawTopic return true if the given topic name is a "raw" topic as described above
+ */
+inline bool IsRawTopic(const std::string& topic) {
+  return topic.size() > raw_topic_prefix.size() && topic.substr(0, raw_topic_prefix.size()) == raw_topic_prefix;
+}
+
+/**
  * GetRawTopicString get the raw topic name for a given topic
  *
  * Each Trellis topic publishes a "TimestampedMessage" and has an associated "raw" topic that advertises the actual
  * message type. This function returns the associated raw topic name.
  */
-inline std::string GetRawTopicString(const std::string& topic) { return raw_topic_prefix + topic; }
-
-/**
- * IsRawTopic return true if the given topic name is a "raw" topic as described above
- */
-inline bool IsRawTopic(const std::string& topic) {
-  return topic.size() > raw_topic_prefix.size() && topic.substr(0, raw_topic_prefix.size()) == raw_topic_prefix;
+inline std::string GetRawTopicString(const std::string& topic) {
+  if (IsRawTopic(topic)) {
+    return topic;
+  }
+  return raw_topic_prefix + topic;
 }
 
 /**
