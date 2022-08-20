@@ -120,3 +120,15 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "test_core_proto_utils",
+    srcs = [
+        "test_proto_utils.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core",
+        "@gtest//:gtest_main",
+    ],
+)

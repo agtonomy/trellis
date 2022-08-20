@@ -20,6 +20,7 @@
 
 #include "VariadicTable.h"
 #include "trellis/core/monitor_interface.hpp"
+#include "trellis/core/proto_utils.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
@@ -47,15 +48,6 @@ std::string StringifySet(const std::unordered_set<std::string>& set) {
   return result;
 }
 
-bool IsRawTopic(const std::string& topic) {
-  // check if name ends with "/raw"
-  if (topic.size() >= 4) {
-    return topic.substr(topic.size() - 4, topic.size()) == "/raw";
-  }
-
-  return false;
-}
-
 int topic_list_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_list_command.data(), topic_list_command_desc.data());
   options.add_options()("h,help", "print usage")("r,raw", "raw dump");
@@ -81,10 +73,10 @@ int topic_list_main(int argc, char* argv[]) {
 
     for (const auto& topic : snapshot.topics()) {
       const bool is_publisher = (topic.direction() == "publisher");
-      if (IsRawTopic(topic.tname())) {
+      if (trellis::core::proto_utils::IsRawTopic(topic.tname())) {
         if (is_publisher) {
           // We grab the real type from the raw topic
-          const std::string actual_topic_name = topic.tname().substr(0, topic.tname().size() - 4);
+          const std::string actual_topic_name = core::proto_utils::GetTopicFromRawTopic(topic.tname());
           topic_map[actual_topic_name].types.insert(topic.ttype());
         }
       } else {
