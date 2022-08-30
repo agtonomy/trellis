@@ -24,7 +24,7 @@ namespace time {
 namespace {
 
 bool sim_clock_enabled_{false};
-trellis::core::time::TimePoint simulated_now_{};
+TimePoint simulated_now_{};
 
 }  // namespace
 
@@ -50,12 +50,14 @@ unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
 unsigned long long NowInMilliseconds() { return TimePointToMilliseconds(Now()); }
 
 TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg) {
-  const auto duration =
-      std::chrono::seconds{msg.timestamp().seconds()} + std::chrono::nanoseconds{msg.timestamp().nanos()};
-  return TimePoint{duration};
+  return TimePointFromTimestamp(msg.timestamp());
 }
 
-google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp) {
+TimePoint TimePointFromTimestamp(const google::protobuf::Timestamp& timestamp) {
+  return TimePoint(std::chrono::seconds(timestamp.seconds()) + std::chrono::nanoseconds(timestamp.nanos()));
+}
+
+google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp) {
   google::protobuf::Timestamp ts;
   auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch());
   const auto duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(duration_ns);
@@ -69,7 +71,7 @@ void EnableSimulatedClock() { sim_clock_enabled_ = true; }
 
 bool IsSimulatedClockEnabled() { return sim_clock_enabled_; }
 
-void SetSimulatedTime(const trellis::core::time::TimePoint& now) {
+void SetSimulatedTime(const TimePoint& now) {
   if (!sim_clock_enabled_) {
     throw std::runtime_error("Attempt to set simulated time while sim_clock_enabled_ = false");
   }
