@@ -79,9 +79,15 @@ unsigned long long NowInMilliseconds();
 TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
+ * TimePointFromTimestamp create a time point from a Timestamp
+ *
+ */
+TimePoint TimePointFromTimestamp(const google::protobuf::Timestamp& timestamp);
+
+/**
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
  */
-google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
+google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp);
 
 /**
  * EnableSimulatedClock enable the simulated system clock
@@ -100,7 +106,7 @@ bool IsSimulatedClockEnabled();
  *
  * @param now the time point to set the simulated clock with
  */
-void SetSimulatedTime(const trellis::core::time::TimePoint& now);
+void SetSimulatedTime(const TimePoint& now);
 
 /**
  * IncrementSimulatedTime increment simulated time
@@ -114,11 +120,6 @@ void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
  *
  */
 TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
-
-/**
- * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
- */
-google::protobuf::Timestamp TimePointToTimestamp(const trellis::core::time::TimePoint& tp);
 
 /**
  * TimePointToSystemTime get the system time associated with a given time point
