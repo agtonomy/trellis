@@ -54,7 +54,7 @@ class ServiceClientImpl {
 
   template <typename REQ_T, typename RESP_T>
   void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb, unsigned timeout_ms = 0) {
-    // XXX(bsirang): look into eliiminating the copy of `req` here
+    // XXX(bsirang): look into eliminating the copy of `req` here
     asio::post(*priv_ev_loop_, [this, cb, method_name, req, timeout_ms]() {
       if (!client_->IsConnected()) {
         asio::post(*priv_ev_loop_, [cb]() {
@@ -65,7 +65,7 @@ class ServiceClientImpl {
       eCAL::ServiceResponseVecT service_response_vec;
       int temp_timeout = timeout_ms == 0 ? -1 : static_cast<int>(timeout_ms);
       const bool success = client_->Call(method_name, req, temp_timeout, &service_response_vec);
-      if (success) {
+      if (success && service_response_vec.size() > 0) {
         for (const auto& service_response : service_response_vec) {
           const ServiceCallStatus status = (service_response.call_state != call_state_executed) ? kFailure : kSuccess;
           RESP_T resp{};
@@ -73,7 +73,7 @@ class ServiceClientImpl {
             resp.ParseFromString(service_response.response);
           }
           // Invoke callback from event loop thread...
-          // XXX(bsirang): look into eliiminating the copy of `resp` here
+          // XXX(bsirang): look into eliminating the copy of `resp` here
           asio::post(*priv_ev_loop_, [status, cb, resp]() {
             if (cb) cb(status, &resp);
           });
