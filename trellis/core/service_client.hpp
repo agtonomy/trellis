@@ -35,54 +35,65 @@ class ServiceClientImpl {
  public:
   template <typename RESP_T>
   using Callback = std::function<void(ServiceCallStatus, const RESP_T*)>;
-  ServiceClientImpl(EventLoop loop) : ev_loop_{loop} {}
+
+  ServiceClientImpl(EventLoop loop)
+      : ev_loop_{loop},
+        client_{std::make_unique<eCAL::protobuf::CServiceClient<RPC_T>>()},
+        priv_ev_loop_{trellis::core::CreateEventLoop()},
+        work_guard_{asio::make_work_guard(*priv_ev_loop_)},
+        async_thread_{[this]() { priv_ev_loop_->run(); }} {}
+
+  ~ServiceClientImpl() {
+    if (priv_ev_loop_) {
+      priv_ev_loop_->stop();
+    }
+    if (async_thread_.joinable()) {
+      async_thread_.join();
+    }
+  }
 
   template <typename REQ_T, typename RESP_T>
   void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb, unsigned timeout_ms = 0) {
-    Timer timeout_timer{nullptr};
-    auto client = std::make_shared<eCAL::protobuf::CServiceClient<RPC_T>>();
-    if (timeout_ms != 0) {
-      timeout_timer = std::make_shared<TimerImpl>(
-          ev_loop_, TimerImpl::Type::kOneShot,
-          [cb, client]() mutable {
-            // XXX(bsirang): ideally we'd be able to abort the pending async operation
-            // here given that we've timed out. However, there doesn't seem to be an API for
-            // that in eCAL's service client. Instead we'll check for an expired timer
-            // in the client callback.
-            if (cb) cb(kTimedOut, nullptr);
-          },
-          0, timeout_ms);
-    }
-
-    auto loop = ev_loop_;
-    client->AddResponseCallback(
-        [timeout_timer, cb, loop, client](const struct eCAL::SServiceResponse& service_response) {
-          if (timeout_timer) {
-            if (timeout_timer->Expired()) {
-              // We've already timed out, bail now even if we have a response
-              // since we've already called back to the user.
-              return;
-            }
-            timeout_timer->Stop();
-          }
-          RESP_T resp;
+    // XXX(bsirang): look into eliiminating the copy of `req` here
+    asio::post(*priv_ev_loop_, [this, cb, method_name, req, timeout_ms]() {
+      if (!client_->IsConnected()) {
+        asio::post(*priv_ev_loop_, [cb]() {
+          if (cb) cb(kFailure, nullptr);
+        });
+        return;
+      }
+      eCAL::ServiceResponseVecT service_response_vec;
+      int temp_timeout = timeout_ms == 0 ? -1 : static_cast<int>(timeout_ms);
+      const bool success = client_->Call(method_name, req, temp_timeout, &service_response_vec);
+      if (success) {
+        for (const auto& service_response : service_response_vec) {
           const ServiceCallStatus status = (service_response.call_state != call_state_executed) ? kFailure : kSuccess;
+          RESP_T resp{};
           if (status == kSuccess) {
             resp.ParseFromString(service_response.response);
           }
           // Invoke callback from event loop thread...
           // XXX(bsirang): look into eliiminating the copy of `resp` here
-          asio::post(*loop, [status, cb, resp]() {
+          asio::post(*priv_ev_loop_, [status, cb, resp]() {
             if (cb) cb(status, &resp);
           });
+        }
+      } else {
+        asio::post(*priv_ev_loop_, [cb]() {
+          if (cb) cb(kTimedOut, nullptr);
         });
-    client->CallAsync(method_name, req);
+      }
+    });
   }
 
   // TODO(bsirang) implement sync call
 
  private:
   EventLoop ev_loop_;
+  std::unique_ptr<eCAL::protobuf::CServiceClient<RPC_T>> client_;
+  EventLoop priv_ev_loop_;
+  asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
+  std::thread async_thread_;
 };
 
 template <typename RPC_T>
