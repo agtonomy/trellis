@@ -36,6 +36,9 @@ class PublisherClass {
       : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {
     if (enable_zero_copy) {
       ecal_pub_.ShmEnableZeroCopy(true);
+
+      // Use multi buffering to ensure the publisher is not contending for buffer space with subscribers. Double
+      // buffering is likely okay, but we'll use triple buffering for good measure.
       ecal_pub_.ShmSetBufferCount(3);
     }
   }
