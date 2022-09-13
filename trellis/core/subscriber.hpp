@@ -132,15 +132,14 @@ class SubscriberImpl {
 
   void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
                                EventLoop event_loop) {
-    Timer watchdog_timer{nullptr};
-    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timer, watchdog_timeout_ms, event_loop](
+    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timeout_ms, event_loop](
                                 const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
                                 long long clock_, long long id_) mutable {
-      if (watchdog_timer == nullptr) {
+      if (watchdog_timer_ == nullptr) {
         // create one shot watchdog timer which automatically loads the timer too
-        watchdog_timer = watchdog_create_fn_(watchdog_timeout_ms, watchdog_callback);
+        watchdog_timer_ = watchdog_create_fn_(watchdog_timeout_ms, watchdog_callback);
       } else {
-        watchdog_timer->Reset();
+        watchdog_timer_->Reset();
       }
 
       CallbackWrapperLogic(msg_, callback);
@@ -245,6 +244,7 @@ class SubscriberImpl {
   // Used to know how long to wait for the monitor layer
   time::TimePoint first_receive_time_{};
   bool did_receive_{false};
+  Timer watchdog_timer_{nullptr};
 };
 
 template <typename MSG_T>
