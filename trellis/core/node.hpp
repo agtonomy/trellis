@@ -83,7 +83,7 @@ class Node {
    * @return a handle to a publisher instance
    */
   template <typename MSG_T>
-  Publisher<MSG_T> CreatePublisher(std::string topic) const {
+  Publisher<MSG_T> CreatePublisher(const std::string& topic) const {
     return std::make_shared<PublisherClass<MSG_T>>(topic.c_str());
   }
 
@@ -98,7 +98,7 @@ class Node {
    * Note: A zero-copy publisher should only be used for larger payloads (i.e. in the megabytes)
    */
   template <typename MSG_T>
-  Publisher<MSG_T> CreateZeroCopyPublisher(std::string topic) const {
+  Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
     return std::make_shared<PublisherClass<MSG_T>>(topic.c_str(), true);
   }
 
@@ -118,7 +118,7 @@ class Node {
    * @return a subscriber handle
    */
   template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(std::string topic,
+  Subscriber<MSG_T> CreateSubscriber(const std::string& topic,
                                      typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
@@ -153,7 +153,7 @@ class Node {
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(std::string topic) const {
+  DynamicPublisher CreateDynamicPublisher(const std::string& topic) const {
     return std::make_shared<PublisherClass<google::protobuf::Message>>(topic);
   }
 
@@ -172,7 +172,7 @@ class Node {
    * @return a subscriber handle
    */
   DynamicSubscriber CreateDynamicSubscriber(
-      std::string topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
+      const std::string& topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {},
       typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
       std::optional<double> max_frequency = {}) {
