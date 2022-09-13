@@ -30,7 +30,15 @@ namespace core {
 template <typename MSG_T>
 class PublisherClass {
  public:
-  PublisherClass(const std::string& topic) : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {}
+  PublisherClass(const std::string& topic) : PublisherClass(topic, false) {}
+
+  PublisherClass(const std::string& topic, bool enable_zero_copy)
+      : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {
+    if (enable_zero_copy) {
+      ecal_pub_.ShmEnableZeroCopy(true);
+      ecal_pub_.ShmSetBufferCount(3);
+    }
+  }
   void Send(const MSG_T& msg) {
     const auto now = trellis::core::time::Now();
     Send(msg, now);
