@@ -6,7 +6,8 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//trellis/core",
+        "//trellis/core:core_error_code",
+        "//trellis/core:core_event_loop",
     ],
 )
 

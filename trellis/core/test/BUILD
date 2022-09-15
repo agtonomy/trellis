@@ -16,7 +16,7 @@ cc_library(
         "test_fixture.hpp",
     ],
     deps = [
-        "//trellis/core:core_ecal",
+        "//trellis/core:core_node",
         "@gtest//:gtest_main",
     ],
 )
@@ -30,6 +30,7 @@ cc_test(
     deps = [
         ":test_fixture",
         ":test_proto",
+        "//trellis/core:core_message_consumer",
     ],
 )
 
@@ -86,7 +87,7 @@ cc_test(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//trellis/core:core_ecal",
+        "//trellis/core:core_time",
         "@gtest//:gtest_main",
     ],
 )
@@ -100,7 +101,7 @@ cc_test(
     deps = [
         ":test_fixture",
         ":test_proto",
-        "//trellis/core:core_ecal",
+        "//trellis/core:core_time",
         "@gtest//:gtest_main",
     ],
 )
@@ -128,7 +129,7 @@ cc_test(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//trellis/core",
+        "//trellis/core:core_proto_utils",
         "@gtest//:gtest_main",
     ],
 )
