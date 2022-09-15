@@ -30,7 +30,8 @@ namespace test {
 
 class TrellisFixture : public ::testing::Test {
  protected:
-  static constexpr unsigned discovery_settling_time_ms{1100};
+  // Settling time chosen based on eCAL test source code, and the value is derived from REGISTRATION_REFRESH_CYCLE
+  static constexpr unsigned discovery_settling_time_ms{2000};
   TrellisFixture() : node_{"test_fixture", {}} {
     // allow pub/sub from same process, etc
     eCAL::Util::EnableLoopback(true);

@@ -45,19 +45,17 @@ class MySlowService : public test::TestService {
 namespace {
 // We'll create a new service for each test so that their interactions are independent from each other.
 // We'll use this global vectors so that the lifecycle of the service outlives the clients
-std::vector<trellis::core::ServiceServer<MyService>> g_services{};
-std::vector<trellis::core::ServiceServer<MySlowService>> g_slow_services{};
+trellis::core::ServiceServer<MyService> g_service{nullptr};
+trellis::core::ServiceServer<MySlowService> g_slow_service{nullptr};
 
 trellis::core::ServiceServer<MyService> CreateNewService(trellis::core::Node& node) {
-  auto server = node.CreateServiceServer<MyService>(std::make_shared<MyService>());
-  g_services.push_back(server);
-  return server;
+  g_service = node.CreateServiceServer<MyService>(std::make_shared<MyService>());
+  return g_service;
 }
 
 trellis::core::ServiceServer<MySlowService> CreateNewSlowService(trellis::core::Node& node) {
-  auto server = node.CreateServiceServer<MySlowService>(std::make_shared<MySlowService>());
-  g_slow_services.push_back(server);
-  return server;
+  g_slow_service = node.CreateServiceServer<MySlowService>(std::make_shared<MySlowService>());
+  return g_slow_service;
 }
 }  // namespace
 
@@ -155,6 +153,6 @@ TEST_F(TrellisFixture, BurstServiceCalls) {
   // Kick off the request chain
   request_fn();
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, burst_count);
 }
