@@ -34,10 +34,36 @@ class MyService : public test::TestService {
   }
 };
 
+class MySlowService : public test::TestService {
+ public:
+  void DoStuff(::google::protobuf::RpcController* /* controller_ */, const test::Test* request_,
+               test::TestTwo* response_, ::google::protobuf::Closure* /* done_ */) override {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+};
+
+namespace {
+// We'll create a new service for each test so that their interactions are independent from each other.
+// We'll use this global vectors so that the lifecycle of the service outlives the clients
+std::vector<trellis::core::ServiceServer<MyService>> g_services{};
+std::vector<trellis::core::ServiceServer<MySlowService>> g_slow_services{};
+
+trellis::core::ServiceServer<MyService> CreateNewService(trellis::core::Node& node) {
+  auto server = node.CreateServiceServer<MyService>(std::make_shared<MyService>());
+  g_services.push_back(server);
+  return server;
+}
+
+trellis::core::ServiceServer<MySlowService> CreateNewSlowService(trellis::core::Node& node) {
+  auto server = node.CreateServiceServer<MySlowService>(std::make_shared<MySlowService>());
+  g_slow_services.push_back(server);
+  return server;
+}
+}  // namespace
+
 TEST_F(TrellisFixture, BasicService) {
   static unsigned response_count{0};
-  auto server = std::make_shared<MyService>();
-  auto service = node_.CreateServiceServer<MyService>(server);
+  auto service = CreateNewService(node_);
   auto client = node_.CreateServiceClient<MyService>();
   StartRunnerThread();
   WaitForDiscovery();
@@ -58,8 +84,7 @@ TEST_F(TrellisFixture, BasicService) {
 
 TEST_F(TrellisFixture, UseZeroForTimeout) {
   static unsigned response_count{0};
-  auto server = std::make_shared<MyService>();
-  auto service = node_.CreateServiceServer<MyService>(server);
+  auto service = CreateNewService(node_);
   auto client = node_.CreateServiceClient<MyService>();
   StartRunnerThread();
   WaitForDiscovery();
@@ -78,18 +103,9 @@ TEST_F(TrellisFixture, UseZeroForTimeout) {
   ASSERT_EQ(response_count, 1);
 }
 
-class MySlowService : public test::TestService {
- public:
-  void DoStuff(::google::protobuf::RpcController* /* controller_ */, const test::Test* request_,
-               test::TestTwo* response_, ::google::protobuf::Closure* /* done_ */) override {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }
-};
-
 TEST_F(TrellisFixture, ServiceCallTimeout) {
   static unsigned response_count{0};
-  auto server = std::make_shared<MySlowService>();
-  auto service = node_.CreateServiceServer<MySlowService>(server);
+  auto service = CreateNewSlowService(node_);
   auto client = node_.CreateServiceClient<MySlowService>();
   StartRunnerThread();
   WaitForDiscovery();
@@ -110,8 +126,7 @@ TEST_F(TrellisFixture, ServiceCallTimeout) {
 
 TEST_F(TrellisFixture, BurstServiceCalls) {
   static unsigned response_count{0};
-  auto server = std::make_shared<MyService>();
-  auto service = node_.CreateServiceServer<MyService>(server);
+  auto service = CreateNewService(node_);
   auto client = node_.CreateServiceClient<MyService>();
   StartRunnerThread();
   WaitForDiscovery();
