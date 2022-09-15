@@ -45,27 +45,25 @@ class MySlowService : public test::TestService {
 namespace {
 // We'll create a new service for each test so that their interactions are independent from each other.
 // We'll use this global vectors so that the lifecycle of the service outlives the clients
-std::vector<trellis::core::ServiceServer<MyService>> g_services{};
-std::vector<trellis::core::ServiceServer<MySlowService>> g_slow_services{};
+trellis::core::ServiceServer<MyService> g_service{nullptr};
+trellis::core::ServiceServer<MySlowService> g_slow_service{nullptr};
 
 trellis::core::ServiceServer<MyService> CreateNewService(trellis::core::Node& node) {
-  auto server = node.CreateServiceServer<MyService>(std::make_shared<MyService>());
-  g_services.push_back(server);
-  return server;
+  g_service = node.CreateServiceServer<MyService>(std::make_shared<MyService>());
+  return g_service;
 }
 
 trellis::core::ServiceServer<MySlowService> CreateNewSlowService(trellis::core::Node& node) {
-  auto server = node.CreateServiceServer<MySlowService>(std::make_shared<MySlowService>());
-  g_slow_services.push_back(server);
-  return server;
+  g_slow_service = node.CreateServiceServer<MySlowService>(std::make_shared<MySlowService>());
+  return g_slow_service;
 }
 }  // namespace
 
 TEST_F(TrellisFixture, BasicService) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -83,10 +81,10 @@ TEST_F(TrellisFixture, BasicService) {
 }
 
 TEST_F(TrellisFixture, UseZeroForTimeout) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -104,10 +102,10 @@ TEST_F(TrellisFixture, UseZeroForTimeout) {
 }
 
 TEST_F(TrellisFixture, ServiceCallTimeout) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewSlowService(node_);
   static auto client = node_.CreateServiceClient<MySlowService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -121,30 +119,36 @@ TEST_F(TrellisFixture, ServiceCallTimeout) {
       10);  // we expect to timeout before response
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, 1);
-  Stop();
 }
 
 TEST_F(TrellisFixture, BurstServiceCalls) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
-  static test::Test request;
   static constexpr unsigned burst_count{20};
-  for (size_t i = 0; i < burst_count; ++i) {
-    const unsigned id = i;
-    request.set_id(id);
+
+  // Chain a bunch of requests together until we hit our target burst count
+  std::function<void(unsigned)> request_fn = [&request_fn](unsigned request_id) {
+    test::Test request;
+    request.set_id(request_id);
     client->CallAsync<test::Test, test::TestTwo>(
         "DoStuff", request,
-        [id](ServiceCallStatus status, const test::TestTwo* response) {
-          ++response_count;
+        [&request_fn, request_id](ServiceCallStatus status, const test::TestTwo* response) {
           ASSERT_EQ(status, ServiceCallStatus::kSuccess);
-          ASSERT_EQ(id, static_cast<unsigned>(response->foo()));
+          ASSERT_EQ(request_id, static_cast<unsigned>(response->foo()));
+          ++response_count;
+          if (request_id < burst_count - 1) {
+            request_fn(request_id + 1);
+          }
         },
         100);
-  }
+  };
+
+  // Kick off the request chain
+  request_fn(0);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, burst_count);
