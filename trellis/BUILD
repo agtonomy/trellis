@@ -4,7 +4,7 @@ cc_library(
     deps = [
         "//trellis/containers",
         "//trellis/core",
-        "//trellis/core:core_ecal",
+        #"//trellis/core:core_ecal",
         "//trellis/network",
     ],
 )
