@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package trellis.core;
+
+enum HealthState {
+  // Unspecified / unknown
+  HEALTH_STATE_UNSPECIFIED = 0;
+
+  // Normal / healthy
+  HEALTH_STATE_NORMAL = 1;
+
+  // Performance is not optimal, but still considered functional
+  HEALTH_STATE_DEGRADED = 2;
+
+  // The application is not considered functional, but the issue may be transient and in which case the application may
+  // take recovery action
+  HEALTH_STATE_RECOVERABLE = 3;
+
+  // The application is not functional and will not or cannot take any recovery actions
+  HEALTH_STATE_CRITICAL = 4;
+}
+
+message HealthUpdate {
+  google.protobuf.Timestamp timestamp = 1;
+
+  HealthState health_state = 2;
+
+  // Application-defined status code
+  uint32 status_code = 3;
+
+  // Application-defined status description
+  string status_description = 4;
+}
+
+message HealthStatus {
+  repeated HealthUpdate health_history = 1;
+}
