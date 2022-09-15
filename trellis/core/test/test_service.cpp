@@ -128,24 +128,33 @@ TEST_F(TrellisFixture, BurstServiceCalls) {
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
+  static unsigned id = 0;
   StartRunnerThread();
   WaitForDiscovery();
 
   static test::Test request;
   static constexpr unsigned burst_count{20};
-  for (size_t i = 0; i < burst_count; ++i) {
-    const unsigned id = i;
+
+  // Chain a bunch of requests together until we hit our target burst count
+  std::function<void(void)> request_fn = [&request_fn]() {
     request.set_id(id);
     client->CallAsync<test::Test, test::TestTwo>(
         "DoStuff", request,
-        [id](ServiceCallStatus status, const test::TestTwo* response) {
-          ++response_count;
+        [&request_fn](ServiceCallStatus status, const test::TestTwo* response) {
           ASSERT_EQ(status, ServiceCallStatus::kSuccess);
           ASSERT_EQ(id, static_cast<unsigned>(response->foo()));
+          ++response_count;
+          ++id;
+          if (id < burst_count) {
+            request_fn();
+          }
         },
         100);
-  }
+  };
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // Kick off the request chain
+  request_fn();
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   ASSERT_EQ(response_count, burst_count);
 }
