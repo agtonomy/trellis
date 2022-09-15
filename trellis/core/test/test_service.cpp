@@ -60,10 +60,10 @@ trellis::core::ServiceServer<MySlowService> CreateNewSlowService(trellis::core::
 }  // namespace
 
 TEST_F(TrellisFixture, BasicService) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -81,10 +81,10 @@ TEST_F(TrellisFixture, BasicService) {
 }
 
 TEST_F(TrellisFixture, UseZeroForTimeout) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -102,10 +102,10 @@ TEST_F(TrellisFixture, UseZeroForTimeout) {
 }
 
 TEST_F(TrellisFixture, ServiceCallTimeout) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewSlowService(node_);
   static auto client = node_.CreateServiceClient<MySlowService>();
-  StartRunnerThread();
   WaitForDiscovery();
 
   test::Test request;
@@ -119,39 +119,36 @@ TEST_F(TrellisFixture, ServiceCallTimeout) {
       10);  // we expect to timeout before response
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, 1);
-  Stop();
 }
 
 TEST_F(TrellisFixture, BurstServiceCalls) {
+  StartRunnerThread();
   static unsigned response_count{0};
   auto service = CreateNewService(node_);
   static auto client = node_.CreateServiceClient<MyService>();
-  static unsigned id = 0;
-  StartRunnerThread();
   WaitForDiscovery();
 
-  static test::Test request;
   static constexpr unsigned burst_count{20};
 
   // Chain a bunch of requests together until we hit our target burst count
-  std::function<void(void)> request_fn = [&request_fn]() {
-    request.set_id(id);
+  std::function<void(unsigned)> request_fn = [&request_fn](unsigned request_id) {
+    test::Test request;
+    request.set_id(request_id);
     client->CallAsync<test::Test, test::TestTwo>(
         "DoStuff", request,
-        [&request_fn](ServiceCallStatus status, const test::TestTwo* response) {
+        [&request_fn, request_id](ServiceCallStatus status, const test::TestTwo* response) {
           ASSERT_EQ(status, ServiceCallStatus::kSuccess);
-          ASSERT_EQ(id, static_cast<unsigned>(response->foo()));
+          ASSERT_EQ(request_id, static_cast<unsigned>(response->foo()));
           ++response_count;
-          ++id;
-          if (id < burst_count) {
-            request_fn();
+          if (request_id < burst_count - 1) {
+            request_fn(request_id + 1);
           }
         },
         100);
   };
 
   // Kick off the request chain
-  request_fn();
+  request_fn(0);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, burst_count);
