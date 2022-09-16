@@ -35,5 +35,6 @@ message HealthUpdate {
 }
 
 message HealthStatus {
-  repeated HealthUpdate health_history = 1;
+  string name = 1;
+  repeated HealthUpdate health_history = 2;
 }
