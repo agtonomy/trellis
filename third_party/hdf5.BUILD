@@ -11,6 +11,9 @@ cc_library(
             "c++/src/*.cpp",
         ],
     ),
+    copts = [
+        "-Wno-maybe-uninitialized",
+    ],
     includes = [
         "c++/src",
         "config",
