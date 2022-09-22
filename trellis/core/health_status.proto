@@ -22,7 +22,7 @@ enum HealthState {
   HEALTH_STATE_CRITICAL = 4;
 }
 
-message HealthUpdate {
+message HealthStatus {
   google.protobuf.Timestamp timestamp = 1;
 
   HealthState health_state = 2;
@@ -32,9 +32,4 @@ message HealthUpdate {
 
   // Application-defined status description
   string status_description = 4;
-}
-
-message HealthStatus {
-  string name = 1;
-  repeated HealthUpdate health_history = 2;
 }

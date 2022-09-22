@@ -239,6 +239,7 @@ cc_library(
 proto_library(
     name = "core_proto_lib",
     srcs = [
+        "health_history.proto",
         "health_status.proto",
         "quaternion.proto",
         "rigid_transform.proto",
