@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+import "trellis/core/health_status.proto";
+
+package trellis.core;
+
+message HealthHistory {
+  string name = 1;
+  repeated HealthStatus history = 2;
+}
