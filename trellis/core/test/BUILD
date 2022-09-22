@@ -133,3 +133,15 @@ cc_test(
         "@gtest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "test_core_health",
+    srcs = [
+        "test_health.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_health",
+        "@gtest//:gtest_main",
+    ],
+)

@@ -29,6 +29,7 @@
 #include "bind.hpp"
 #include "config.hpp"
 #include "event_loop.hpp"
+#include "health.hpp"
 #include "logging.hpp"
 #include "publisher.hpp"
 #include "service_client.hpp"
@@ -229,6 +230,29 @@ class Node {
    */
   Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
 
+  /**
+   * UpdateHealth update application health state
+   *
+   * An application can call this to update health information that is broadcast to the rest of the system
+   * @param state the enumerated health state value
+   * @param code an optional application-defined integer representing the condition causing the health state update
+   * @param description an optional application-defined, human-readable string represending the condition causing the
+   * health state update
+   *
+   * @ see health.hpp
+   */
+  void UpdateHealth(trellis::core::HealthState state, Health::Code code = 0, const std::string& description = "");
+
+  /**
+   * GetHealthState get current app health state value
+   */
+  trellis::core::HealthState GetHealthState() const;
+
+  /**
+   * GetLastHealthStatus get the full update from the most recent health update
+   */
+  const trellis::core::HealthStatus& GetLastHealthStatus() const;
+
   /*
    * Run run the application
    *
@@ -309,6 +333,9 @@ class Node {
 
   // Used to manage signal handlers
   asio::signal_set signal_set_;
+
+  // Used to manage application health state
+  trellis::core::Health health_;
 
   // User-specified signal handler
   SignalHandler user_handler_{nullptr};

@@ -16,6 +16,7 @@ class App {
  private:
   void NewMessage(const std::string& topic, const trellis::examples::proto::HelloWorld& msg);
 
+  trellis::core::Node& node_;
   trellis::core::MessageConsumer<1, trellis::examples::proto::HelloWorld> inputs_;
 };
 

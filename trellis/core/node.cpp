@@ -27,7 +27,12 @@ Node::Node(std::string name, trellis::core::Config config)
       config_{config},
       ev_loop_{CreateEventLoop()},
       work_guard_{asio::make_work_guard(*ev_loop_)},
-      signal_set_(*ev_loop_, SIGTERM, SIGINT) {
+      signal_set_(*ev_loop_, SIGTERM, SIGINT),
+      health_{name, config,
+              [this](const std::string& topic) { return CreatePublisher<trellis::core::HealthHistory>(topic); },
+              [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
+                return CreateTimer(interval_ms, cb);
+              }} {
   // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
   // options. We won't make use of that for now. We'll just call Initialize with default arguments.
   // eCAL::Initialize();
@@ -94,6 +99,14 @@ void Node::Stop() {
   ev_loop_->stop();
   eCAL::Finalize();
 }
+
+void Node::UpdateHealth(trellis::core::HealthState state, Health::Code code, const std::string& description) {
+  health_.Update(state, code, description);
+}
+
+trellis::core::HealthState Node::GetHealthState() const { return health_.GetHealthState(); }
+
+const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return health_.GetLastHealthStatus(); }
 
 bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 

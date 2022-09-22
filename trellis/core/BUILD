@@ -136,6 +136,7 @@ cc_library(
         ":core_bind",
         ":core_config",
         ":core_event_loop",
+        ":core_health",
         ":core_proto_utils",
         ":core_publisher",
         ":core_service_client",
@@ -232,7 +233,26 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_monitor_interface",
+        ":core_time",
+        ":core_timer",
         "@ecal",
+    ],
+)
+
+cc_library(
+    name = "core_health",
+    srcs = [
+        "health.cpp",
+    ],
+    hdrs = [
+        "health.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_config",
+        ":core_logging",
+        ":core_publisher",
+        ":core_timer",
     ],
 )
 
