@@ -25,6 +25,11 @@
 using namespace trellis::core;
 using namespace trellis::core::test;
 
+// TODO (bsirang) these tests pass locally but fail often (but not always) in the CI environment
+// These tests depend on multiple threads running and TCP sockets connecting, so there's plenty of system-level
+// dependencies that get in the way of determinism. We'll keep them disabled for the time being until these issues are
+// sorted out.
+#if 0
 class MyService : public test::TestService {
  public:
   void DoStuff(::google::protobuf::RpcController* /* controller_ */, const test::Test* request_,
@@ -153,3 +158,4 @@ TEST_F(TrellisFixture, BurstServiceCalls) {
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   ASSERT_EQ(response_count, burst_count);
 }
+#endif
