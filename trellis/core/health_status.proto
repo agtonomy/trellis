@@ -20,6 +20,9 @@ enum HealthState {
 
   // The application is not functional and will not or cannot take any recovery actions
   HEALTH_STATE_CRITICAL = 4;
+
+  // The application was previously reporting health and is no longer reporting
+  HEALTH_STATE_LOST = 5;
 }
 
 message HealthStatus {

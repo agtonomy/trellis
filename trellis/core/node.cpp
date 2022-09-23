@@ -50,6 +50,12 @@ Node::Node(std::string name, trellis::core::Config config)
       Stop();
     }
   });
+
+  if (config["trellis"] && config["trellis"]["health"] && config["trellis"]["health"]["auto_report"] &&
+      config["trellis"]["health"]["auto_report"].as<bool>()) {
+    // Kick off health reporting for this node
+    UpdateHealth(trellis::core::HealthState::HEALTH_STATE_NORMAL);
+  }
 }
 
 Node::~Node() { Stop(); }

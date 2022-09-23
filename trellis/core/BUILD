@@ -6,6 +6,8 @@ cc_library(
         ":core_config",
         ":core_error_code",
         ":core_event_loop",
+        ":core_health",
+        ":core_health_monitor",
         ":core_logging",
         ":core_message_consumer",
         ":core_monitor_interface",
@@ -253,6 +255,23 @@ cc_library(
         ":core_logging",
         ":core_publisher",
         ":core_timer",
+    ],
+)
+
+cc_library(
+    name = "core_health_monitor",
+    srcs = [
+        "health_monitor.cpp",
+    ],
+    hdrs = [
+        "health_monitor.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_config",
+        ":core_health",
+        ":core_proto",
+        ":core_subscriber",
     ],
 )
 

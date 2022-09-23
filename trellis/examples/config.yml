@@ -31,3 +31,7 @@ transforms:
       x: 0.0
       y: 0.0
       z: 0.707
+
+trellis:
+  health:
+    auto_report: true # start reporting health upon start up
