@@ -13,6 +13,9 @@ cc_binary(
     srcs = [
         "command_handlers.hpp",
         "constants.hpp",
+        "health/health_info_main.cpp",
+        "health/health_list_main.cpp",
+        "health/health_main.cpp",
         "main.cpp",
         "node/node_list_main.cpp",
         "node/node_main.cpp",

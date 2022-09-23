@@ -81,6 +81,11 @@ int service_main(int argc, char* argv[]);
 int service_list_main(int argc, char* argv[]);
 int service_info_main(int argc, char* argv[]);
 
+// health subcommand
+int health_main(int argc, char* argv[]);
+int health_list_main(int argc, char* argv[]);
+int health_info_main(int argc, char* argv[]);
+
 }  // namespace cli
 }  // namespace tools
 }  // namespace trellis
