@@ -285,6 +285,7 @@ proto_library(
         "timestamped_message.proto",
         "vector3.proto",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -293,5 +294,6 @@ proto_library(
 
 cc_proto_library(
     name = "core_proto",
+    visibility = ["//visibility:public"],
     deps = [":core_proto_lib"],
 )
