@@ -18,8 +18,8 @@
 #include <google/protobuf/util/json_util.h>
 
 #include <cxxopts.hpp>
+#include <nlohmann/json.hpp>
 
-#include "json.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 

@@ -136,7 +136,7 @@ def trellis_deps():
         name = "json",
         build_file = Label("//third_party:json.BUILD"),
         sha256 = "61e605be15e88deeac4582aaf01c09d616f8302edde7adcaba9261ddc3b4ceca",
-        strip_prefix = "single_include/nlohmann",
+        strip_prefix = "single_include",
         urls = [
             "https://github.com/nlohmann/json/releases/download/v3.10.2/include.zip",
         ],

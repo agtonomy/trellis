@@ -1,6 +1,6 @@
 cc_library(
     name = "json",
-    hdrs = ["json.hpp"],
+    hdrs = ["nlohmann/json.hpp"],
     includes = ["."],
     visibility = ["//visibility:public"],
 )
