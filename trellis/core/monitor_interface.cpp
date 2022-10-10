@@ -39,6 +39,11 @@ std::ostream& operator<<(std::ostream& ostream, const eCAL::pb::Topic& topic) {
   ostream << "uname        : " << topic.uname() << std::endl;           // unit name
   ostream << "tid          : " << topic.tid() << std::endl;             // unit name
   ostream << "dfreq        : " << topic.dfreq() / 1000.0 << std::endl;  // data freq
+  ostream << "tlayer       : ";                                         // transport layer
+  for (const auto& layer : topic.tlayer()) {
+    ostream << eCAL::pb::eTLayerType_Name(layer.type()) << " ";
+  }
+  ostream << std::endl;
 
   for (const auto& [key, val] : topic.attr()) {
     ostream << "attr         :" << key << " = " << val << std::endl;

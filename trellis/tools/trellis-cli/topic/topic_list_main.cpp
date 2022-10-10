@@ -15,6 +15,8 @@
  *
  */
 
+#include <google/protobuf/util/json_util.h>
+
 #include <cxxopts.hpp>
 #include <thread>
 
@@ -34,6 +36,7 @@ struct TopicInfo {
   std::unordered_set<std::string> hostnames;
   double pub_freq{0.0};
   unsigned pub_count{0};
+  std::string transports{};
 };
 
 std::string StringifySet(const std::unordered_set<std::string>& set) {
@@ -64,11 +67,24 @@ int topic_list_main(int argc, char* argv[]) {
   std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
 
   trellis::core::MonitorInterface mutil;
-
+  const auto& snapshot = mutil.UpdateSnapshot();
   if ((result.count("raw"))) {
-    mutil.PrintTopics();
+    google::protobuf::util::JsonPrintOptions json_options;
+    json_options.add_whitespace = true;
+    json_options.always_print_primitive_fields = true;
+    json_options.always_print_enums_as_ints = false;
+    json_options.preserve_proto_field_names = false;
+    std::string json_raw;
+    for (const auto& topic : snapshot.topics()) {
+      auto status = google::protobuf::util::MessageToJsonString(topic, &json_raw, json_options);
+      if (status.ok()) {
+        std::cout << json_raw << std::endl
+                  << "================================================================================================="
+                     "=============================="
+                  << std::endl;
+      }
+    }
   } else {
-    const auto& snapshot = mutil.UpdateSnapshot();
     std::map<std::string, TopicInfo> topic_map;
 
     for (const auto& topic : snapshot.topics()) {
@@ -86,17 +102,20 @@ int topic_list_main(int argc, char* argv[]) {
           topic_info.hostnames.insert(topic.hname());
           topic_info.pub_count = topic.dclock();
           topic_info.pub_freq = topic.dfreq() / 1000.0;
+          for (const auto& layer : topic.tlayer()) {
+            topic_info.transports += eCAL::pb::eTLayerType_Name(layer.type()) + " ";
+          }
         } else {
           ++topic_info.subscriber_count;
         }
       }
     }
 
-    VariadicTable<std::string, int, int, double, int, std::string> vt(
-        {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Type"});
+    VariadicTable<std::string, int, int, double, int, std::string, std::string> vt(
+        {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Type", "Transports"});
     for (const auto& [topic, info] : topic_map) {
       vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count,
-                StringifySet(info.types));
+                StringifySet(info.types), info.transports);
     }
     vt.print(std::cout);
   }
