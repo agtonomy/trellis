@@ -42,7 +42,8 @@ HealthMonitor::HealthMonitor(const trellis::core::EventLoop& loop, const trellis
       timer_create_fn_{timer_create_fn},
       subscriber_{subscriber_create_fn(trellis::core::Health::GetTopicFromConfig(config),
                                        [this](const time::TimePoint&, const trellis::core::HealthHistory& status) {
-                                         asio::post([this, status]() { NewUpdate(status); });
+                                         trellis::core::HealthHistory msg{status};
+                                         asio::post([this, msg]() { NewUpdate(msg); });
                                        })},
       health_event_cb_{health_event_callback} {}
 
@@ -132,13 +133,21 @@ bool HealthMonitor::HasHealthInfo(const std::string& name) const {
 
 const trellis::core::HealthStatus& HealthMonitor::GetMostRecentNodeHealthFromCache(const std::string& name) const {
   const auto& history = health_data_.at(name).history_;
-  return history.at(history.size() - 1);  // History list is guaranteed to be non-zero
+  const auto size = history.size();
+  if (size == 0) {
+    throw std::logic_error("Encountered zero-length health hitory from cache for " + name);
+  }
+  return history.at(size - 1);  // History list is guaranteed to be non-zero
 }
 
 const trellis::core::HealthStatus& HealthMonitor::GetMostRecentNodeHealthFromMessage(
     const trellis::core::HealthHistory& status) {
   const auto& history = status.history();
-  return history.at(history.size() - 1);  // History list is guaranteed to be non-zero
+  const auto size = history.size();
+  if (size == 0) {
+    throw std::logic_error("Encountered zero-length health history from message for " + status.name());
+  }
+  return history.at(size - 1);  // History list is guaranteed to be non-zero
 }
 
 void HealthMonitor::CheckNameExists(const std::string& name) const {
