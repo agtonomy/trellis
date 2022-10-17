@@ -42,8 +42,7 @@ HealthMonitor::HealthMonitor(const trellis::core::EventLoop& loop, const trellis
       timer_create_fn_{timer_create_fn},
       subscriber_{subscriber_create_fn(trellis::core::Health::GetTopicFromConfig(config),
                                        [this](const time::TimePoint&, const trellis::core::HealthHistory& status) {
-                                         trellis::core::HealthHistory msg{status};
-                                         asio::post([this, msg]() { NewUpdate(msg); });
+                                         asio::post([this, status]() { NewUpdate(status); });
                                        })},
       health_event_cb_{health_event_callback} {}
 
@@ -65,7 +64,7 @@ void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {
   if (!first_encounter) {
     // This isn't our first time encountering this node, so we already have cached info. Let's use the cache to see if
     // our new message contains new information
-    const trellis::core::HealthStatus& most_recent_update_from_cache = GetMostRecentNodeHealthFromCache(name);
+    const trellis::core::HealthStatus most_recent_update_from_cache = GetMostRecentNodeHealthFromCache(name);
     const bool message_contains_new_info =
         (most_recent_update_from_message.timestamp() != most_recent_update_from_cache.timestamp());
 
@@ -86,7 +85,9 @@ void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {
 
 void HealthMonitor::InsertIntoCache(const trellis::core::HealthHistory& status) {
   // Insert into our cache and reset the watchdog
+  std::lock_guard<std::mutex> guard{mutex_};
   const std::string& name = status.name();
+
   if (health_data_.find(name) != health_data_.end()) {
     Data& data = health_data_.at(name);
     data.history_ = status.history();
@@ -102,14 +103,18 @@ void HealthMonitor::InsertIntoCache(const trellis::core::HealthHistory& status) 
 
 void HealthMonitor::WatchdogExpired(const std::string& name) {
   // Add a new entry to signify that the health state was lost
-  auto& history = health_data_.at(name).history_;
-  trellis::core::HealthStatus* new_status = history.Add();
-  new_status->set_health_state(trellis::core::HealthState::HEALTH_STATE_LOST);
-  *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(trellis::core::time::Now());
-  health_event_cb_(name, Event::kNodeHealthUpdateLost);
+  std::lock_guard<std::mutex> guard{mutex_};
+  if (health_data_.find(name) != health_data_.end()) {
+    auto& history = health_data_.at(name).history_;
+    trellis::core::HealthStatus* new_status = history.Add();
+    new_status->set_health_state(trellis::core::HealthState::HEALTH_STATE_LOST);
+    *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(trellis::core::time::Now());
+    health_event_cb_(name, Event::kNodeHealthUpdateLost);
+  }
 }
 
-bool HealthMonitor::IsAllHealthy() const {
+bool HealthMonitor::IsAllHealthy() {
+  std::lock_guard<std::mutex> guard{mutex_};
   for (const auto& [name, data] : health_data_) {
     const trellis::core::HealthStatus& last_update =
         data.history_.at(data.history_.size() - 1);  // History list is guaranteed to be non-zero
@@ -120,18 +125,21 @@ bool HealthMonitor::IsAllHealthy() const {
   return true;
 }
 
-std::set<std::string> HealthMonitor::GetNodeNames() const {
+std::set<std::string> HealthMonitor::GetNodeNames() {
+  std::lock_guard<std::mutex> guard{mutex_};
   std::set<std::string> result;
   std::transform(health_data_.begin(), health_data_.end(), std::inserter(result, result.end()),
                  [](const auto& pair) { return pair.first; });
   return result;
 }
 
-bool HealthMonitor::HasHealthInfo(const std::string& name) const {
+bool HealthMonitor::HasHealthInfo(const std::string& name) {
+  std::lock_guard<std::mutex> guard{mutex_};
   return health_data_.find(name) != health_data_.end();
 }
 
-const trellis::core::HealthStatus& HealthMonitor::GetMostRecentNodeHealthFromCache(const std::string& name) const {
+const trellis::core::HealthStatus HealthMonitor::GetMostRecentNodeHealthFromCache(const std::string& name) {
+  std::lock_guard<std::mutex> guard{mutex_};
   const auto& history = health_data_.at(name).history_;
   const auto size = history.size();
   if (size == 0) {
@@ -151,18 +159,21 @@ const trellis::core::HealthStatus& HealthMonitor::GetMostRecentNodeHealthFromMes
 }
 
 void HealthMonitor::CheckNameExists(const std::string& name) const {
+  // Expected to be called in mutex lock region
   if (health_data_.find(name) == health_data_.end()) {
     throw std::runtime_error("Attempt to retrieve health information for " + name + " , which does not exist");
   }
 }
 
-const trellis::core::HealthStatus& HealthMonitor::GetLastHealthUpdate(const std::string& name) const {
+const trellis::core::HealthStatus HealthMonitor::GetLastHealthUpdate(const std::string& name) {
+  std::lock_guard<std::mutex> guard{mutex_};
   CheckNameExists(name);
   const auto& history = health_data_.at(name).history_;
   return history.at(history.size() - 1);  // History list is guaranteed to be non-zero
 }
 
-const HealthMonitor::HealthHistory& HealthMonitor::GetHealthHistory(const std::string& name) const {
+const HealthMonitor::HealthHistoryList HealthMonitor::GetHealthHistory(const std::string& name) {
+  std::lock_guard<std::mutex> guard{mutex_};
   CheckNameExists(name);
   return health_data_.at(name).history_;
 }

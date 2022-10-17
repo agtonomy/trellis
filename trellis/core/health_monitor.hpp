@@ -45,7 +45,7 @@ class HealthMonitor {
   using SubscriberCreateFunction = std::function<HealthSubscriber(
       const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback)>;
   using TimerCreateFunction = std::function<trellis::core::Timer(unsigned, trellis::core::TimerImpl::Callback)>;
-  using HealthHistory = google::protobuf::RepeatedPtrField<trellis::core::HealthStatus>;
+  using HealthHistoryList = google::protobuf::RepeatedPtrField<trellis::core::HealthStatus>;
   using HealthEventCallback = std::function<void(const std::string&, Event)>;
 
   /**
@@ -67,21 +67,21 @@ class HealthMonitor {
    *
    * @param name the node name
    */
-  const trellis::core::HealthStatus& GetLastHealthUpdate(const std::string& name) const;
+  const trellis::core::HealthStatus GetLastHealthUpdate(const std::string& name);
 
   /**
    * GetHealthHistory get the health history for the node given by name
    *
    * @param name the node name
    */
-  const HealthHistory& GetHealthHistory(const std::string& name) const;
+  const HealthHistoryList GetHealthHistory(const std::string& name);
 
   /**
    * IsAllHealthy determine whether all known nodes are healthy
    *
    * @return true if all the nodes that we have health info from are reporting healthy
    */
-  bool IsAllHealthy() const;
+  bool IsAllHealthy();
 
   /**
    * NewUpdate update the cache with a new health update
@@ -91,7 +91,7 @@ class HealthMonitor {
   /**
    * GetNodeNames get a set of node names that we've heard from thus far
    */
-  std::set<std::string> GetNodeNames() const;
+  std::set<std::string> GetNodeNames();
 
   /**
    * HasHealthInfo check if there exists health info for a given node name
@@ -99,7 +99,7 @@ class HealthMonitor {
    * @param name the node name
    * @return true if the data exists in the cache for the given node
    */
-  bool HasHealthInfo(const std::string& name) const;
+  bool HasHealthInfo(const std::string& name);
 
   /**
    * WatchdogExpired called when there was no health update from a node beyond the watchdog time period
@@ -111,7 +111,7 @@ class HealthMonitor {
   static unsigned GetReportingIntervalTimeoutFromConfig(const trellis::core::Config& config);
   void InsertIntoCache(const trellis::core::HealthHistory& status);
 
-  const trellis::core::HealthStatus& GetMostRecentNodeHealthFromCache(const std::string& name) const;
+  const trellis::core::HealthStatus GetMostRecentNodeHealthFromCache(const std::string& name);
   static const trellis::core::HealthStatus& GetMostRecentNodeHealthFromMessage(
       const trellis::core::HealthHistory& status);
 
@@ -120,7 +120,7 @@ class HealthMonitor {
    */
   struct Data {
     trellis::core::Timer watchdog_;
-    HealthHistory history_;
+    HealthHistoryList history_;
   };
 
   using HealthMap = std::unordered_map<std::string, Data>;
@@ -133,6 +133,9 @@ class HealthMonitor {
   const HealthSubscriber subscriber_;          /// a trellis subscriber object for health updates
   const HealthEventCallback health_event_cb_;  /// a user callback for health events
   HealthMap health_data_;  /// our internal health cache, which is a map of node names to Data structures
+
+  // Thread safety around health_data_
+  std::mutex mutex_{};
 };
 
 }  // namespace core
