@@ -314,11 +314,24 @@ class Node {
    */
   void UpdateSimulatedClock(const time::TimePoint& new_time);
 
+  /**
+   * GetConfig retrieve a reference to the loaded configuration object
+   *
+   * @return the config object
+   */
   const trellis::core::Config& GetConfig() { return config_; }
 
- private:
+  /**
+   * ShouldRun determine if the node should still be running
+   *
+   * This method is useful in cases where other threads are performing work and need
+   * to check for an exit condition.
+   *
+   * @return true if the node should still be running
+   */
   bool ShouldRun() const;
 
+ private:
   // The name of the node
   const std::string name_;
 
