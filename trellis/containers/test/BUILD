@@ -6,7 +6,7 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/containers",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -15,6 +15,6 @@ cc_test(
     srcs = ["test_multi_fifo.cpp"],
     deps = [
         "//trellis/containers",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )

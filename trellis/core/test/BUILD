@@ -17,7 +17,7 @@ cc_library(
     ],
     deps = [
         "//trellis/core:core_node",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -88,7 +88,7 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_time",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -102,7 +102,7 @@ cc_test(
         ":test_fixture",
         ":test_proto",
         "//trellis/core:core_time",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -118,7 +118,7 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_config",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -130,7 +130,7 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_proto_utils",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -142,7 +142,7 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_health",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -154,6 +154,6 @@ cc_test(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_health_monitor",
-        "@gtest//:gtest_main",
+        "@com_google_googletest//:gtest_main",
     ],
 )
