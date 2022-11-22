@@ -85,7 +85,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreatePublisher(const std::string& topic) const {
-    return std::make_shared<PublisherClass<MSG_T>>(topic.c_str());
+    return std::make_shared<PublisherClass<MSG_T>>(topic);
   }
 
   /**
@@ -100,7 +100,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherClass<MSG_T>>(topic.c_str(), true);
+    return std::make_shared<PublisherClass<MSG_T>>(topic, true);
   }
 
   /**
@@ -131,16 +131,16 @@ class Node {
       return CreateOneShotTimer(initial_delay_ms, callback);
     };
     if (do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *watchdog_timeout_ms, watchdog_callback,
                                                      GetEventLoop(), *max_frequency, update_sim_fn, watchdog_create_fn);
     } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *max_frequency, update_sim_fn,
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *max_frequency, update_sim_fn,
                                                      watchdog_create_fn);
     } else if (!do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, *watchdog_timeout_ms, watchdog_callback,
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *watchdog_timeout_ms, watchdog_callback,
                                                      GetEventLoop(), update_sim_fn, watchdog_create_fn);
     } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic.c_str(), callback, update_sim_fn, watchdog_create_fn);
+      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, update_sim_fn, watchdog_create_fn);
     }
   }
 
