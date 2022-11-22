@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_NODE_HPP
-#define TRELLIS_CORE_NODE_HPP
+#ifndef TRELLIS_CORE_NODE_HPP_
+#define TRELLIS_CORE_NODE_HPP_
 
 #include <ecal/ecal.h>
 
@@ -122,26 +122,20 @@ class Node {
   Subscriber<MSG_T> CreateSubscriber(const std::string& topic,
                                      typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
-                                     typename SubscriberImpl<MSG_T>::WatchdogCallback watchdog_callback = {},
+                                     TimerImpl::Callback watchdog_callback = {},
                                      std::optional<double> max_frequency = {}) {
-    const bool do_watchdog = static_cast<bool>(watchdog_timeout_ms && watchdog_callback);
-    const bool do_frequency_throttle = static_cast<bool>(max_frequency);
     const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
-    const auto watchdog_create_fn = [this](unsigned initial_delay_ms, TimerImpl::Callback callback) -> Timer {
-      return CreateOneShotTimer(initial_delay_ms, callback);
-    };
-    if (do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), *max_frequency, update_sim_fn, watchdog_create_fn);
-    } else if (do_frequency_throttle && !do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *max_frequency, update_sim_fn,
-                                                     watchdog_create_fn);
-    } else if (!do_frequency_throttle && do_watchdog) {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, *watchdog_timeout_ms, watchdog_callback,
-                                                     GetEventLoop(), update_sim_fn, watchdog_create_fn);
-    } else {
-      return std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, update_sim_fn, watchdog_create_fn);
+    const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
+    const auto impl = do_watchdog ? std::make_shared<SubscriberImpl<MSG_T>>(
+                                        topic, callback, update_sim_fn,
+                                        [this, watchdog_callback, initial_delay_ms = watchdog_timeout_ms.value()]() {
+                                          return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
+                                        })
+                                  : std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, update_sim_fn);
+    if (max_frequency.has_value()) {
+      impl->SetMaxFrequencyThrottle(*max_frequency);
     }
+    return impl;
   }
 
   /**
@@ -174,8 +168,7 @@ class Node {
    */
   DynamicSubscriber CreateDynamicSubscriber(
       const std::string& topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
-      std::optional<unsigned> watchdog_timeout_ms = {},
-      typename SubscriberImpl<google::protobuf::Message>::WatchdogCallback watchdog_callback = {},
+      std::optional<unsigned> watchdog_timeout_ms = {}, TimerImpl::Callback watchdog_callback = {},
       std::optional<double> max_frequency = {}) {
     return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
                                                        max_frequency);
@@ -363,4 +356,4 @@ class Node {
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_NODE_HPP
+#endif  // TRELLIS_CORE_NODE_HPP_

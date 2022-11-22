@@ -34,72 +34,45 @@ class SubscriberImpl {
  public:
   using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
-  using WatchdogCallback = TimerImpl::Callback;
-  using WatchdogTimerCreateFunction = std::function<Timer(unsigned, TimerImpl::Callback)>;
 
   /**
-   * Construct a subscriber for a given topic
+   * @brief Construct a subscriber for a given topic
    *
    * @param topic the topic string to subscribe to
    * @param callback the callback function to receive messages on
+   * @param update_sim_fn the function to update sim time on receive
+   */
+  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{std::move(update_sim_fn)} {
+    auto callback_wrapper = [this, callback = std::move(callback)](
+                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                                long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
+    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
+  }
+
+  /**
+   * @brief Construct a subscriber for a given topic with a watchdog timer
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   * @param update_sim_fn the function to update sim time on receive
+   * @param watchdog_create_fn the function to create a watchdog timer
    */
   SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
-                 WatchdogTimerCreateFunction watchdog_create_fn)
-      : ecal_sub_{topic},
-        ecal_sub_raw{CreateRawTopicSubscriber(topic)},
-        update_sim_fn_{update_sim_fn},
-        watchdog_create_fn_{watchdog_create_fn} {
-    SetCallbackWithoutWatchdog(callback);
-  }
+                 auto watchdog_create_fn)
+      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{std::move(update_sim_fn)} {
+    auto callback_wrapper = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn)](
+                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                                long long clock_, long long id_) mutable {
+      if (watchdog_timer_ == nullptr) {
+        watchdog_timer_ = watchdog_create_fn();
+      } else {
+        watchdog_timer_->Reset();
+      }
 
-  /**
-   * Construct a subscriber for a given topic with a rate throttle
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
-   */
-  SubscriberImpl(const std::string& topic, Callback callback, double max_frequency_hz,
-                 UpdateSimulatedClockFunction update_sim_fn, WatchdogTimerCreateFunction watchdog_create_fn)
-      : SubscriberImpl(topic, callback, update_sim_fn, watchdog_create_fn) {
-    SetMaxFrequencyThrottle(max_frequency_hz);
-  }
-
-  /**
-   * Construct a subscriber for a given topic with a watchdog timer
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   * @param watchdog_timeout_ms the amount of time in milliseconds in between messages that will trigger the watchdog
-   * @param watchdog_callback the function to call when the watchdog fires
-   * @param event_loop the event loop handle in which to run the watchdog on
-   */
-  SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
-                 WatchdogCallback watchdog_callback, EventLoop event_loop, UpdateSimulatedClockFunction update_sim_fn,
-                 WatchdogTimerCreateFunction watchdog_create_fn)
-      : ecal_sub_{topic},
-        ecal_sub_raw{CreateRawTopicSubscriber(topic)},
-        update_sim_fn_{update_sim_fn},
-        watchdog_create_fn_{watchdog_create_fn} {
-    SetCallbackWithWatchdog(callback, watchdog_callback, watchdog_timeout_ms, event_loop);
-  }
-
-  /**
-   * Construct a subscriber for a given topic with a watchdog timer and rate throttle
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   * @param watchdog_timeout_ms the amount of time in milliseconds in between messages that will trigger the watchdog
-   * @param watchdog_callback the function to call when the watchdog fires
-   * @param event_loop the event loop handle in which to run the watchdog on
-   * @param max_frequency the maximum frequency (in Hz) in which the callback may be called
-   */
-  SubscriberImpl(const std::string& topic, Callback callback, unsigned watchdog_timeout_ms,
-                 WatchdogCallback watchdog_callback, EventLoop event_loop, double max_frequency_hz,
-                 UpdateSimulatedClockFunction update_sim_fn, WatchdogTimerCreateFunction watchdog_create_fn)
-      : SubscriberImpl(topic, callback, watchdog_timeout_ms, watchdog_callback, event_loop, update_sim_fn,
-                       watchdog_create_fn) {
-    SetMaxFrequencyThrottle(max_frequency_hz);
+      CallbackWrapperLogic(msg_, callback);
+    };
+    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
   }
 
   /**
@@ -123,30 +96,6 @@ class SubscriberImpl {
   }
 
  private:
-  void SetCallbackWithoutWatchdog(Callback callback) {
-    auto callback_wrapper = [this, callback](const char* topic_name_, const trellis::core::TimestampedMessage& msg_,
-                                             long long time_, long long clock_,
-                                             long long id_) { CallbackWrapperLogic(msg_, callback); };
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
-  }
-
-  void SetCallbackWithWatchdog(Callback callback, WatchdogCallback watchdog_callback, unsigned watchdog_timeout_ms,
-                               EventLoop event_loop) {
-    auto callback_wrapper = [this, callback, watchdog_callback, watchdog_timeout_ms, event_loop](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) mutable {
-      if (watchdog_timer_ == nullptr) {
-        // create one shot watchdog timer which automatically loads the timer too
-        watchdog_timer_ = watchdog_create_fn_(watchdog_timeout_ms, watchdog_callback);
-      } else {
-        watchdog_timer_->Reset();
-      }
-
-      CallbackWrapperLogic(msg_, callback);
-    };
-    ecal_sub_.AddReceiveCallback(callback_wrapper);
-  }
-
   void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
     if (!did_receive_) {
       first_receive_time_ = time::Now();
@@ -230,7 +179,6 @@ class SubscriberImpl {
       ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
 
   UpdateSimulatedClockFunction update_sim_fn_;
-  WatchdogTimerCreateFunction watchdog_create_fn_;
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
 
