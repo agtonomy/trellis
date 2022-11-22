@@ -61,7 +61,7 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
         ASSERT_EQ(msg.id(), receive_count);
         ++receive_count;
       },
-      50, []() { ++watchdog_count; });
+      50, [](const trellis::core::time::TimePoint&) { ++watchdog_count; });
 
   StartRunnerThread();
   WaitForDiscovery();

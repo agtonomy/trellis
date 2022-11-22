@@ -79,7 +79,7 @@ void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {
         (most_recent_update_from_message.health_state() == trellis::core::HealthState::HEALTH_STATE_NORMAL)
             ? Event::kNodeTransitionToHealthy
             : Event::kNodeTransitionToUnhealthy;
-    health_event_cb_(name, event);
+    health_event_cb_(name, event, time::Now());
   }
 }
 
@@ -95,21 +95,22 @@ void HealthMonitor::InsertIntoCache(const trellis::core::HealthHistory& status) 
       data.watchdog_->Reset();
     }
   } else {
-    health_data_.insert(
-        {name,
-         {{timer_create_fn_(reporting_watchdog_ms_, [this, name]() { WatchdogExpired(name); })}, {status.history()}}});
+    health_data_.insert({name,
+                         {{timer_create_fn_(reporting_watchdog_ms_,
+                                            [this, name](const time::TimePoint& now) { WatchdogExpired(name, now); })},
+                          {status.history()}}});
   }
 }
 
-void HealthMonitor::WatchdogExpired(const std::string& name) {
+void HealthMonitor::WatchdogExpired(const std::string& name, const time::TimePoint& now) {
   // Add a new entry to signify that the health state was lost
   std::lock_guard<std::mutex> guard{mutex_};
   if (health_data_.find(name) != health_data_.end()) {
     auto& history = health_data_.at(name).history_;
     trellis::core::HealthStatus* new_status = history.Add();
     new_status->set_health_state(trellis::core::HealthState::HEALTH_STATE_LOST);
-    *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(trellis::core::time::Now());
-    health_event_cb_(name, Event::kNodeHealthUpdateLost);
+    *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(now);
+    health_event_cb_(name, Event::kNodeHealthUpdateLost, now);
   }
 }
 

@@ -11,7 +11,7 @@ App::App(trellis::core::Node& node)
               [this](const std::string& topic, const trellis::examples::proto::HelloWorld& msg,
                      const trellis::core::time::TimePoint&) { NewMessage(topic, msg); },
               {{2000U}},
-              {{[this](const std::string&) {
+              {{[this](const std::string&, const trellis::core::time::TimePoint&) {
                 trellis::core::Log::Warn("Watchdog tripped on inbound messages!");
                 node_.UpdateHealth(trellis::core::HealthState::HEALTH_STATE_CRITICAL, 0x01, "Inputs timed out");
               }}}} {}

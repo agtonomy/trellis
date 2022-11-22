@@ -34,7 +34,7 @@ class SubscriberImpl {
  public:
   using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
-  using WatchdogCallback = std::function<void(void)>;
+  using WatchdogCallback = TimerImpl::Callback;
   using WatchdogTimerCreateFunction = std::function<Timer(unsigned, TimerImpl::Callback)>;
 
   /**

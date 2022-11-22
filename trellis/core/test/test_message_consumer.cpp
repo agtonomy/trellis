@@ -90,11 +90,11 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
          ++receive_count_2;
        }},
       {{50U, 100U}},
-      {{[](const std::string& topic) {
+      {{[](const std::string& topic, const trellis::core::time::TimePoint&) {
           ++watchdog_count_1;
           ASSERT_EQ(topic, "consumer_topic_1");
         },
-        [](const std::string& topic) {
+        [](const std::string& topic, const trellis::core::time::TimePoint&) {
           ++watchdog_count_2;
           ASSERT_EQ(topic, "consumer_topic_2");
         }}}};

@@ -29,7 +29,7 @@ namespace core {
 
 class TimerImpl {
  public:
-  using Callback = std::function<void(void)>;
+  using Callback = std::function<void(const time::TimePoint&)>;
   enum Type { kOneShot = 0, kPeriodic };
 
   /**

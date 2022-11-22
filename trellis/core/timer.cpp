@@ -77,9 +77,10 @@ void TimerImpl::Fire() {
   if (did_fire_ && type_ == kOneShot) {
     return;
   }
-  last_fire_time_ = time::Now();  // used for sim time
+  const auto now = time::Now();
+  last_fire_time_ = now;  // used for sim time
   did_fire_ = true;
-  callback_();
+  callback_(now);
   if (type_ != kOneShot) {
     Reload();
     KickOff();

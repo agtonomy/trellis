@@ -10,7 +10,8 @@ App::App(Node& node)
     : publisher_{node.CreatePublisher<trellis::examples::proto::HelloWorld>(
           node.GetConfig()["examples"]["publisher"]["topic"].as<std::string>())},
       timer_{node.CreateTimer(
-          node.GetConfig()["examples"]["publisher"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
+          node.GetConfig()["examples"]["publisher"]["interval_ms"].as<unsigned>(),
+          [this](const trellis::core::time::TimePoint&) { Tick(); },
           node.GetConfig()["examples"]["publisher"]["initial_delay_ms"].as<unsigned>())} {}
 
 void App::Tick() {

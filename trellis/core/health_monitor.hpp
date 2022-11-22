@@ -46,7 +46,7 @@ class HealthMonitor {
       const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback)>;
   using TimerCreateFunction = std::function<trellis::core::Timer(unsigned, trellis::core::TimerImpl::Callback)>;
   using HealthHistoryList = google::protobuf::RepeatedPtrField<trellis::core::HealthStatus>;
-  using HealthEventCallback = std::function<void(const std::string&, Event)>;
+  using HealthEventCallback = std::function<void(const std::string&, Event, const time::TimePoint&)>;
 
   /**
    * HealthMonitor constructor
@@ -104,7 +104,7 @@ class HealthMonitor {
   /**
    * WatchdogExpired called when there was no health update from a node beyond the watchdog time period
    */
-  void WatchdogExpired(const std::string& name);
+  void WatchdogExpired(const std::string& name, const time::TimePoint& now);
 
  private:
   void CheckNameExists(const std::string& name) const;

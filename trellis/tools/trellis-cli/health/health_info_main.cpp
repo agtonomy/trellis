@@ -53,7 +53,8 @@ int health_info_main(int argc, char* argv[]) {
       [&node](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback cb) {
         return node.CreateSubscriber<trellis::core::HealthHistory>(topic, cb);
       },
-      [expected_node_name, &got_node_update](const std::string& node_name, trellis::core::HealthMonitor::Event event) {
+      [expected_node_name, &got_node_update](const std::string& node_name, trellis::core::HealthMonitor::Event event,
+                                             const trellis::core::time::TimePoint&) {
         if (!got_node_update) {
           got_node_update = (node_name == expected_node_name);
         }

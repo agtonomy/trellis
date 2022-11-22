@@ -57,7 +57,8 @@ TEST(TrellisHealthMonitor, UpdatesTriggerCallbacks) {
       [this](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback) {
         return nullptr;
       },
-      [](const std::string& node_name, trellis::core::HealthMonitor::Event event) {
+      [](const std::string& node_name, trellis::core::HealthMonitor::Event event,
+         const trellis::core::time::TimePoint&) {
         ASSERT_TRUE(callback_count < expected_events.size());
         ASSERT_EQ(event, expected_events[callback_count].second);
         ASSERT_EQ(node_name, expected_events[callback_count].first);
@@ -187,7 +188,7 @@ TEST(TrellisHealthMonitor, UpdatesTriggerCallbacks) {
             monitor.GetLastHealthUpdate("node_bar").status_description());
 
   // Now let's say the watchdog tripped for node_foo
-  monitor.WatchdogExpired("node_foo");
+  monitor.WatchdogExpired("node_foo", trellis::core::time::Now());
   ASSERT_EQ(monitor.GetLastHealthUpdate("node_foo").health_state(), trellis::core::HealthState::HEALTH_STATE_LOST);
 
   ASSERT_EQ(callback_count, expected_events.size());

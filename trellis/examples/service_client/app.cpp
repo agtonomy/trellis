@@ -10,7 +10,8 @@ using namespace trellis::examples::proto;
 App::App(Node& node)
     : client_{node.CreateServiceClient<AdditionService>()},
       timer_{node.CreateTimer(
-          node.GetConfig()["examples"]["service"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
+          node.GetConfig()["examples"]["service"]["interval_ms"].as<unsigned>(),
+          [this](const trellis::core::time::TimePoint&) { Tick(); },
           node.GetConfig()["examples"]["service"]["initial_delay_ms"].as<unsigned>())},
       call_timeout_ms_{node.GetConfig()["examples"]["service"]["timeout_ms"].as<unsigned>()} {}
 

@@ -27,7 +27,8 @@ App::App(Which which, Node& node)
     : which_{which},
       transforms_{node},
       timer_{node.CreateTimer(
-          node.GetConfig()["examples"]["transforms"]["interval_ms"].as<unsigned>(), [this]() { Tick(); },
+          node.GetConfig()["examples"]["transforms"]["interval_ms"].as<unsigned>(),
+          [this](const trellis::core::time::TimePoint&) { Tick(); },
           node.GetConfig()["examples"]["transforms"]["initial_delay_ms"].as<unsigned>())} {}
 
 void App::Tick() {

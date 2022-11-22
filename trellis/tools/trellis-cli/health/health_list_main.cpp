@@ -51,8 +51,9 @@ int health_list_main(int argc, char* argv[]) {
       [&node](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback cb) {
         return node.CreateSubscriber<trellis::core::HealthHistory>(topic, cb);
       },
-      [&last_event_time, &got_event](const std::string& app_name, trellis::core::HealthMonitor::Event event) {
-        last_event_time = trellis::core::time::Now();
+      [&last_event_time, &got_event](const std::string& app_name, trellis::core::HealthMonitor::Event even,
+                                     const trellis::core::time::TimePoint& now) {
+        last_event_time = now;
         got_event = true;
       }};
 

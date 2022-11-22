@@ -71,7 +71,7 @@ void Health::Update(const trellis::core::HealthState& state, const Code& code, c
   }
 
   if (update_timer_ == nullptr) {
-    update_timer_ = timer_create_fn_(reporting_interval_ms_, [this]() { UpdateTimer(); });
+    update_timer_ = timer_create_fn_(reporting_interval_ms_, [this](const time::TimePoint&) { UpdateTimer(); });
   }
 
   publisher_->Send(CreateHealthHistoryMessage(name_, health_history_));
