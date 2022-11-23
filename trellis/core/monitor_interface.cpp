@@ -143,21 +143,6 @@ std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic
   return message;
 }
 
-std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTypeString(const std::string& type_string) {
-  const auto topic = FindFirstTopicNameForProtoType(type_string);
-  return GetMessageFromTopic(topic);
-}
-
-std::string MonitorInterface::FindFirstTopicNameForProtoType(const std::string& type_string) const {
-  const auto& topics = snapshot_.topics();
-  auto filter = [type_string](const eCAL::pb::Topic& topic) { return topic.ttype() == type_string; };
-  auto it = GetFilteredIterator<eCAL::pb::Topic>(topics, filter);
-  if (it == topics.end()) {
-    throw std::runtime_error("No topics found matching type " + type_string);
-  }
-  return it->tname();
-}
-
 void MonitorInterface::PrintTopics() const {
   const auto& topics = snapshot_.topics();
   auto filter = [](const eCAL::pb::Topic& topic) { return !proto_utils::IsRawTopic(topic.tname()); };

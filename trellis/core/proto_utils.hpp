@@ -29,16 +29,6 @@ const std::string raw_topic_prefix = "/trellis/raw:";
 }
 
 /**
- * GetTypeFromURL extracts the protobuf type string from a type URL
- *
- * This is useful for working with the type_url field from google.protobuf.Any messages
- */
-inline std::string GetTypeFromURL(const std::string& type_url) {
-  // Example string: type.googleapis.com/trellis.examples.proto.HelloWorld
-  return "proto:" + type_url.substr(type_url.find_first_of('/') + 1, type_url.size());
-}
-
-/**
  * IsRawTopic return true if the given topic name is a "raw" topic as described above
  */
 inline bool IsRawTopic(const std::string& topic) {

@@ -42,8 +42,11 @@ class SubscriberImpl {
    * @param callback the callback function to receive messages on
    * @param update_sim_fn the function to update sim time on receive
    */
-  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{std::move(update_sim_fn)} {
+  SubscriberImpl(std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
+      : topic_{std::move(topic)},
+        ecal_sub_{topic_},
+        ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
+        update_sim_fn_{std::move(update_sim_fn)} {
     auto callback_wrapper = [this, callback = std::move(callback)](
                                 const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
                                 long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
@@ -58,9 +61,12 @@ class SubscriberImpl {
    * @param update_sim_fn the function to update sim time on receive
    * @param watchdog_create_fn the function to create a watchdog timer
    */
-  SubscriberImpl(const std::string& topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
+  SubscriberImpl(std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
                  auto watchdog_create_fn)
-      : ecal_sub_{topic}, ecal_sub_raw{CreateRawTopicSubscriber(topic)}, update_sim_fn_{std::move(update_sim_fn)} {
+      : topic_{std::move(topic)},
+        ecal_sub_{topic_},
+        ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
+        update_sim_fn_{std::move(update_sim_fn)} {
     auto callback_wrapper = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn)](
                                 const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
                                 long long clock_, long long id_) mutable {
@@ -103,7 +109,7 @@ class SubscriberImpl {
     }
     if (user_msg_ == nullptr) {
       try {
-        user_msg_ = CreateUserMessage(msg.payload().type_url());
+        user_msg_ = CreateUserMessage();
       } catch (const std::runtime_error& e) {
         // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
         // publisher comes online and before we can retrieve the message schema
@@ -159,24 +165,26 @@ class SubscriberImpl {
   }
 
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::shared_ptr<MSG_T> CreateUserMessage(const std::string&) {
+  std::shared_ptr<MSG_T> CreateUserMessage() {
     return std::make_shared<MSG_T>();
   }
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::shared_ptr<MSG_T> CreateUserMessage(const std::string& type_url) {
+  std::shared_ptr<MSG_T> CreateUserMessage() {
     monitor_.UpdateSnapshot();
     // This will throw on failure
-    return monitor_.GetMessageFromTypeString(proto_utils::GetTypeFromURL(type_url));
+    return monitor_.GetMessageFromTopic(topic_);
   }
 
   // For dynamic subscribers, how long before we give up on metadata from the monitor layer
   static constexpr unsigned kMonitorSettlingTime{1000U};
 
+  std::string topic_;
+
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
-      ecal_sub_raw;  // exists to provide MSG_T metadata on the monitoring layer
+      ecal_sub_raw_;  // exists to provide MSG_T metadata on the monitoring layer
 
   UpdateSimulatedClockFunction update_sim_fn_;
   std::atomic<unsigned> rate_throttle_interval_ms_{0};

@@ -57,19 +57,6 @@ class MonitorInterface {
   std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
 
   /**
-   * GetMessageFromTypeString create a new proto message object containing the message schema tied to the given type
-   * string
-   *
-   * A type string is the fully qualified proto message name prefixed with "proto:"
-   * Example type string: proto:trellis.examples.proto.HelloWorld
-   *
-   * This is useful for dynamic publishers and subscribers, where the message scheme must be determined at runtime.
-   *
-   * @return a shared pointer to a proto message
-   */
-  std::shared_ptr<google::protobuf::Message> GetMessageFromTypeString(const std::string& type_string);
-
-  /**
    * PrintTopics print the list of topic metadata broadcasted on the monitoring layer
    */
   void PrintTopics() const;
@@ -97,8 +84,6 @@ class MonitorInterface {
   void PrintServiceInfo(const std::string service_name) const;
 
  private:
-  std::string FindFirstTopicNameForProtoType(const std::string& type_string) const;
-
   template <typename T>
   auto GetFilteredIterator(const google::protobuf::RepeatedPtrField<T>& entries, FilterFunction<T> filter) const {
     return std::find_if(entries.begin(), entries.end(), filter);
