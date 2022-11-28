@@ -27,13 +27,14 @@ using namespace trellis::core::test;
 TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
+  static constexpr unsigned num_burst_messages = 10U;
 
   StartRunnerThread();
 
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
   auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<1, test::Test, test::TestTwo> inputs_{
+  trellis::core::MessageConsumer<num_burst_messages, test::Test, test::TestTwo> inputs_{
       node_,
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&) {
@@ -50,7 +51,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   WaitForDiscovery();
 
   // Publish messages on both topics
-  for (unsigned i = 0; i < 10U; ++i) {
+  for (unsigned i = 0; i < num_burst_messages; ++i) {
     test::Test test_msg;
     test::TestTwo test_msg2;
     test_msg.set_id(i);
@@ -61,8 +62,10 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  ASSERT_EQ(receive_count_1, 10U);
-  ASSERT_EQ(receive_count_2, 10U);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  ASSERT_EQ(receive_count_1, num_burst_messages);
+  ASSERT_EQ(receive_count_2, num_burst_messages);
 }
 
 TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) {
@@ -70,13 +73,16 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   static unsigned receive_count_2{0};
   static unsigned watchdog_count_1{0};
   static unsigned watchdog_count_2{0};
+  static constexpr unsigned watchdog1_timeout_ms = 1000U;
+  static constexpr unsigned watchdog2_timeout_ms = 1000U;
+  static constexpr unsigned num_burst_messages = 10U;
 
   StartRunnerThread();
 
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
   auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<1, test::Test, test::TestTwo> inputs_{
+  trellis::core::MessageConsumer<num_burst_messages, test::Test, test::TestTwo> inputs_{
       node_,
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&) {
@@ -89,7 +95,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
          ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
          ++receive_count_2;
        }},
-      {{50U, 100U}},
+      {{watchdog1_timeout_ms, watchdog2_timeout_ms}},
       {{[](const std::string& topic, const trellis::core::time::TimePoint&) {
           ++watchdog_count_1;
           ASSERT_EQ(topic, "consumer_topic_1");
@@ -114,7 +120,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   }
 
   // Wait for watchdog
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(std::max(watchdog1_timeout_ms, watchdog2_timeout_ms) * 2));
 
   ASSERT_EQ(receive_count_1, 5U);
   ASSERT_EQ(receive_count_2, 5U);
@@ -123,7 +129,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   ASSERT_EQ(watchdog_count_2, 1U);
 
   // Publish more messages on both topics
-  for (unsigned i = 5; i < 10U; ++i) {
+  for (unsigned i = 5; i < num_burst_messages; ++i) {
     test::Test test_msg;
     test::TestTwo test_msg2;
     test_msg.set_id(i);
@@ -135,10 +141,10 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   }
 
   // Wait for watchdog
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  std::this_thread::sleep_for(std::chrono::milliseconds(std::max(watchdog1_timeout_ms, watchdog2_timeout_ms) * 2));
 
-  ASSERT_EQ(receive_count_1, 10U);
-  ASSERT_EQ(receive_count_2, 10U);
+  ASSERT_EQ(receive_count_1, num_burst_messages);
+  ASSERT_EQ(receive_count_2, num_burst_messages);
 
   ASSERT_EQ(watchdog_count_1, 2U);
   ASSERT_EQ(watchdog_count_2, 2U);
