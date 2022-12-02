@@ -27,9 +27,8 @@ Transforms::Transforms(trellis::core::Node& node)
       publisher_{node.CreatePublisher<trellis::core::RigidTransform>("/trellis/transforms")},
       inputs_{node,
               {{"/trellis/transforms"}},
-              [this](const std::string& topic, const trellis::core::RigidTransform& msg, const time::TimePoint& when) {
-                NewTransform(msg, when);
-              }} {
+              [this](const std::string& topic, const trellis::core::RigidTransform& msg, const time::TimePoint& now,
+                     const time::TimePoint& when) { NewTransform(msg, when); }} {
   if (node.GetConfig()["transforms"]) {
     // Load static transforms from configuration into the container
     const auto& transforms_cfg = node.GetConfig()["transforms"];

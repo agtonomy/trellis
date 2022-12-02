@@ -32,7 +32,14 @@ namespace core {
 template <typename MSG_T>
 class SubscriberImpl {
  public:
-  using Callback = std::function<void(const time::TimePoint&, const MSG_T&)>;
+  /**
+   * @brief Message receive callback
+   * @param now the time at which the callback was dispatched
+   * @param msgtime the time at which the publisher transmitted the message
+   * @param msg the message object that was received
+   *
+   */
+  using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, const MSG_T& msg)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
 
   /**
@@ -145,7 +152,7 @@ class SubscriberImpl {
     }
 
     if (should_callback) {
-      callback(msgtime, *user_msg_);
+      callback(time::Now(), msgtime, *user_msg_);
     }
   }
 

@@ -50,8 +50,19 @@ class MessageConsumer {
     time::TimePoint timestamp;
     T message;
   };
+
+  /**
+   * @brief Callback when a new message of a particular type is received
+   *
+   * @tparam MSG_T the particular message type to receive
+   * @param topic the topic that the message is received from (useful when multiple topics carry the same type)
+   * @param msg the message object that was received
+   * @param now the time at which the callback was dispatched
+   * @param msgtime the time at which the publisher transmitted the message
+   */
   template <typename MSG_T>
-  using NewMessageCallback = std::function<void(const std::string& topic, const MSG_T&, const time::TimePoint&)>;
+  using NewMessageCallback = std::function<void(const std::string& topic, const MSG_T& msg, const time::TimePoint& now,
+                                                const time::TimePoint& msgtime)>;
   using NewMessageCallbacks = std::tuple<NewMessageCallback<Types>...>;
   using UniversalUpdateCallback = std::function<void(void)>;
   using SingleTopic = std::string;
@@ -214,9 +225,8 @@ class MessageConsumer {
       // for creating subscribers based on these optional features. They are enumerated in this if/else chain.
       // XXX(bsirang): currently if there are multiple subscribers of the same message type, they will all share the
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
-      const auto message_callback = [topic, this](const time::TimePoint& time, const MessageType& msg) {
-        NewMessage(topic, time, msg);
-      };
+      const auto message_callback = [topic, this](const time::TimePoint& now, const time::TimePoint& msgtime,
+                                                  const MessageType& msg) { NewMessage(topic, now, msgtime, msg); };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
@@ -245,8 +255,9 @@ class MessageConsumer {
   }
 
   template <typename MSG_T>
-  void NewMessage(const std::string& topic, const time::TimePoint& time, const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{time, msg}));
+  void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
+                  const MSG_T& msg) {
+    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{msgtime, msg}));
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
@@ -262,7 +273,7 @@ class MessageConsumer {
     if (new_message_callback) {
       auto cb = new_message_callback;
       const auto newest(std::move(Newest<MSG_T>()));
-      asio::post(*loop_, [topic, cb, newest]() { cb(topic, newest.message, newest.timestamp); });
+      asio::post(*loop_, [topic, cb, newest, now]() { cb(topic, newest.message, now, newest.timestamp); });
     }
   }
 

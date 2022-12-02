@@ -40,10 +40,11 @@ HealthMonitor::HealthMonitor(const trellis::core::EventLoop& loop, const trellis
     : ev_loop_{loop},
       reporting_watchdog_ms_{GetReportingIntervalTimeoutFromConfig(config)},
       timer_create_fn_{timer_create_fn},
-      subscriber_{subscriber_create_fn(trellis::core::Health::GetTopicFromConfig(config),
-                                       [this](const time::TimePoint&, const trellis::core::HealthHistory& status) {
-                                         asio::post([this, status]() { NewUpdate(status); });
-                                       })},
+      subscriber_{subscriber_create_fn(
+          trellis::core::Health::GetTopicFromConfig(config),
+          [this](const time::TimePoint&, const time::TimePoint&, const trellis::core::HealthHistory& status) {
+            asio::post([this, status]() { NewUpdate(status); });
+          })},
       health_event_cb_{health_event_callback} {}
 
 void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {

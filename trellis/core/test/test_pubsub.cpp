@@ -29,10 +29,11 @@ TEST_F(TrellisFixture, BasicPubSub) {
   static unsigned receive_count{0};
 
   auto pub = node_.CreatePublisher<test::Test>("test_topic");
-  auto sub = node_.CreateSubscriber<test::Test>("test_topic", [](const time::TimePoint&, const test::Test& msg) {
-    ASSERT_EQ(msg.id(), receive_count);
-    ++receive_count;
-  });
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic", [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
+        ASSERT_EQ(msg.id(), receive_count);
+        ++receive_count;
+      });
 
   WaitForDiscovery();
 
@@ -57,7 +58,7 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
   auto pub = node_.CreatePublisher<test::Test>("test_watchdog_topic");
   auto sub = node_.CreateSubscriber<test::Test>(
       "test_watchdog_topic",
-      [](const time::TimePoint&, const test::Test& msg) {
+      [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
         ASSERT_EQ(msg.id(), receive_count);
         ++receive_count;
       },
@@ -115,7 +116,7 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
   auto pub = node_.CreatePublisher<test::Test>("test_throttle_topic");
   auto sub = node_.CreateSubscriber<test::Test>(
       "test_throttle_topic",
-      [](const time::TimePoint&, const test::Test& msg) {
+      [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
         ASSERT_TRUE(msg.id() >= receive_count);
         ++receive_count;
       },
