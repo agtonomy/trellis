@@ -22,50 +22,49 @@
 namespace trellis {
 namespace core {
 
-Transforms::Transforms(trellis::core::Node& node)
+Transforms::Transforms(Node& node)
     : container_{},
-      publisher_{node.CreatePublisher<trellis::core::RigidTransform>("/trellis/transforms")},
+      publisher_{node.CreatePublisher<RigidTransform>("/trellis/transforms")},
       inputs_{node,
               {{"/trellis/transforms"}},
-              [this](const std::string& topic, const trellis::core::RigidTransform& msg, const time::TimePoint& now,
+              [this](const std::string& topic, const RigidTransform& msg, const time::TimePoint& now,
                      const time::TimePoint& when) { NewTransform(msg, when); }} {
   if (node.GetConfig()["transforms"]) {
     // Load static transforms from configuration into the container
     const auto& transforms_cfg = node.GetConfig()["transforms"];
     for (const auto& config : transforms_cfg) {
-      const auto transform = CreateTransformFromConfig(trellis::core::Config(config.second));
+      const auto transform = CreateTransformFromConfig(Config(config.second));
       container_.UpdateTransform(config["from"].as<std::string>(), config["to"].as<std::string>(), transform);
     }
   }
 }
 
-void Transforms::NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when) {
+void Transforms::NewTransform(const RigidTransform& msg, const time::TimePoint& when) {
   auto transform = CreateTransformFromMessage(msg);
   container_.UpdateTransform(msg.frame_from(), msg.frame_to(), transform, when);
 }
 
-bool Transforms::HasTransform(const std::string& from, const std::string& to,
-                              const trellis::core::time::TimePoint& when) const {
+bool Transforms::HasTransform(const std::string& from, const std::string& to, const time::TimePoint& when) const {
   return container_.HasTransform(from, to, when);
 }
 
 void Transforms::UpdateTransform(const std::string& from, const std::string& to,
-                                 const containers::Transforms::RigidTransform& transform) {
+                                 const containers::Transforms::RigidTransform& transform, const time::TimePoint& when) {
   auto msg = CreateMessageFromTransform(from, to, transform);
   // We'll add the transform to our container now since our publishes don't seem to be looping
   // back through our subscriber
-  NewTransform(msg, trellis::core::time::Now());
-  publisher_->Send(msg);
+  NewTransform(msg, when);
+  publisher_->Send(msg, when);
 }
 
 const containers::Transforms::Sample Transforms::GetTransform(const std::string& from, const std::string& to,
-                                                              const trellis::core::time::TimePoint& when) const {
+                                                              const time::TimePoint& when) const {
   return container_.GetTransform(from, to, when);
 }
 
-trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
-    const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform) {
-  trellis::core::RigidTransform msg;
+RigidTransform Transforms::CreateMessageFromTransform(const std::string& from, const std::string& to,
+                                                      const containers::Transforms::RigidTransform& transform) {
+  RigidTransform msg;
   msg.mutable_translation()->set_x(transform.translation.x());
   msg.mutable_translation()->set_y(transform.translation.y());
   msg.mutable_translation()->set_z(transform.translation.z());
@@ -78,8 +77,7 @@ trellis::core::RigidTransform Transforms::CreateMessageFromTransform(
   return msg;
 }
 
-containers::Transforms::RigidTransform Transforms::CreateTransformFromMessage(
-    const trellis::core::RigidTransform& msg) {
+containers::Transforms::RigidTransform Transforms::CreateTransformFromMessage(const RigidTransform& msg) {
   containers::Transforms::RigidTransform transform;
   transform.translation.x() = msg.translation().x();
   transform.translation.y() = msg.translation().y();
@@ -91,7 +89,7 @@ containers::Transforms::RigidTransform Transforms::CreateTransformFromMessage(
   return transform;
 }
 
-containers::Transforms::RigidTransform Transforms::CreateTransformFromConfig(const trellis::core::Config& config) {
+containers::Transforms::RigidTransform Transforms::CreateTransformFromConfig(const Config& config) {
   containers::Transforms::RigidTransform transform;
   transform.translation.x() = config["translation"]["x"].as<double>();
   transform.translation.y() = config["translation"]["y"].as<double>();

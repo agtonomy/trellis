@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_TRANSFORMS_HPP
-#define TRELLIS_CORE_TRANSFORMS_HPP
+#ifndef TRELLIS_CORE_TRANSFORMS_HPP_
+#define TRELLIS_CORE_TRANSFORMS_HPP_
 
 #include "trellis/containers/transforms.hpp"
 #include "trellis/core/config.hpp"
@@ -52,7 +52,7 @@ namespace core {
  */
 class Transforms {
  public:
-  Transforms(trellis::core::Node& node);
+  Transforms(Node& node);
 
   /**
    * UpdateTransform update a transform associated with the current time
@@ -60,9 +60,11 @@ class Transforms {
    * @param from the starting reference frame for the transform
    * @param to the ending reference frame for the transform
    * @param transform the actual transformation in terms of a translation and a rotation
+   * @param when the time point to associate with the transform
    */
   void UpdateTransform(const std::string& from, const std::string& to,
-                       const containers::Transforms::RigidTransform& transform);
+                       const containers::Transforms::RigidTransform& transform,
+                       const time::TimePoint& when = time::Now());
 
   /**
    * HasTransform determine if a transform for a given pair of reference frames exists and is within the valid time
@@ -74,8 +76,7 @@ class Transforms {
    * @return true if the transform exists and is valid
    *
    */
-  bool HasTransform(const std::string& from, const std::string& to,
-                    const trellis::core::time::TimePoint& when = trellis::core::time::Now()) const;
+  bool HasTransform(const std::string& from, const std::string& to, const time::TimePoint& when = time::Now()) const;
 
   /**
    * GetTransform retrieve the transform for a given pair of reference frames nearest the given time
@@ -86,25 +87,24 @@ class Transforms {
    * @param when the time point with which to find the nearest transform
    * @throws std::runtime_error if no valid transform exists
    */
-  const containers::Transforms::Sample GetTransform(
-      const std::string& from, const std::string& to,
-      const trellis::core::time::TimePoint& when = trellis::core::time::Now()) const;
+  const containers::Transforms::Sample GetTransform(const std::string& from, const std::string& to,
+                                                    const time::TimePoint& when = time::Now()) const;
 
  private:
-  void NewTransform(const trellis::core::RigidTransform& msg, const time::TimePoint& when);
-  static trellis::core::RigidTransform CreateMessageFromTransform(
-      const std::string& from, const std::string& to, const containers::Transforms::RigidTransform& transform);
-  static containers::Transforms::RigidTransform CreateTransformFromMessage(const trellis::core::RigidTransform& msg);
-  static containers::Transforms::RigidTransform CreateTransformFromConfig(const trellis::core::Config& config);
+  void NewTransform(const RigidTransform& msg, const time::TimePoint& when);
+  static RigidTransform CreateMessageFromTransform(const std::string& from, const std::string& to,
+                                                   const containers::Transforms::RigidTransform& transform);
+  static containers::Transforms::RigidTransform CreateTransformFromMessage(const RigidTransform& msg);
+  static containers::Transforms::RigidTransform CreateTransformFromConfig(const Config& config);
 
   static constexpr unsigned kQueueDepth = 10u;
   containers::Transforms container_;
 
-  trellis::core::Publisher<trellis::core::RigidTransform> publisher_;
-  trellis::core::MessageConsumer<kQueueDepth, trellis::core::RigidTransform> inputs_;
+  Publisher<RigidTransform> publisher_;
+  MessageConsumer<kQueueDepth, RigidTransform> inputs_;
 };
 
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_TRANSFORMS_HPP
+#endif /* TRELLIS_CORE_TRANSFORMS_HPP_ */
