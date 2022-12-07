@@ -143,3 +143,17 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
   // ...and it should be less than we sent
   ASSERT_TRUE(sent_count > receive_count);
 }
+
+TEST_F(TrellisFixture, SendReturnsTimestamp) {
+  trellis::core::time::EnableSimulatedClock();
+  const trellis::core::time::TimePoint time{trellis::core::time::TimePoint(std::chrono::milliseconds(1337))};
+  trellis::core::time::SetSimulatedTime(time);
+
+  auto pub = node_.CreatePublisher<test::Test>("test_send_timestamp_topic");
+
+  test::Test test_msg;
+  test_msg.set_msg("hello world");
+  auto send_time = pub->Send(test_msg);
+
+  ASSERT_EQ(send_time, time);
+}

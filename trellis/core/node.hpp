@@ -85,7 +85,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreatePublisher(const std::string& topic) const {
-    return std::make_shared<PublisherClass<MSG_T>>(topic);
+    return std::make_shared<PublisherImpl<MSG_T>>(topic);
   }
 
   /**
@@ -100,7 +100,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherClass<MSG_T>>(topic, true);
+    return std::make_shared<PublisherImpl<MSG_T>>(topic, true);
   }
 
   /**
@@ -149,7 +149,7 @@ class Node {
    * @return a publisher handle
    */
   DynamicPublisher CreateDynamicPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherClass<google::protobuf::Message>>(topic);
+    return std::make_shared<PublisherImpl<google::protobuf::Message>>(topic);
   }
 
   /**

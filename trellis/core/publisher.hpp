@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_PUBLISHER_HPP
-#define TRELLIS_CORE_PUBLISHER_HPP
+#ifndef TRELLIS_CORE_PUBLISHER_HPP_
+#define TRELLIS_CORE_PUBLISHER_HPP_
 
 #include <ecal/msg/protobuf/publisher.h>
 
@@ -28,11 +28,11 @@ namespace trellis {
 namespace core {
 
 template <typename MSG_T>
-class PublisherClass {
+class PublisherImpl {
  public:
-  PublisherClass(const std::string& topic) : PublisherClass(topic, false) {}
+  PublisherImpl(const std::string& topic) : PublisherImpl(topic, false) {}
 
-  PublisherClass(const std::string& topic, bool enable_zero_copy)
+  PublisherImpl(const std::string& topic, bool enable_zero_copy)
       : ecal_pub_(topic), ecal_pub_raw_(CreateRawPublisher(topic)) {
     if (enable_zero_copy) {
       ecal_pub_.ShmEnableZeroCopy(true);
@@ -42,17 +42,33 @@ class PublisherClass {
       ecal_pub_.ShmSetBufferCount(3);
     }
   }
-  void Send(const MSG_T& msg) {
+
+  /**
+   * @brief Send a message
+   *
+   * @param msg the message to send
+   * @return trellis::core::time::TimePoint the timestamp (now) injected into the message
+   */
+  trellis::core::time::TimePoint Send(const MSG_T& msg) {
     const auto now = trellis::core::time::Now();
-    Send(msg, now);
+    return Send(msg, now);
   }
-  void Send(const MSG_T& msg, const time::TimePoint& tp) {
+
+  /**
+   * @brief Send a message using a given time point
+   *
+   * @param msg the message to send
+   * @param tp the time point to inject in with the message
+   * @return trellis::core::time::TimePoint the timestamp injected into the message
+   */
+  trellis::core::time::TimePoint Send(const MSG_T& msg, const time::TimePoint& tp) {
     trellis::core::TimestampedMessage tsmsg;
     auto timestamp = tsmsg.mutable_timestamp();
     *timestamp = time::TimePointToTimestamp(tp);
     auto any = tsmsg.mutable_payload();
     any->PackFrom(msg);
     ecal_pub_.Send(tsmsg);
+    return tp;
   }
 
  private:
@@ -73,11 +89,11 @@ class PublisherClass {
 };
 
 template <typename T>
-using Publisher = std::shared_ptr<PublisherClass<T>>;
+using Publisher = std::shared_ptr<PublisherImpl<T>>;
 
-using DynamicPublisher = std::shared_ptr<PublisherClass<google::protobuf::Message>>;
+using DynamicPublisher = std::shared_ptr<PublisherImpl<google::protobuf::Message>>;
 
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_PUBLISHER_HPP
+#endif  // TRELLIS_CORE_PUBLISHER_HPP_

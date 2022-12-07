@@ -32,7 +32,7 @@ trellis:
 static constexpr unsigned kTestHistorySize = 3U;  // matching config above
 
 trellis::core::Publisher<trellis::core::HealthHistory> test_publisher =
-    std::make_shared<trellis::core::PublisherClass<trellis::core::HealthHistory>>("/test/health/topic");
+    std::make_shared<trellis::core::PublisherImpl<trellis::core::HealthHistory>>("/test/health/topic");
 
 }  // namespace
 
