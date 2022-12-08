@@ -19,8 +19,8 @@ This project depends on the following libraries:
 
 eCAL
   - Copyright (C) 2016 - 2019 Continental Corporation
-  - URL: https://github.com/continental/ecal
-  - License: Apache License Version 2.0 - https://github.com/continental/ecal/blob/master/LICENSE.txt
+  - URL: https://github.com/eclipse-ecal/ecal
+  - License: Apache License Version 2.0 - https://github.com/eclipse-ecal/ecal/blob/master/LICENSE.txt
 
 fmt
   - Copyright (c) 2012 - present, Victor Zverovich

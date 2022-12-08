@@ -30,7 +30,7 @@ Trellis applications are intended to be purely event-driven with callbacks firin
 Trellis uses [Asio](https://think-async.com/Asio/) under the hood to run an event loop.
 
 ## eCAL Core
-At the core, Trellis is built on top of [Continental's enhanced Communication Abstraction Layer](https://github.com/continental/ecal) (eCAL) library. This brings in a core set of functionality:
+At the core, Trellis is built on top of [Eclipse Foundation's enhanced Communication Abstraction Layer](https://github.com/eclipse-ecal/ecal) (eCAL) library. This brings in a core set of functionality:
 
 1. Dynamic service discovery
 1. Inter-process messaging patterns (pubsub and rpc)
@@ -67,7 +67,7 @@ Services are implemented using Protobuf's RPC syntax, which declares a method
 name, input message type, and output message type. See `examples` for more detail.
 
 ## Threading
-eCAL's threading model is documented here: https://continental.github.io/ecal/advanced/threading_model.html
+eCAL's threading model is documented here: https://eclipse-ecal.github.io/ecal/advanced/threading_model.html
 
 ### Single-threaded approach
 Trellis aims to hide eCAL's threading from the user by invoking all user callbacks from a single event-loop thread, which is managed by [Asio](https://think-async.com/Asio/).
