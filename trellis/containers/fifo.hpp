@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CONTAINERS_FIFO_HPP
-#define TRELLIS_CONTAINERS_FIFO_HPP
+#ifndef TRELLIS_CONTAINERS_FIFO_HPP_
+#define TRELLIS_CONTAINERS_FIFO_HPP_
 
 #include <mutex>
 #include <queue>
@@ -29,60 +29,57 @@ class Fifo {
  public:
   using value_type = typename std::queue<T>::value_type;
 
-  size_t Size() const { return queue_.size(); }
+  size_t Size() {
+    std::lock_guard<MUTEX_T> lock(mutex_);
+    return Size_();
+  }
 
-  void Push(T&& x) {
+  void Push(T x) {
     std::lock_guard<MUTEX_T> lock(mutex_);
     Push_(std::forward<T>(x));
   }
 
-  void Push(const T& x) {
+  T Next() {
     std::lock_guard<MUTEX_T> lock(mutex_);
-    PushCopy_(x);
+    return Pop_();
   }
 
-  const T& Pop() {
-    {
-      std::lock_guard<MUTEX_T> lock(mutex_);
-      Pop_();
-    }
-    return top_;
-  }
-
-  const T& Newest(bool& updated) {
+  T Newest() {
     std::lock_guard<MUTEX_T> lock(mutex_);
-    updated = Size() != 0;
-    if (updated) {
-      Pop_();
-    }
-    return top_;
+    return Back_();
   }
 
  private:
-  void Push_(T&& x) {
+  void Push_(T x) {
     queue_.push(std::forward<T>(x));
-    if (Size() > MAX_SIZE) {
+    if (Size_() > MAX_SIZE) {
       (void)Pop_();
     }
   }
 
-  void PushCopy_(const T& x) {
-    queue_.push(x);
-    if (Size() > MAX_SIZE) {
-      (void)Pop_();
+  T Pop_() {
+    if (queue_.empty()) {
+      throw std::runtime_error("Attempt to pop empty queue!");
     }
-  }
-
-  void Pop_() {
-    top_ = std::move(queue_.front());
+    T top = std::move(queue_.front());
     queue_.pop();
+    return top;
   }
+
+  T Back_() const {
+    if (queue_.empty()) {
+      throw std::runtime_error("Attempt to access empty queue!");
+    }
+    return queue_.back();
+  }
+
+  size_t Size_() { return queue_.size(); }
+
   std::queue<T> queue_;
   MUTEX_T mutex_;
-  T top_;
 };
 
 }  // namespace containers
 }  // namespace trellis
 
-#endif  // TRELLIS_CONTAINERS_FIFO_HPP
+#endif  // TRELLIS_CONTAINERS_FIFO_HPP_

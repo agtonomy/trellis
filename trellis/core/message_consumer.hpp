@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_MESSAGE_CONSUMER_HPP
-#define TRELLIS_CORE_MESSAGE_CONSUMER_HPP
+#ifndef TRELLIS_CORE_MESSAGE_CONSUMER_HPP_
+#define TRELLIS_CORE_MESSAGE_CONSUMER_HPP_
 
 #include <array>
 #include <string>
@@ -29,6 +29,23 @@
 
 namespace trellis {
 namespace core {
+
+namespace {
+// Helper to find the tuple index for a given type
+// Borrowed from https://stackoverflow.com/questions/18063451/get-index-of-a-tuple-elements-type
+template <class T, class Tuple>
+struct Index;
+
+template <class T, class... Types>
+struct Index<T, std::tuple<T, Types...>> {
+  static const std::size_t value = 0;
+};
+
+template <class T, class U, class... Types>
+struct Index<T, std::tuple<U, Types...>> {
+  static const std::size_t value = 1 + Index<T, std::tuple<Types...>>::value;
+};
+}  // namespace
 
 /**
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
@@ -73,6 +90,7 @@ class MessageConsumer {
   using WatchdogCallback = std::function<void(const std::string&, const time::TimePoint&)>;
   using WatchdogCallbacksArray = std::array<WatchdogCallback, sizeof...(Types)>;
   using OptionalMaxFrequencyArray = std::optional<std::array<double, sizeof...(Types)>>;
+  using LatestTimestampArray = std::array<time::TimePoint, sizeof...(Types)>;
 
   /*
    * MessageConsumer constructor
@@ -138,7 +156,7 @@ class MessageConsumer {
   }
 
   /*
-   * MessageConsumer constructor
+   * @brief  MessageConsumer constructor
    *
    * @param node A node instance to create subscriptions with
    * @param topics A list of list topics to subscribe to. The order of topics must match the order of message types in
@@ -164,21 +182,32 @@ class MessageConsumer {
   }
 
   /**
-   * Newest retrieve a reference to the newest message for the given type
+   * @brief  Next retrieve a reference to the next message for the given type
+   *
+   *  The next message is the oldest message (i.e. the message at the top of the FIFO)
    *
    * @tparam MSG_T the message type to retrieve
    * @param updated an optional user-supplied pointer to a bool which is true if the message was just updated
    * @return A reference to a timestamped message of the given type
    */
   template <typename MSG_T>
-  const StampedMessage<MSG_T>& Newest(bool* updated = nullptr) {
-    bool updated_msg;
-    bool* updated_ptr = (updated == nullptr) ? &updated_msg : updated;
-    return fifos_.template Newest<StampedMessage<MSG_T>>(*updated_ptr);
+  StampedMessage<MSG_T> Next() {
+    return fifos_.template Next<StampedMessage<MSG_T>>();
   }
 
   /**
-   * TimedOut determine if too much time has elapsed since the last reception of the given message type
+   * @brief Newest retrieve the newest (most recent) message for the given type
+   *
+   * @tparam MSG_T the message type to retrieve
+   * @return StampedMessage<MSG_T> A timestamped message of the given type
+   */
+  template <typename MSG_T>
+  StampedMessage<MSG_T> Newest() {
+    return fifos_.template Newest<StampedMessage<MSG_T>>();
+  }
+
+  /**
+   * @brief  TimedOut determine if too much time has elapsed since the last reception of the given message type
    *
    * @tparam the message type to check
    * @param now A time point intended to represent the current time
@@ -188,13 +217,14 @@ class MessageConsumer {
    */
   template <typename MSG_T>
   bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
-    const auto& newest_stamp = Newest<MSG_T>().timestamp;
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - newest_stamp);
+    const std::size_t tuple_index = Index<MSG_T, std::tuple<Types...>>::value;
+    const auto& latest_stamp = latest_timestamps_[tuple_index];
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - latest_stamp);
     return elapsed_ms.count() > timeout_ms;
   }
 
   /**
-   * SetMaxFrequencyThrottle throttle the frequency of a particular message type
+   * @brief  SetMaxFrequencyThrottle throttle the frequency of a particular message type
    *
    * @tparam the message type to throttle
    * @param max_frequency the maximum frequency of message updates for each subscriber of
@@ -216,6 +246,7 @@ class MessageConsumer {
       inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(Node& node) {
     const auto& topics = topics_[I];
     const auto& watchdog_callback = watchdog_callbacks_[I];
+    auto& latest_stamp = latest_timestamps_[I];
     using MessageType = std::tuple_element_t<I, std::tuple<Types...>>;
     auto& subscriber_list = std::get<I>(subscribers_);
     const bool do_watchdog = static_cast<bool>(watchdog_timeouts_ms_ && watchdog_callback);
@@ -225,8 +256,12 @@ class MessageConsumer {
       // for creating subscribers based on these optional features. They are enumerated in this if/else chain.
       // XXX(bsirang): currently if there are multiple subscribers of the same message type, they will all share the
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
-      const auto message_callback = [topic, this](const time::TimePoint& now, const time::TimePoint& msgtime,
-                                                  const MessageType& msg) { NewMessage(topic, now, msgtime, msg); };
+      const auto message_callback = [topic, this, &latest_stamp](const time::TimePoint& now,
+                                                                 const time::TimePoint& msgtime,
+                                                                 const MessageType& msg) {
+        latest_stamp = msgtime;
+        NewMessage(topic, now, msgtime, msg);
+      };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
@@ -257,7 +292,7 @@ class MessageConsumer {
   template <typename MSG_T>
   void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
                   const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(std::move(StampedMessage<MSG_T>{msgtime, msg}));
+    fifos_.template Push<StampedMessage<MSG_T>>(StampedMessage<MSG_T>{msgtime, msg});
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
@@ -272,8 +307,10 @@ class MessageConsumer {
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
       auto cb = new_message_callback;
-      const auto newest(std::move(Newest<MSG_T>()));
-      asio::post(*loop_, [topic, cb, newest, now]() { cb(topic, newest.message, now, newest.timestamp); });
+      auto next = Next<MSG_T>();
+      asio::post(*loop_, [topic, cb = std::move(cb), next = std::move(next), now] {
+        cb(topic, next.message, now, next.timestamp);
+      });
     }
   }
 
@@ -293,9 +330,10 @@ class MessageConsumer {
   const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
+  LatestTimestampArray latest_timestamps_;
 };
 
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_MESSAGE_CONSUMER_HPP
+#endif  // TRELLIS_CORE_MESSAGE_CONSUMER_HPP_

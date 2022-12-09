@@ -19,19 +19,18 @@
 
 #include "trellis/containers/multi_fifo.hpp"
 
-using namespace trellis;
-
+namespace {
 struct TestMsg {
   uint32_t x;
   uint32_t y;
   uint32_t z;
 };
+}  // namespace
 
 TEST(MultiFifoTests, BasicChecks) {
-  containers::MultiFifo<2, TestMsg, std::string> f;
+  trellis::containers::MultiFifo<2, TestMsg, std::string> f;
   ASSERT_EQ(f.Size<TestMsg>(), 0);
   ASSERT_EQ(f.Size<std::string>(), 0);
-  // auto x = f.Pop<TestMsg>();
   f.Push<std::string>("test msg");
   ASSERT_EQ(f.Size<TestMsg>(), 0);
   ASSERT_EQ(f.Size<std::string>(), 1);
@@ -40,7 +39,7 @@ TEST(MultiFifoTests, BasicChecks) {
   ASSERT_EQ(f.Size<TestMsg>(), 1);
   ASSERT_EQ(f.Size<std::string>(), 1);
 
-  TestMsg m = f.Pop<TestMsg>();
+  TestMsg m = f.Next<TestMsg>();
   ASSERT_EQ(f.Size<TestMsg>(), 0);
   ASSERT_EQ(f.Size<std::string>(), 1);
   ASSERT_EQ(m.x, 1);
@@ -48,8 +47,8 @@ TEST(MultiFifoTests, BasicChecks) {
   ASSERT_EQ(m.z, 3);
 
   f.Push<std::string>("brown cow");
-  auto s = f.Pop<std::string>();
+  auto s = f.Next<std::string>();
   ASSERT_EQ(s, "test msg");
-  s = f.Pop<std::string>();
+  s = f.Next<std::string>();
   ASSERT_EQ(s, "brown cow");
 }

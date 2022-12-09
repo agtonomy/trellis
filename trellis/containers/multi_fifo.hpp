@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CONTAINERS_MULTI_FIFO_HPP
-#define TRELLIS_CONTAINERS_MULTI_FIFO_HPP
+#ifndef TRELLIS_CONTAINERS_MULTI_FIFO_HPP_
+#define TRELLIS_CONTAINERS_MULTI_FIFO_HPP_
 
 #include "fifo.hpp"
 
@@ -39,23 +39,18 @@ template <size_t MAX_SIZE, class... Types>
 class MultiFifo {
  public:
   template <typename T>
-  const T& Pop() {
-    return access<T>().Pop();
+  T Next() {
+    return access<T>().Next();
   }
 
   template <typename T>
-  const T& Newest(bool& updated) {
-    return access<T>().Newest(updated);
+  T Newest() {
+    return access<T>().Newest();
   }
 
   template <typename T>
-  void Push(T&& x) {
+  void Push(T x) {
     access<T>().Push(std::forward<T>(x));
-  }
-
-  template <typename T>
-  void Push(const T& x) {
-    access<T>().Push(x);
   }
 
   template <typename T>
@@ -98,4 +93,4 @@ class MultiFifo {
 }  // namespace containers
 }  // namespace trellis
 
-#endif  // TRELLIS_CONTAINERS_MULTI_FIFO_HPP
+#endif  // TRELLIS_CONTAINERS_MULTI_FIFO_HPP_
