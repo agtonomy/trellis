@@ -129,7 +129,7 @@ class SubscriberImpl {
     }
 
     if (user_msg_ != nullptr) {
-      msg.payload().UnpackTo(&(*user_msg_));
+      user_msg_->ParseFromString(msg.payload());
       CallbackHelperLogic(msg, callback);
     }
   }

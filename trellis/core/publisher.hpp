@@ -65,8 +65,7 @@ class PublisherImpl {
     trellis::core::TimestampedMessage tsmsg;
     auto timestamp = tsmsg.mutable_timestamp();
     *timestamp = time::TimePointToTimestamp(tp);
-    auto any = tsmsg.mutable_payload();
-    any->PackFrom(msg);
+    msg.SerializeToString(tsmsg.mutable_payload());
     ecal_pub_.Send(tsmsg);
     return tp;
   }

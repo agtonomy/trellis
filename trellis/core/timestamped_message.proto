@@ -5,8 +5,10 @@ import "google/protobuf/timestamp.proto";
 
 package trellis.core;
 
-message TimestampedMessage
-{
+message TimestampedMessage {
   google.protobuf.Timestamp timestamp = 1;
-  google.protobuf.Any payload = 2;
+  bytes payload = 3;
+
+  // For reading old logs.
+  google.protobuf.Any DEPRECATED_payload = 2;
 }
