@@ -182,6 +182,17 @@ class MessageConsumer {
   }
 
   /**
+   * @brief Size return the number of elements in the FIFO for the given type
+   *
+   * @tparam MSG_T the message type to retrieve
+   * @return size_t the number of MSG_T elements in the FIFO
+   */
+  template <typename MSG_T>
+  size_t Size() {
+    return fifos_.template Size<StampedMessage<MSG_T>>();
+  }
+
+  /**
    * @brief  Next retrieve a reference to the next message for the given type
    *
    *  The next message is the oldest message (i.e. the message at the top of the FIFO)
