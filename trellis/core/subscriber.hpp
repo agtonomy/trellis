@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef TRELLIS_CORE_SUBSCRIBER_HPP
-#define TRELLIS_CORE_SUBSCRIBER_HPP
+#ifndef TRELLIS_CORE_SUBSCRIBER_HPP_
+#define TRELLIS_CORE_SUBSCRIBER_HPP_
 
 #include <ecal/msg/protobuf/dynamic_subscriber.h>
 #include <ecal/msg/protobuf/subscriber.h>
@@ -180,7 +180,7 @@ class SubscriberImpl {
   std::shared_ptr<MSG_T> CreateUserMessage() {
     monitor_.UpdateSnapshot();
     // This will throw on failure
-    return monitor_.GetMessageFromTopic(topic_);
+    return monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));
   }
 
   // For dynamic subscribers, how long before we give up on metadata from the monitor layer
@@ -219,4 +219,4 @@ using DynamicSubscriber = std::shared_ptr<DynamicSubscriberImpl>;
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_SUBSCRIBER_HPP
+#endif  // TRELLIS_CORE_SUBSCRIBER_HPP_
