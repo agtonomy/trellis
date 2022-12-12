@@ -39,7 +39,8 @@ class SubscriberImpl {
    * @param msg the message object that was received
    *
    */
-  using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, const MSG_T& msg)>;
+  using Callback =
+      std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, std::unique_ptr<MSG_T> msg)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
 
   /**
@@ -49,8 +50,9 @@ class SubscriberImpl {
    * @param callback the callback function to receive messages on
    * @param update_sim_fn the function to update sim time on receive
    */
-  SubscriberImpl(std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
-      : topic_{std::move(topic)},
+  SubscriberImpl(EventLoop ev, std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn)
+      : ev_{ev},
+        topic_{std::move(topic)},
         ecal_sub_{topic_},
         ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
         update_sim_fn_{std::move(update_sim_fn)} {
@@ -68,9 +70,10 @@ class SubscriberImpl {
    * @param update_sim_fn the function to update sim time on receive
    * @param watchdog_create_fn the function to create a watchdog timer
    */
-  SubscriberImpl(std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
+  SubscriberImpl(EventLoop ev, std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
                  auto watchdog_create_fn)
-      : topic_{std::move(topic)},
+      : ev_{ev},
+        topic_{std::move(topic)},
         ecal_sub_{topic_},
         ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
         update_sim_fn_{std::move(update_sim_fn)} {
@@ -114,30 +117,33 @@ class SubscriberImpl {
       first_receive_time_ = time::Now();
       did_receive_ = true;
     }
-    if (user_msg_ == nullptr) {
-      try {
-        user_msg_ = CreateUserMessage();
-      } catch (const std::runtime_error& e) {
-        // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
-        // publisher comes online and before we can retrieve the message schema
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
-            kMonitorSettlingTime) {
-          // Only throw if enough time has passed since our first message was received
-          throw e;
-        }
+
+    // XXX (bsirang) consider using some kind of memory pool to make allocation of `user_msg` more efficient
+    std::unique_ptr<MSG_T> user_msg{nullptr};
+    try {
+      user_msg = CreateUserMessage();
+    } catch (const std::runtime_error& e) {
+      // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
+      // publisher comes online and before we can retrieve the message schema
+      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
+          kMonitorSettlingTime) {
+        // Only throw if enough time has passed since our first message was received
+        throw e;
       }
     }
 
-    if (user_msg_ != nullptr) {
-      user_msg_->ParseFromString(msg.payload());
-      CallbackHelperLogic(msg, callback);
+    if (user_msg != nullptr) {
+      // Here's the handoff from the serialization layer. After this point, the message shall not be copied on its way
+      // back to the user
+      user_msg->ParseFromString(msg.payload());
+      CallbackHelperLogic(trellis::core::time::TimePointFromTimestampedMessage(msg), callback, std::move(user_msg));
     }
   }
 
   // Common logic between dynamic and non-dynamic case
-  void CallbackHelperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
+  void CallbackHelperLogic(trellis::core::time::TimePoint msgtime, const Callback& callback,
+                           std::unique_ptr<MSG_T> user_msg) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    const trellis::core::time::TimePoint msgtime{trellis::core::time::TimePointFromTimestampedMessage(msg)};
     // Update simulated clock if necessary
     update_sim_fn_(msgtime);
     bool should_callback = (interval_ms == 0);
@@ -152,7 +158,9 @@ class SubscriberImpl {
     }
 
     if (should_callback) {
-      callback(time::Now(), msgtime, *user_msg_);
+      auto now = time::Now();
+      asio::post(*ev_, [now = std::move(now), msgtime = std::move(msgtime), user_msg = std::move(user_msg),
+                        callback]() mutable { callback(now, msgtime, std::move(user_msg)); });
     }
   }
 
@@ -172,12 +180,12 @@ class SubscriberImpl {
   }
 
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::shared_ptr<MSG_T> CreateUserMessage() {
-    return std::make_shared<MSG_T>();
+  std::unique_ptr<MSG_T> CreateUserMessage() {
+    return std::make_unique<MSG_T>();
   }
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::shared_ptr<MSG_T> CreateUserMessage() {
+  std::unique_ptr<MSG_T> CreateUserMessage() {
     monitor_.UpdateSnapshot();
     // This will throw on failure
     return monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));
@@ -186,6 +194,7 @@ class SubscriberImpl {
   // For dynamic subscribers, how long before we give up on metadata from the monitor layer
   static constexpr unsigned kMonitorSettlingTime{1000U};
 
+  EventLoop ev_;
   std::string topic_;
 
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
@@ -199,10 +208,6 @@ class SubscriberImpl {
 
   // Used for dynamic subscribers
   trellis::core::MonitorInterface monitor_;
-
-  // Cache the message sent to the user, using a shared pointer here since
-  // it's useful in the dynamic case where MSG_T = google::protobuf::Message
-  std::shared_ptr<MSG_T> user_msg_{nullptr};
 
   // Used to know how long to wait for the monitor layer
   time::TimePoint first_receive_time_{};

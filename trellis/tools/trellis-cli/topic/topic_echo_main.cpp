@@ -60,7 +60,7 @@ int topic_echo_main(int argc, char* argv[]) {
     auto sub = node.CreateDynamicSubscriber(
         topic, [ev, throttle_interval_ms, add_whitespace, timestamp](const trellis::core::time::TimePoint& now,
                                                                      const trellis::core::time::TimePoint& msgtime,
-                                                                     const google::protobuf::Message& msg) {
+                                                                     std::unique_ptr<google::protobuf::Message> msg) {
           if (throttle_interval_ms != 0) {
             auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_echo_time_).count();
             if (elapsed_ms <= throttle_interval_ms) {
@@ -75,7 +75,7 @@ int topic_echo_main(int argc, char* argv[]) {
           json_options.always_print_primitive_fields = true;
           json_options.always_print_enums_as_ints = false;
           json_options.preserve_proto_field_names = false;
-          auto status = google::protobuf::util::MessageToJsonString(msg, &json_raw, json_options);
+          auto status = google::protobuf::util::MessageToJsonString(*msg, &json_raw, json_options);
           if (!status.ok()) {
             std::ostringstream ss;
             ss << status;

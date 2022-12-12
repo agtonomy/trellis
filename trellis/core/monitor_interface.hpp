@@ -52,9 +52,9 @@ class MonitorInterface {
    *
    * This is useful for dynamic publishers and subscribers, where the message scheme must be determined at runtime.
    *
-   * @return a shared pointer to a proto message
+   * @return a pointer to a proto message
    */
-  std::shared_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
+  std::unique_ptr<google::protobuf::Message> GetMessageFromTopic(const std::string& topic);
 
   /**
    * PrintTopics print the list of topic metadata broadcasted on the monitoring layer

@@ -30,11 +30,12 @@ TEST_F(TrellisFixture, BasicPubSub) {
 
   auto pub = node_.CreatePublisher<test::Test>("test_topic");
   auto sub = node_.CreateSubscriber<test::Test>(
-      "test_topic", [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
-        ASSERT_EQ(msg.id(), receive_count);
+      "test_topic", [](const time::TimePoint&, const time::TimePoint&, std::unique_ptr<test::Test> msg) {
+        ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
       });
 
+  StartRunnerThread();
   WaitForDiscovery();
 
   // Sanity check initial value
@@ -58,8 +59,8 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
   auto pub = node_.CreatePublisher<test::Test>("test_watchdog_topic");
   auto sub = node_.CreateSubscriber<test::Test>(
       "test_watchdog_topic",
-      [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
-        ASSERT_EQ(msg.id(), receive_count);
+      [](const time::TimePoint&, const time::TimePoint&, std::unique_ptr<test::Test> msg) {
+        ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
       },
       50, [](const trellis::core::time::TimePoint&) { ++watchdog_count; });
@@ -116,8 +117,8 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
   auto pub = node_.CreatePublisher<test::Test>("test_throttle_topic");
   auto sub = node_.CreateSubscriber<test::Test>(
       "test_throttle_topic",
-      [](const time::TimePoint&, const time::TimePoint&, const test::Test& msg) {
-        ASSERT_TRUE(msg.id() >= receive_count);
+      [](const time::TimePoint&, const time::TimePoint&, std::unique_ptr<test::Test> msg) {
+        ASSERT_TRUE(msg->id() >= receive_count);
         ++receive_count;
       },
       {}, {}, 100.0);

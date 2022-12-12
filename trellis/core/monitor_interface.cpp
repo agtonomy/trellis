@@ -111,7 +111,7 @@ const eCAL::pb::Monitoring& MonitorInterface::UpdateSnapshot() {
   return snapshot_;
 }
 
-std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic(const std::string& topic) {
+std::unique_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic(const std::string& topic) {
   std::string topic_type = eCAL::Util::GetTopicTypeName(topic);
   topic_type = topic_type.substr(topic_type.find_first_of(':') + 1, topic_type.size());
   topic_type = topic_type.substr(topic_type.find_last_of('.') + 1, topic_type.size());
@@ -133,7 +133,7 @@ std::shared_ptr<google::protobuf::Message> MonitorInterface::GetMessageFromTopic
   proto_desc.ParseFromString(topic_description);
   std::string error_s;
 
-  auto message = std::shared_ptr<google::protobuf::Message>{
+  auto message = std::unique_ptr<google::protobuf::Message>{
       decoder_.GetProtoMessageFromDescriptorSet(proto_desc, topic_type, error_s)};
 
   if (error_s.size() > 0) {

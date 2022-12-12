@@ -44,7 +44,7 @@ class MultiFifo {
   }
 
   template <typename T>
-  T Newest() {
+  const T& Newest() {
     return access<T>().Newest();
   }
 
@@ -65,14 +65,14 @@ class MultiFifo {
   // given type from the tuple.
   // This solution was heavily inspired by
   // https://stackoverflow.com/questions/27941661/generating-one-class-member-per-variadic-template-argument
-  using fifotupletype = std::tuple<Fifo<Types, std::mutex, MAX_SIZE>...>;
+  using fifotupletype = std::tuple<Fifo<Types, MAX_SIZE>...>;
   template <int N, typename T>
   struct FifoOfType : SameType<T, typename std::tuple_element<N, fifotupletype>::type::value_type> {};
 
   template <int N, class T, class Tuple,
             bool Match = false>  // this =false is only for clarity
   struct MatchingField {
-    static Fifo<T, std::mutex, MAX_SIZE>& get(Tuple& tp) {
+    static Fifo<T, MAX_SIZE>& get(Tuple& tp) {
       // The "non-matching" version
       return MatchingField<N + 1, T, Tuple, FifoOfType<N + 1, T>::value>::get(tp);
     }
@@ -80,11 +80,11 @@ class MultiFifo {
 
   template <int N, class T, class Tuple>
   struct MatchingField<N, T, Tuple, true> {
-    static Fifo<T, std::mutex, MAX_SIZE>& get(Tuple& tp) { return std::get<N>(tp); }
+    static Fifo<T, MAX_SIZE>& get(Tuple& tp) { return std::get<N>(tp); }
   };
 
   template <typename T>
-  Fifo<T, std::mutex, MAX_SIZE>& access() {
+  Fifo<T, MAX_SIZE>& access() {
     return MatchingField<0, T, fifotupletype, FifoOfType<0, T>::value>::get(fifos_);
   }
   fifotupletype fifos_;

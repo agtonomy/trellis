@@ -25,9 +25,9 @@ using namespace trellis;
 
 namespace {
 struct TestMsg {
-  size_t x;
-  size_t y;
-  size_t z;
+  size_t x{0};
+  size_t y{0};
+  size_t z{0};
   bool operator==(const TestMsg& rhs) const { return (x == rhs.x) && (y == rhs.y) && (z == rhs.z); }
 };
 
@@ -55,7 +55,7 @@ unsigned MoveCopyTest::move_count = 0;
 
 TEST(FifoTests, FifoDoesntGrowPastLimit) {
   constexpr size_t kFifoSize = 10U;
-  trellis::containers::Fifo<TestMsg, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
 
   // Push more than the FIFO holds and confirm size doesn't grow beyond kFifoSize
   for (size_t i = 0; i < kFifoSize * 2; ++i) {
@@ -66,7 +66,7 @@ TEST(FifoTests, FifoDoesntGrowPastLimit) {
 
 TEST(FifoTests, NextReturnsTopOfQueue) {
   constexpr size_t kFifoSize = 10U;
-  trellis::containers::Fifo<TestMsg, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
   for (size_t i = 0; i < kFifoSize; ++i) {
     fifo.Push({i, i * 2, i * 3});
   }
@@ -79,7 +79,7 @@ TEST(FifoTests, NextReturnsTopOfQueue) {
 
 TEST(FifoTests, NewestReturnsMostRecent) {
   constexpr size_t kFifoSize = 10U;
-  trellis::containers::Fifo<TestMsg, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
   for (size_t i = 0; i < kFifoSize; ++i) {
     fifo.Push({i, i * 2, i * 3});
     const auto& newest = fifo.Newest();
@@ -95,7 +95,7 @@ TEST(FifoTests, MoveObjectsInAndOut) {
   MoveCopyTest::ResetCounters();
   constexpr size_t kFifoSize = 10U;
 
-  trellis::containers::Fifo<MoveCopyTest, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<MoveCopyTest, kFifoSize> fifo;
 
   MoveCopyTest dummy{};
   fifo.Push(std::move(dummy));
@@ -104,14 +104,14 @@ TEST(FifoTests, MoveObjectsInAndOut) {
   (void)next;
 
   ASSERT_EQ(MoveCopyTest::copy_count, 0);
-  ASSERT_EQ(MoveCopyTest::move_count, 4);
+  ASSERT_EQ(MoveCopyTest::move_count, 3);
 }
 
 TEST(FifoTests, CopyObjectsInAndMoveOut) {
   MoveCopyTest::ResetCounters();
   constexpr size_t kFifoSize = 10U;
 
-  trellis::containers::Fifo<MoveCopyTest, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<MoveCopyTest, kFifoSize> fifo;
 
   MoveCopyTest dummy{};
   fifo.Push(dummy);
@@ -120,14 +120,14 @@ TEST(FifoTests, CopyObjectsInAndMoveOut) {
   (void)next;
 
   ASSERT_EQ(MoveCopyTest::copy_count, 1);
-  ASSERT_EQ(MoveCopyTest::move_count, 3);
+  ASSERT_EQ(MoveCopyTest::move_count, 2);
 }
 
 TEST(FifoTests, TemporaryObjectIn) {
   MoveCopyTest::ResetCounters();
   constexpr size_t kFifoSize = 10U;
 
-  trellis::containers::Fifo<MoveCopyTest, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<MoveCopyTest, kFifoSize> fifo;
 
   fifo.Push(MoveCopyTest{});
 
@@ -135,12 +135,12 @@ TEST(FifoTests, TemporaryObjectIn) {
   (void)next;
 
   ASSERT_EQ(MoveCopyTest::copy_count, 0);
-  ASSERT_EQ(MoveCopyTest::move_count, 3);
+  ASSERT_EQ(MoveCopyTest::move_count, 2);
 }
 
 TEST(FifoTests, NextOnEmptyFifoThrows) {
   constexpr size_t kFifoSize = 10U;
-  trellis::containers::Fifo<TestMsg, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
 
   fifo.Push(TestMsg{1, 2, 3});
 
@@ -148,12 +148,19 @@ TEST(FifoTests, NextOnEmptyFifoThrows) {
   EXPECT_THROW(fifo.Next(), std::runtime_error);
 }
 
-TEST(FifoTests, NewestOnEmptyFifoThrows) {
+TEST(FifoTests, NewestBeforePushReturnsDefault) {
   constexpr size_t kFifoSize = 10U;
-  trellis::containers::Fifo<TestMsg, std::mutex, kFifoSize> fifo;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
+
+  ASSERT_EQ(fifo.Newest(), TestMsg());
+}
+
+TEST(FifoTests, NewestAfterEmptyReturnsCached) {
+  constexpr size_t kFifoSize = 10U;
+  trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
 
   fifo.Push(TestMsg{1, 2, 3});
-
+  ASSERT_EQ(fifo.Newest(), TestMsg(1, 2, 3));
   (void)fifo.Next();
-  EXPECT_THROW(fifo.Newest(), std::runtime_error);
+  ASSERT_EQ(fifo.Newest(), TestMsg(1, 2, 3));
 }

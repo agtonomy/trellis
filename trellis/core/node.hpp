@@ -126,12 +126,13 @@ class Node {
                                      std::optional<double> max_frequency = {}) {
     const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
-    const auto impl = do_watchdog ? std::make_shared<SubscriberImpl<MSG_T>>(
-                                        topic, callback, update_sim_fn,
-                                        [this, watchdog_callback, initial_delay_ms = watchdog_timeout_ms.value()]() {
-                                          return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
-                                        })
-                                  : std::make_shared<SubscriberImpl<MSG_T>>(topic, callback, update_sim_fn);
+    const auto impl = do_watchdog
+                          ? std::make_shared<SubscriberImpl<MSG_T>>(
+                                GetEventLoop(), topic, callback, update_sim_fn,
+                                [this, watchdog_callback, initial_delay_ms = watchdog_timeout_ms.value()]() {
+                                  return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
+                                })
+                          : std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), topic, callback, update_sim_fn);
     if (max_frequency.has_value()) {
       impl->SetMaxFrequencyThrottle(*max_frequency);
     }

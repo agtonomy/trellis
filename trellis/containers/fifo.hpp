@@ -18,46 +18,27 @@
 #ifndef TRELLIS_CONTAINERS_FIFO_HPP_
 #define TRELLIS_CONTAINERS_FIFO_HPP_
 
-#include <mutex>
 #include <queue>
 
 namespace trellis {
 namespace containers {
 
-template <typename T, typename MUTEX_T = std::mutex, size_t MAX_SIZE = 1U>
+template <typename T, size_t MAX_SIZE = 1U>
 class Fifo {
  public:
   using value_type = typename std::queue<T>::value_type;
 
-  size_t Size() {
-    std::lock_guard<MUTEX_T> lock(mutex_);
-    return Size_();
-  }
+  size_t Size() const { return queue_.size(); }
 
   void Push(T x) {
-    std::lock_guard<MUTEX_T> lock(mutex_);
-    Push_(std::forward<T>(x));
+    queue_.push(std::forward<T>(x));
+    if (Size() > MAX_SIZE) {
+      (void)Next();
+    }
+    fifo_updated_since_newest_call_ = true;
   }
 
   T Next() {
-    std::lock_guard<MUTEX_T> lock(mutex_);
-    return Pop_();
-  }
-
-  T Newest() {
-    std::lock_guard<MUTEX_T> lock(mutex_);
-    return Back_();
-  }
-
- private:
-  void Push_(T x) {
-    queue_.push(std::forward<T>(x));
-    if (Size_() > MAX_SIZE) {
-      (void)Pop_();
-    }
-  }
-
-  T Pop_() {
     if (queue_.empty()) {
       throw std::runtime_error("Attempt to pop empty queue!");
     }
@@ -66,6 +47,15 @@ class Fifo {
     return top;
   }
 
+  const T& Newest() {
+    if (!Empty_() && fifo_updated_since_newest_call_) {
+      newest_ = Back_();
+    }
+    fifo_updated_since_newest_call_ = false;
+    return newest_;
+  }
+
+ private:
   T Back_() const {
     if (queue_.empty()) {
       throw std::runtime_error("Attempt to access empty queue!");
@@ -73,10 +63,11 @@ class Fifo {
     return queue_.back();
   }
 
-  size_t Size_() { return queue_.size(); }
+  bool Empty_() const { return queue_.empty(); }
 
   std::queue<T> queue_;
-  MUTEX_T mutex_;
+  T newest_{};
+  bool fifo_updated_since_newest_call_{false};
 };
 
 }  // namespace containers

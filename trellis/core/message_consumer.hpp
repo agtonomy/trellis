@@ -150,8 +150,7 @@ class MessageConsumer {
         new_message_callbacks_{},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
-        max_frequencies_hz_{max_frequencies_hz},
-        loop_{node.GetEventLoop()} {
+        max_frequencies_hz_{max_frequencies_hz} {
     CreateSubscribers(node);
   }
 
@@ -176,8 +175,7 @@ class MessageConsumer {
         new_message_callbacks_{callbacks},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
-        max_frequencies_hz_{max_frequencies_hz},
-        loop_{node.GetEventLoop()} {
+        max_frequencies_hz_{max_frequencies_hz} {
     CreateSubscribers(node);
   }
 
@@ -200,6 +198,7 @@ class MessageConsumer {
    * @tparam MSG_T the message type to retrieve
    * @param updated an optional user-supplied pointer to a bool which is true if the message was just updated
    * @return A reference to a timestamped message of the given type
+   * @throws std::runtime error if the underlying FIFO is empty
    */
   template <typename MSG_T>
   StampedMessage<MSG_T> Next() {
@@ -209,11 +208,15 @@ class MessageConsumer {
   /**
    * @brief Newest retrieve the newest (most recent) message for the given type
    *
+   * Note: if no messages have been received a default-constructed MSG_T is returned
+   * Caution: Applications should only use the Newest API if they are not NewMessageCallback
+   * functions since the FIFOs are drained when messages are passed to the new message callbacks
+   *
    * @tparam MSG_T the message type to retrieve
-   * @return StampedMessage<MSG_T> A timestamped message of the given type
+   * @return StampedMessage<MSG_T>& A reference to a timestamped message of the given type
    */
   template <typename MSG_T>
-  StampedMessage<MSG_T> Newest() {
+  const StampedMessage<MSG_T>& Newest() {
     return fifos_.template Newest<StampedMessage<MSG_T>>();
   }
 
@@ -269,9 +272,9 @@ class MessageConsumer {
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       const auto message_callback = [topic, this, &latest_stamp](const time::TimePoint& now,
                                                                  const time::TimePoint& msgtime,
-                                                                 const MessageType& msg) {
+                                                                 std::unique_ptr<MessageType> msg) {
         latest_stamp = msgtime;
-        NewMessage(topic, now, msgtime, msg);
+        NewMessage(topic, now, msgtime, std::move(msg));
       };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
@@ -302,26 +305,19 @@ class MessageConsumer {
 
   template <typename MSG_T>
   void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
-                  const MSG_T& msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(StampedMessage<MSG_T>{msgtime, msg});
+                  std::unique_ptr<MSG_T> msg) {
+    fifos_.template Push<StampedMessage<MSG_T>>(StampedMessage<MSG_T>{msgtime, std::move(*msg)});
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
-      // XXX(bsirang): are there any thread-safety issues here?
-      // According to https://think-async.com/Asio/asio-1.18.2/doc/asio/overview/core/threads.html
-      // asio::post() seems to be thread-safe
-      auto cb = update_callback_;
-      asio::post(*loop_, [cb]() { cb(); });
+      update_callback_();
     }
 
     // Check if we have a callback to directly ingest a message of this particular type
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
-      auto cb = new_message_callback;
       auto next = Next<MSG_T>();
-      asio::post(*loop_, [topic, cb = std::move(cb), next = std::move(next), now] {
-        cb(topic, next.message, now, next.timestamp);
-      });
+      new_message_callback(topic, next.message, now, next.timestamp);
     }
   }
 
@@ -338,7 +334,6 @@ class MessageConsumer {
   const OptionalWatchdogTimeoutsArray watchdog_timeouts_ms_;
   const WatchdogCallbacksArray watchdog_callbacks_;
   const OptionalMaxFrequencyArray max_frequencies_hz_;
-  const EventLoop loop_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
   LatestTimestampArray latest_timestamps_;
