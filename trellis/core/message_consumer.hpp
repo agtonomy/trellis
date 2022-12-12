@@ -51,10 +51,17 @@ struct Index<T, std::tuple<U, Types...>> {
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
  *
  * This class uses variadic templates to specify an arbitrary number of message types for which subscribers will be
- * created. Furthermore, this class will manage FIFOs to queue up inbound messages and deal with thread-safety. All user
- * callbacks will be invoked using the event loop handle, and all thread-synchronization is handled internally. This
+ * created. Furthermore, this class will manage FIFOs to queue up inbound messages. All user
+ * callbacks will be invoked using the event loop handle used by the underlying subscribers. This
  * means that the user can interact with the messages freely (without threading concerns) from any message consumer
  * callbacks or any other callback running on the given event loop (such as timers)
+ *
+ * There are two high-level usage patterns for this module. The first pattern is to use a callback to consume messages
+ * off of the underlying FIFO as they come in. The other pattern is to call Newest<MSG_T>() to access the most recent
+ * message. For a given message type, these patterns should not be mixed.
+ *
+ * For applications that only care about the most recent messages at each cycle of execution, they should use FIFO_DEPTH
+ * of one. Also using Newest<>() with FIFO_DEPTH greater than one doesn't generally make sense to do.
  *
  * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
  * @tparam Types variadic list of message types to consume
@@ -191,21 +198,6 @@ class MessageConsumer {
   }
 
   /**
-   * @brief  Next retrieve a reference to the next message for the given type
-   *
-   *  The next message is the oldest message (i.e. the message at the top of the FIFO)
-   *
-   * @tparam MSG_T the message type to retrieve
-   * @param updated an optional user-supplied pointer to a bool which is true if the message was just updated
-   * @return A reference to a timestamped message of the given type
-   * @throws std::runtime error if the underlying FIFO is empty
-   */
-  template <typename MSG_T>
-  StampedMessage<MSG_T> Next() {
-    return fifos_.template Next<StampedMessage<MSG_T>>();
-  }
-
-  /**
    * @brief Newest retrieve the newest (most recent) message for the given type
    *
    * Note: if no messages have been received a default-constructed MSG_T is returned
@@ -217,6 +209,12 @@ class MessageConsumer {
    */
   template <typename MSG_T>
   const StampedMessage<MSG_T>& Newest() {
+    // TODO (bsirang) look into evaluating this at compile time
+    const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
+    if (new_message_callback) {
+      throw std::runtime_error(
+          "Invalid use of Newest<>() while a new message callback was given for the message type.");
+    }
     return fifos_.template Newest<StampedMessage<MSG_T>>();
   }
 
@@ -316,7 +314,7 @@ class MessageConsumer {
     // Check if we have a callback to directly ingest a message of this particular type
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
-      auto next = Next<MSG_T>();
+      auto next = fifos_.template Next<StampedMessage<MSG_T>>();
       new_message_callback(topic, next.message, now, next.timestamp);
     }
   }
