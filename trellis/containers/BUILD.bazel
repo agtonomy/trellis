@@ -5,6 +5,7 @@ cc_library(
     ],
     hdrs = [
         "fifo.hpp",
+        "memory_pool.hpp",
         "multi_fifo.hpp",
         "transforms.hpp",
     ],

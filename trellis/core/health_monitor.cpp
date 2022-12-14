@@ -40,10 +40,10 @@ HealthMonitor::HealthMonitor(const trellis::core::EventLoop& loop, const trellis
     : ev_loop_{loop},
       reporting_watchdog_ms_{GetReportingIntervalTimeoutFromConfig(config)},
       timer_create_fn_{timer_create_fn},
-      subscriber_{
-          subscriber_create_fn(trellis::core::Health::GetTopicFromConfig(config),
-                               [this](const time::TimePoint&, const time::TimePoint&,
-                                      std::unique_ptr<trellis::core::HealthHistory> status) { NewUpdate(*status); })},
+      subscriber_{subscriber_create_fn(
+          trellis::core::Health::GetTopicFromConfig(config),
+          [this](const time::TimePoint&, const time::TimePoint&,
+                 SubscriberImpl<trellis::core::HealthHistory>::PointerType status) { NewUpdate(*status); })},
       health_event_cb_{health_event_callback} {}
 
 void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {

@@ -70,9 +70,34 @@ template <size_t FIFO_DEPTH, typename... Types>
 class MessageConsumer {
  public:
   template <typename T>
-  struct StampedMessage {
+  using PointerType = SubscriberImpl<T>::PointerType;
+
+  /**
+   * @brief Structure to hold a timestamp and a message pointer
+   *
+   * Lightweight structure to hold a timestamp and a pointer to a message. This structure is used with the FIFOs
+   *
+   * @tparam T Message type to hold
+   */
+  template <typename T>
+  struct StampedMessagePtr {
     time::TimePoint timestamp;
-    T message;
+    PointerType<T> message;
+  };
+
+  /**
+   * @brief Structure to hold a timestamp and a const ref message pointer
+   *
+   * Lightweight structure to hold a timestamp and a const reference to a message. This structure is passed to users.
+   *
+   * @tparam T Message type to hold
+   * @see Newest<T>()
+   */
+  template <typename T>
+  struct StampedMessage {
+    StampedMessage(const StampedMessagePtr<T>& ptr) : timestamp{ptr.timestamp}, message{*(ptr.message)} {}
+    time::TimePoint timestamp;
+    const T& message;
   };
 
   /**
@@ -194,7 +219,7 @@ class MessageConsumer {
    */
   template <typename MSG_T>
   size_t Size() {
-    return fifos_.template Size<StampedMessage<MSG_T>>();
+    return fifos_.template Size<StampedMessagePtr<MSG_T>>();
   }
 
   /**
@@ -208,14 +233,14 @@ class MessageConsumer {
    * @return StampedMessage<MSG_T>& A reference to a timestamped message of the given type
    */
   template <typename MSG_T>
-  const StampedMessage<MSG_T>& Newest() {
-    // TODO (bsirang) look into evaluating this at compile time
+  StampedMessage<MSG_T> Newest() {
+    // TODO (bsirang) look into evaluating this at compile time.
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
       throw std::runtime_error(
           "Invalid use of Newest<>() while a new message callback was given for the message type.");
     }
-    return fifos_.template Newest<StampedMessage<MSG_T>>();
+    return StampedMessage<MSG_T>(fifos_.template Newest<StampedMessagePtr<MSG_T>>());
   }
 
   /**
@@ -270,9 +295,9 @@ class MessageConsumer {
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       const auto message_callback = [topic, this, &latest_stamp](const time::TimePoint& now,
                                                                  const time::TimePoint& msgtime,
-                                                                 std::unique_ptr<MessageType> msg) {
+                                                                 SubscriberImpl<MessageType>::PointerType msg) {
         latest_stamp = msgtime;
-        NewMessage(topic, now, msgtime, std::move(msg));
+        NewMessage<MessageType>(topic, now, msgtime, std::move(msg));
       };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
@@ -303,8 +328,8 @@ class MessageConsumer {
 
   template <typename MSG_T>
   void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
-                  std::unique_ptr<MSG_T> msg) {
-    fifos_.template Push<StampedMessage<MSG_T>>(StampedMessage<MSG_T>{msgtime, std::move(*msg)});
+                  SubscriberImpl<MSG_T>::PointerType msg) {
+    fifos_.template Push<StampedMessagePtr<MSG_T>>(StampedMessagePtr<MSG_T>{msgtime, std::move(msg)});
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
@@ -314,8 +339,8 @@ class MessageConsumer {
     // Check if we have a callback to directly ingest a message of this particular type
     const auto& new_message_callback = std::get<NewMessageCallback<MSG_T>>(new_message_callbacks_);
     if (new_message_callback) {
-      auto next = fifos_.template Next<StampedMessage<MSG_T>>();
-      new_message_callback(topic, next.message, now, next.timestamp);
+      auto next = fifos_.template Next<StampedMessagePtr<MSG_T>>();
+      new_message_callback(topic, *next.message, now, next.timestamp);
     }
   }
 
@@ -333,7 +358,7 @@ class MessageConsumer {
   const WatchdogCallbacksArray watchdog_callbacks_;
   const OptionalMaxFrequencyArray max_frequencies_hz_;
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
-  trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessage<Types>...> fifos_;
+  trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessagePtr<Types>...> fifos_;
   LatestTimestampArray latest_timestamps_;
 };
 

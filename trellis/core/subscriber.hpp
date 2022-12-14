@@ -25,6 +25,7 @@
 #include "proto_utils.hpp"
 #include "time.hpp"
 #include "timer.hpp"
+#include "trellis/containers/memory_pool.hpp"
 
 namespace trellis {
 namespace core {
@@ -39,8 +40,10 @@ class SubscriberImpl {
    * @param msg the message object that was received
    *
    */
-  using Callback =
-      std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, std::unique_ptr<MSG_T> msg)>;
+  // using UniquePtr = std::unique_ptr<MSG_T>;
+  using MessagePool = containers::MemoryPool<MSG_T>;
+  using PointerType = MessagePool::UniquePtr;
+  using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, PointerType msg)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
 
   /**
@@ -118,8 +121,7 @@ class SubscriberImpl {
       did_receive_ = true;
     }
 
-    // XXX (bsirang) consider using some kind of memory pool to make allocation of `user_msg` more efficient
-    std::unique_ptr<MSG_T> user_msg{nullptr};
+    PointerType user_msg{nullptr};
     try {
       user_msg = CreateUserMessage();
     } catch (const std::runtime_error& e) {
@@ -141,8 +143,7 @@ class SubscriberImpl {
   }
 
   // Common logic between dynamic and non-dynamic case
-  void CallbackHelperLogic(trellis::core::time::TimePoint msgtime, const Callback& callback,
-                           std::unique_ptr<MSG_T> user_msg) {
+  void CallbackHelperLogic(trellis::core::time::TimePoint msgtime, const Callback& callback, PointerType user_msg) {
     const unsigned interval_ms = rate_throttle_interval_ms_.load();
     // Update simulated clock if necessary
     update_sim_fn_(msgtime);
@@ -180,15 +181,19 @@ class SubscriberImpl {
   }
 
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::unique_ptr<MSG_T> CreateUserMessage() {
-    return std::make_unique<MSG_T>();
+  PointerType CreateUserMessage() {
+    return pool_.ConstructUniquePointer();
   }
 
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  std::unique_ptr<MSG_T> CreateUserMessage() {
-    monitor_.UpdateSnapshot();
-    // This will throw on failure
-    return monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));
+  PointerType CreateUserMessage() {
+    if (dynamic_message_prototype_ == nullptr) {
+      monitor_.UpdateSnapshot();
+      // This call is expensive, let's cache this message so we can reuse it from here on out.
+      dynamic_message_prototype_ =
+          monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));  // will throw on failure
+    }
+    return std::unique_ptr<MSG_T>(dynamic_message_prototype_->New());
   }
 
   // For dynamic subscribers, how long before we give up on metadata from the monitor layer
@@ -203,6 +208,8 @@ class SubscriberImpl {
       ecal_sub_raw_;  // exists to provide MSG_T metadata on the monitoring layer
 
   UpdateSimulatedClockFunction update_sim_fn_;
+
+  containers::MemoryPool<MSG_T> pool_{};
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_sent_{};
 
@@ -213,6 +220,7 @@ class SubscriberImpl {
   time::TimePoint first_receive_time_{};
   bool did_receive_{false};
   Timer watchdog_timer_{nullptr};
+  PointerType dynamic_message_prototype_{nullptr};
 };
 
 template <typename MSG_T>

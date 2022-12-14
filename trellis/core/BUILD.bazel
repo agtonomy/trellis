@@ -237,6 +237,7 @@ cc_library(
         ":core_monitor_interface",
         ":core_time",
         ":core_timer",
+        "//trellis/containers",
         "@ecal",
     ],
 )

@@ -148,19 +148,19 @@ TEST(FifoTests, NextOnEmptyFifoThrows) {
   EXPECT_THROW(fifo.Next(), std::runtime_error);
 }
 
-TEST(FifoTests, NewestBeforePushReturnsDefault) {
+TEST(FifoTests, NewestBeforePushThrows) {
   constexpr size_t kFifoSize = 10U;
   trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
 
-  ASSERT_EQ(fifo.Newest(), TestMsg());
+  EXPECT_THROW(fifo.Newest(), std::runtime_error);
 }
 
-TEST(FifoTests, NewestAfterEmptyReturnsCached) {
+TEST(FifoTests, NewestAfterEmptyThrows) {
   constexpr size_t kFifoSize = 10U;
   trellis::containers::Fifo<TestMsg, kFifoSize> fifo;
 
   fifo.Push(TestMsg{1, 2, 3});
   ASSERT_EQ(fifo.Newest(), TestMsg(1, 2, 3));
-  (void)fifo.Next();
-  ASSERT_EQ(fifo.Newest(), TestMsg(1, 2, 3));
+  ASSERT_EQ(fifo.Next(), TestMsg(1, 2, 3));
+  EXPECT_THROW(fifo.Newest(), std::runtime_error);
 }

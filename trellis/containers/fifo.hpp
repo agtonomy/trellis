@@ -35,7 +35,6 @@ class Fifo {
     if (Size() > MAX_SIZE) {
       (void)Next();
     }
-    fifo_updated_since_newest_call_ = true;
   }
 
   T Next() {
@@ -47,27 +46,15 @@ class Fifo {
     return top;
   }
 
-  const T& Newest() {
-    if (!Empty_() && fifo_updated_since_newest_call_) {
-      newest_ = Back_();
-    }
-    fifo_updated_since_newest_call_ = false;
-    return newest_;
-  }
-
- private:
-  T Back_() const {
+  const T& Newest() const {
     if (queue_.empty()) {
       throw std::runtime_error("Attempt to access empty queue!");
     }
     return queue_.back();
   }
 
-  bool Empty_() const { return queue_.empty(); }
-
+ private:
   std::queue<T> queue_;
-  T newest_{};
-  bool fifo_updated_since_newest_call_{false};
 };
 
 }  // namespace containers
