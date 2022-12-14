@@ -66,9 +66,16 @@ class PublisherImpl {
     auto timestamp = tsmsg.mutable_timestamp();
     *timestamp = time::TimePointToTimestamp(tp);
     msg.SerializeToString(tsmsg.mutable_payload());
-    ecal_pub_.Send(tsmsg);
+    Send(tsmsg);
     return tp;
   }
+
+  /**
+   * @brief Send a timestamped message
+   *
+   * @param tsmsg the message to send
+   */
+  void Send(const trellis::core::TimestampedMessage& tsmsg) { ecal_pub_.Send(tsmsg); }
 
  private:
   template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
