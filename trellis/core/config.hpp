@@ -95,6 +95,14 @@ class Config {
    */
   void OverlayFromFile(const std::string filename, bool verbose = false);
 
+  /**
+   * @brief Writes the configuration (including overlay) to the given file.
+   *
+   * @param filename the file name to write to
+   * @param verbose log output
+   */
+  void WriteToFile(std::string_view filename, bool verbose = false) const;
+
  private:
   static void RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose, std::string key_prefix = "");
   YAML::Node root_;

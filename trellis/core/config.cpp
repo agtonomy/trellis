@@ -17,6 +17,7 @@
 
 #include "config.hpp"
 
+#include <fstream>
 #include <iostream>
 
 #include "logging.hpp"
@@ -82,6 +83,14 @@ void Config::RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose,
       }
     }
   }
+}
+
+void Config::WriteToFile(const std::string_view filename, bool verbose) const {
+  // Need to allocate a string because stl file maniuplations require null termination.
+  auto fstream = std::ofstream{std::string{filename}};
+  if (verbose) Log::Info("Writing configuration to {}...", filename);
+  fstream << root_;
+  if (verbose) Log::Info("Done writing configuration to {}.", filename);
 }
 
 }  // namespace core

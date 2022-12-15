@@ -107,15 +107,12 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_config",
-    srcs = [
-        "test_config.cpp",
-    ],
+    name = "core_config_test",
+    srcs = ["config_test.cpp"],
     data = [
         ":test_base_config.yml",
         ":test_overlay_config.yml",
     ],
-    visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_config",
         "@com_google_googletest//:gtest_main",
