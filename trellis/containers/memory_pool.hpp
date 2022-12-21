@@ -63,6 +63,7 @@ class MemoryPool {
    * @throws std::bad_alloc if the pool is exhausted
    */
   void* Allocate() {
+    std::lock_guard<std::mutex> lock(free_slot_mutex_);
     const auto slot = FindAnUnusedSlot();
     if (slot) {
       free_slots_.erase(*slot);
@@ -95,6 +96,7 @@ class MemoryPool {
   void Free(void* ptr) {
     if (ptr != nullptr) {
       const auto slot = GetSlotNumberFromPointer(ptr);
+      std::lock_guard<std::mutex> lock(free_slot_mutex_);
       if (free_slots_.find(slot) != free_slots_.end()) {
         // double free!
         throw std::runtime_error("double free detected on slot " + std::to_string(slot));
@@ -109,7 +111,10 @@ class MemoryPool {
    *
    * @return size_t the number of slots
    */
-  size_t FreeSlotsRemaining() const { return free_slots_.size(); }
+  size_t FreeSlotsRemaining() {
+    std::lock_guard<std::mutex> lock(free_slot_mutex_);
+    return free_slots_.size();
+  }
 
   /**
    * @brief Return a shared pointer to a newly allocated and constructed object
@@ -189,7 +194,8 @@ class MemoryPool {
    *
    * @return std::optional<size_t> an unused slot or std::nullopt_t of there exists no unsed slots
    */
-  std::optional<size_t> FindAnUnusedSlot() const {
+  std::optional<size_t> FindAnUnusedSlot() {
+    // No mutex needed since this is a private method the synchronization will be handled by the caller
     if (free_slots_.size() == 0) {
       return std::nullopt;
     }
@@ -211,6 +217,7 @@ class MemoryPool {
 
   std::vector<std::byte> byte_buffer_ = std::vector<std::byte>(kPoolSizeBytes);
   std::unordered_set<size_t> free_slots_{InitializeFreeSlotSet()};
+  std::mutex free_slot_mutex_;
 };
 
 }  // namespace containers
