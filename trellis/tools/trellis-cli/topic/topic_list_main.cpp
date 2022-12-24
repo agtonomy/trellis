@@ -18,6 +18,7 @@
 #include <google/protobuf/util/json_util.h>
 
 #include <cxxopts.hpp>
+#include <set>
 #include <thread>
 
 #include "VariadicTable.h"
@@ -32,14 +33,14 @@ namespace cli {
 struct TopicInfo {
   unsigned publisher_count{0};
   unsigned subscriber_count{0};
-  std::unordered_set<std::string> types{};
-  std::unordered_set<std::string> hostnames;
+  std::set<std::string> types{};
+  std::set<std::string> hostnames{};
   double pub_freq{0.0};
   unsigned pub_count{0};
-  std::string transports{};
+  std::set<std::string> transports{};
 };
 
-std::string StringifySet(const std::unordered_set<std::string>& set) {
+std::string StringifySet(const std::set<std::string>& set) {
   std::string result;
   for (const auto& item : set) {
     if (result.size() > 0) {
@@ -103,7 +104,7 @@ int topic_list_main(int argc, char* argv[]) {
           topic_info.pub_count = topic.dclock();
           topic_info.pub_freq = topic.dfreq() / 1000.0;
           for (const auto& layer : topic.tlayer()) {
-            topic_info.transports += eCAL::pb::eTLayerType_Name(layer.type()) + " ";
+            topic_info.transports.insert(eCAL::pb::eTLayerType_Name(layer.type()));
           }
         } else {
           ++topic_info.subscriber_count;
@@ -115,7 +116,7 @@ int topic_list_main(int argc, char* argv[]) {
         {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Type", "Transports"});
     for (const auto& [topic, info] : topic_map) {
       vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count,
-                StringifySet(info.types), info.transports);
+                StringifySet(info.types), StringifySet(info.transports));
     }
     vt.print(std::cout);
   }
