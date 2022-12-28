@@ -66,7 +66,7 @@ class MemoryPool {
     std::lock_guard<std::mutex> lock(free_slot_mutex_);
     const auto slot = FindAnUnusedSlot();
     if (slot) {
-      free_slots_.erase(*slot);
+      free_slots_[*slot] = false;
     }
     if (!slot) {
       throw std::bad_alloc();
@@ -97,11 +97,11 @@ class MemoryPool {
     if (ptr != nullptr) {
       const auto slot = GetSlotNumberFromPointer(ptr);
       std::lock_guard<std::mutex> lock(free_slot_mutex_);
-      if (free_slots_.find(slot) != free_slots_.end()) {
+      if (free_slots_[slot] == true) {
         // double free!
         throw std::runtime_error("double free detected on slot " + std::to_string(slot));
       } else {
-        free_slots_.insert(slot);
+        free_slots_[slot] = true;
       }
     }
   }
@@ -113,7 +113,13 @@ class MemoryPool {
    */
   size_t FreeSlotsRemaining() {
     std::lock_guard<std::mutex> lock(free_slot_mutex_);
-    return free_slots_.size();
+    unsigned count = NUM_SLOTS;
+    for (size_t i = 0; i < NUM_SLOTS; ++i) {
+      if (free_slots_[i] == false) {
+        --count;
+      }
+    }
+    return count;
   }
 
   /**
@@ -147,6 +153,8 @@ class MemoryPool {
  private:
   static constexpr size_t kSlotSizeBytes = sizeof(T);
   static constexpr size_t kPoolSizeBytes = NUM_SLOTS * kSlotSizeBytes;
+
+  using FreeSlotsContainer = std::array<bool, NUM_SLOTS>;
 
   /**
    * @brief Get the Byte Offset For Slot object
@@ -196,27 +204,27 @@ class MemoryPool {
    */
   std::optional<size_t> FindAnUnusedSlot() {
     // No mutex needed since this is a private method the synchronization will be handled by the caller
-    if (free_slots_.size() == 0) {
-      return std::nullopt;
+    for (size_t i = 0; i < NUM_SLOTS; ++i) {
+      if (free_slots_[i] == true) {
+        return std::optional<size_t>(i);
+      }
     }
-    return std::optional<size_t>(*free_slots_.begin());
+    return std::nullopt;
   }
 
   /**
    * @brief Construct the initial set of unused slots
    *
-   * @return std::unordered_set<size_t> the initial set of unused slots
+   * @return FreeSlotsContainer the initial set of unused slots
    */
-  static std::unordered_set<size_t> InitializeFreeSlotSet() {
-    std::unordered_set<size_t> free_slots;
-    for (size_t i = 0; i < NUM_SLOTS; ++i) {
-      free_slots.insert(i);
-    }
+  static FreeSlotsContainer InitializeFreeSlotContainer() {
+    FreeSlotsContainer free_slots;
+    free_slots.fill(true);
     return free_slots;
   }
 
   std::vector<std::byte> byte_buffer_ = std::vector<std::byte>(kPoolSizeBytes);
-  std::unordered_set<size_t> free_slots_{InitializeFreeSlotSet()};
+  FreeSlotsContainer free_slots_{InitializeFreeSlotContainer()};
   std::mutex free_slot_mutex_;
 };
 
