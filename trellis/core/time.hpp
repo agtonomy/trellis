@@ -15,17 +15,15 @@
  *
  */
 
-#ifndef TRELLIS_CORE_TIME_HPP
-#define TRELLIS_CORE_TIME_HPP
+#ifndef TRELLIS_CORE_TIME_HPP_
+#define TRELLIS_CORE_TIME_HPP_
 
+#include "time_types.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
 namespace core {
 namespace time {
-
-using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
-using SystemTimePoint = std::chrono::time_point<std::chrono::system_clock>;
 
 /**
  * now Get the current time
@@ -130,4 +128,4 @@ SystemTimePoint TimePointToSystemTime(const TimePoint& time);
 }  // namespace core
 }  // namespace trellis
 
-#endif  // TRELLIS_CORE_TIME_HPP
+#endif  // TRELLIS_CORE_TIME_HPP_

@@ -107,7 +107,16 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_proto",
+        ":core_time_types",
     ],
+)
+
+cc_library(
+    name = "core_time_types",
+    hdrs = [
+        "time_types.hpp",
+    ],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
