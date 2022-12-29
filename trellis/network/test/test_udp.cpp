@@ -23,7 +23,7 @@ using trellis::network::UDP;
 using trellis::network::UDPReceiver;
 
 TEST(UDPTests, SendAndReceive) {
-  auto loop = trellis::core::CreateEventLoop();
+  trellis::core::EventLoop loop;
   static std::string msg{"The quick brown fox jumps over the lazy dog."};
 
   std::array<uint8_t, 1024> buffer;
@@ -49,13 +49,13 @@ TEST(UDPTests, SendAndReceive) {
   // Run once for send and receive
   static constexpr unsigned expected_receive_count = 1;
   for (unsigned i = 0; i < expected_receive_count * 2; ++i) {
-    loop->run_one();  // call once per receive and send
+    loop.RunOne();  // call once per receive and send
   }
   ASSERT_EQ(receive_count, expected_receive_count);
 }
 
 TEST(UDPTests, Receiver) {
-  auto loop = trellis::core::CreateEventLoop();
+  trellis::core::EventLoop loop;
 
   static std::string msg{"The quick brown fox jumps over the lazy dog."};
   static unsigned receive_count = 0;
@@ -78,7 +78,7 @@ TEST(UDPTests, Receiver) {
 
   static constexpr unsigned expected_receive_count = 2;
   for (unsigned i = 0; i < expected_receive_count * 2; ++i) {
-    loop->run_one();  // call once per receive and send
+    loop.RunOne();  // call once per receive and send
   }
   ASSERT_EQ(receive_count, expected_receive_count);
   ASSERT_EQ(receive_bytes_count, 88);

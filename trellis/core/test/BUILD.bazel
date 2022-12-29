@@ -107,6 +107,18 @@ cc_test(
 )
 
 cc_test(
+    name = "test_core_event_loop",
+    srcs = [
+        "test_event_loop.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_event_loop",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_config_test",
     srcs = ["config_test.cpp"],
     data = [

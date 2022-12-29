@@ -38,6 +38,7 @@ TEST_F(TrellisFixture, BasicPubSub) {
 
   StartRunnerThread();
   WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -68,6 +69,7 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
 
   StartRunnerThread();
   WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
 
   // Sanity check initial values
   ASSERT_EQ(receive_count, 0U);
@@ -126,6 +128,7 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
 
   StartRunnerThread();
   WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
 
   for (unsigned i = 0; i < 20U; ++i) {
     test::Test test_msg;

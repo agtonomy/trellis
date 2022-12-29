@@ -15,6 +15,7 @@
  *
  */
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <iostream>
@@ -80,10 +81,8 @@ TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
   auto timer = node_.CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-  // There may be jitter, we're not concerned with a precise count
-  bool expected_count = (fire_count == 5U || fire_count == 6U);
-
-  ASSERT_EQ(expected_count, true);
+  // There may be a lot of jitter depending on system load, so we're not concerned with a precise count
+  ASSERT_THAT(fire_count, testing::AllOf(testing::Gt(0), testing::Le(6)));
 }
 
 TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {

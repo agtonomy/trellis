@@ -315,17 +315,10 @@ class Node {
    */
   const trellis::core::Config& GetConfig() { return config_; }
 
-  /**
-   * ShouldRun determine if the node should still be running
-   *
-   * This method is useful in cases where other threads are performing work and need
-   * to check for an exit condition.
-   *
-   * @return true if the node should still be running
-   */
-  bool ShouldRun() const;
-
  private:
+  // Helper to determine if we should not be running anymore
+  bool ShouldRun();
+
   // The name of the node
   const std::string name_;
 
@@ -334,9 +327,6 @@ class Node {
 
   // The event loop handle used for asynchronous operations
   EventLoop ev_loop_;
-
-  // Keeps event loop alive even when there's no work to do at the moment
-  asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
 
   // Used to manage signal handlers
   asio::signal_set signal_set_;
@@ -347,8 +337,8 @@ class Node {
   // User-specified signal handler
   SignalHandler user_handler_{nullptr};
 
-  // Whether or not the node should be running
-  std::atomic<bool> should_run_{true};
+  // Track the first invocation of the event loop
+  bool first_run_{true};
 
   // A list of the timers that have been created
   std::list<Timer> timers_;

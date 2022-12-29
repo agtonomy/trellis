@@ -25,8 +25,7 @@ using namespace trellis::core;
 Node::Node(std::string name, trellis::core::Config config)
     : name_{name},
       config_{config},
-      ev_loop_{CreateEventLoop()},
-      work_guard_{asio::make_work_guard(*ev_loop_)},
+      ev_loop_{},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
       health_{name, config,
               [this](const std::string& topic) { return CreatePublisher<trellis::core::HealthHistory>(topic); },
@@ -63,26 +62,28 @@ Node::~Node() { Stop(); }
 int Node::Run() {
   Log::Debug("{} node running...", name_);
   while (ShouldRun()) {
-    ev_loop_->run_for(std::chrono::milliseconds(500));
-    // If the event loop was stopped, run_for will return immediately, so
-    // we should sleep in that case.
-    if (ev_loop_->stopped()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    ev_loop_.RunFor(std::chrono::milliseconds(500));
+    if (ev_loop_.Stopped()) {
+      break;  // the event loop was explicitly stopped
     }
   }
-  Stop();
   return 0;
 }
 
 bool Node::RunN(unsigned n) {
   unsigned count = 0;
-  bool ok;
   // poll_one will return immediately (never block). If it returned 0 there's
   // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
   // polling so long as work is being done
-  while ((ok = ShouldRun()) && ev_loop_->poll_one() && count++ < n)
+  while (ShouldRun() && ev_loop_.PollOne() && count++ < n)
     ;
-  return ok;
+  return ShouldRun();
+}
+
+bool Node::ShouldRun() {
+  const bool should_run = (!ev_loop_.Stopped() || first_run_) && eCAL::Ok();
+  first_run_ = false;
+  return should_run;
 }
 
 Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
@@ -101,8 +102,7 @@ Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback ca
 }
 
 void Node::Stop() {
-  should_run_ = false;
-  ev_loop_->stop();
+  ev_loop_.Stop();
   eCAL::Finalize();
 }
 
@@ -113,8 +113,6 @@ void Node::UpdateHealth(trellis::core::HealthState state, Health::Code code, con
 trellis::core::HealthState Node::GetHealthState() const { return health_.GetHealthState(); }
 
 const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return health_.GetLastHealthStatus(); }
-
-bool Node::ShouldRun() const { return should_run_ && eCAL::Ok(); }
 
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
 

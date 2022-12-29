@@ -39,14 +39,11 @@ class ServiceClientImpl {
   ServiceClientImpl(EventLoop loop)
       : ev_loop_{loop},
         client_{std::make_unique<eCAL::protobuf::CServiceClient<RPC_T>>()},
-        priv_ev_loop_{trellis::core::CreateEventLoop()},
-        work_guard_{asio::make_work_guard(*priv_ev_loop_)},
-        async_thread_{[this]() { priv_ev_loop_->run(); }} {}
+        priv_ev_loop_{},
+        async_thread_{[this]() { priv_ev_loop_.Run(); }} {}
 
   ~ServiceClientImpl() {
-    if (priv_ev_loop_) {
-      priv_ev_loop_->stop();
-    }
+    priv_ev_loop_.Stop();
     if (async_thread_.joinable()) {
       async_thread_.join();
     }
@@ -73,8 +70,7 @@ class ServiceClientImpl {
             resp.ParseFromString(service_response.response);
           }
           // Invoke callback from event loop thread...
-          // XXX(bsirang): look into eliminating the copy of `resp` here
-          asio::post(*priv_ev_loop_, [status, cb, resp]() {
+          asio::post(*priv_ev_loop_, [status, cb, resp = std::move(resp)]() {
             if (cb) cb(status, &resp);
           });
         }
@@ -92,7 +88,6 @@ class ServiceClientImpl {
   EventLoop ev_loop_;
   std::unique_ptr<eCAL::protobuf::CServiceClient<RPC_T>> client_;
   EventLoop priv_ev_loop_;
-  asio::executor_work_guard<typename asio::io_context::executor_type> work_guard_;
   std::thread async_thread_;
 };
 

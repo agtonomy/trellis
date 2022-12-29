@@ -51,7 +51,7 @@ TEST(TrellisHealthMonitor, UpdatesTriggerCallbacks) {
   static unsigned callback_count{0};
 
   trellis::core::Config config;
-  trellis::core::EventLoop loop{nullptr};
+  trellis::core::EventLoop loop;
   trellis::core::HealthMonitor monitor{
       loop, config, [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; },
       [this](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback) {

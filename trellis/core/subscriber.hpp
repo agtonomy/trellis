@@ -121,6 +121,13 @@ class SubscriberImpl {
       did_receive_ = true;
     }
 
+    if (ev_.Stopped()) {
+      // If the event loop hasn't been started yet, it means we're not ready to process them yet (e.g. the applicaiton
+      // may still be initializing). In this case, we'll drop the messages as to avoid unnecessarily exhaust our
+      // memory pool.
+      return;
+    }
+
     PointerType user_msg{nullptr};
     try {
       user_msg = CreateUserMessage();
