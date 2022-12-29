@@ -3,7 +3,7 @@ syntax = "proto3";
 package trellis.examples.proto;
 
 message HelloWorld {
-  string name = 1;
-  uint32 id = 2;
-  string msg = 3;
+  uint32 id = 1;
+  repeated double floats = 2;
+  repeated int64 ints = 3;
 }

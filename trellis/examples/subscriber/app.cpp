@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2022 Agtonomy
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 #include "app.hpp"
 
 namespace trellis {
@@ -20,10 +37,10 @@ App::App(trellis::core::Node& node)
 void App::NewMessage(const std::string& topic, const trellis::examples::proto::HelloWorld& msg,
                      const trellis::core::time::TimePoint& now, const trellis::core::time::TimePoint& msgtime) {
   node_.UpdateHealth(trellis::core::HealthState::HEALTH_STATE_NORMAL);
-  trellis::core::Log::Info(
-      "Received message on topic {} from {} with content {} and message number {} (now = {} msgtime = {})", topic,
-      msg.name(), msg.msg(), msg.id(), trellis::core::time::TimePointToSeconds(now),
-      trellis::core::time::TimePointToSeconds(msgtime));
+  ++receive_count_;
+  trellis::core::Log::Info("Receive count {} on topic {} with message number {} (now = {} msgtime = {})",
+                           receive_count_, topic, msg.id(), trellis::core::time::TimePointToSeconds(now),
+                           trellis::core::time::TimePointToSeconds(msgtime));
 }
 
 }  // namespace subscriber

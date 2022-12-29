@@ -1,8 +1,9 @@
 examples:
   publisher:
     topic: hello_world
-    interval_ms: 1000
+    interval_ms: 100
     initial_delay_ms: 2000
+    repeated_field_len: 10
   service:
     interval_ms: 2000
     timeout_ms: 100
