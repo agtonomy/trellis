@@ -6,10 +6,10 @@ def trellis_deps():
         http_archive,
         name = "ecal",
         build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "af93cc6ee1d157db2017882d90be77d5911dbbeae6a2a73223ef5e2f4ab24689",
-        strip_prefix = "ecal-5.10.2",
+        sha256 = "b324a866f57ce139344bd529402c46ab1cc37a4c7d5ff832db80e14496038dce",
+        strip_prefix = "ecal-5.10.4",
         urls = [
-            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.10.2.tar.gz",
+            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.10.4.tar.gz",
         ],
     )
 
@@ -145,10 +145,10 @@ def trellis_deps():
         http_archive,
         name = "tcp_pubsub",
         build_file = Label("//third_party:tcp_pubsub.BUILD"),
-        sha256 = "c335faf859219070ef67d62821a5f9ac5a308152bf7a1293a0d0cc74fefb9b58",
-        strip_prefix = "tcp_pubsub-1.0.0/tcp_pubsub",
+        sha256 = "f03245e8878f215e9c852b35f30d90d111e250ddecea75ce0be2619583dbe052",
+        strip_prefix = "tcp_pubsub-1.0.3/tcp_pubsub",
         urls = [
-            "https://github.com/eclipse-ecal/tcp_pubsub/archive/refs/tags/v1.0.0.tar.gz",
+            "https://github.com/eclipse-ecal/tcp_pubsub/archive/refs/tags/v1.0.3.tar.gz",
         ],
     )
 
