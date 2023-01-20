@@ -54,18 +54,32 @@ TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessag
 }
 
 TimePoint TimePointFromTimestamp(const google::protobuf::Timestamp& timestamp) {
-  return TimePoint(std::chrono::seconds(timestamp.seconds()) + std::chrono::nanoseconds(timestamp.nanos()));
+  return TimePoint{std::chrono::seconds{timestamp.seconds()} + std::chrono::nanoseconds{timestamp.nanos()}};
 }
 
-google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp) {
-  google::protobuf::Timestamp ts;
-  auto duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch());
-  const auto duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(duration_ns);
-  duration_ns -= duration_seconds;
-  ts.set_seconds(duration_seconds.count());
-  ts.set_nanos(duration_ns.count());
-  return ts;
+SystemTimePoint SystemTimePointFromTimestamp(const google::protobuf::Timestamp& timestamp) {
+  return SystemTimePoint{std::chrono::seconds{timestamp.seconds()} + std::chrono::nanoseconds{timestamp.nanos()}};
 }
+
+namespace {
+
+template <typename TimePointType>
+auto TimePointToTimestampImpl(const TimePointType& tp) {
+  auto ret = google::protobuf::Timestamp{};
+
+  const auto duration_ns = std::chrono::round<std::chrono::nanoseconds>(tp.time_since_epoch());
+  // Floor since Timestamp should always have positive nanosecond portion.
+  const auto duration_seconds = std::chrono::floor<std::chrono::seconds>(tp.time_since_epoch());
+  ret.set_seconds(duration_seconds.count());
+  ret.set_nanos((duration_ns - duration_seconds).count());
+  return ret;
+}
+
+}  // namespace
+
+google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp) { return TimePointToTimestampImpl(tp); }
+
+google::protobuf::Timestamp TimePointToTimestamp(const SystemTimePoint& tp) { return TimePointToTimestampImpl(tp); }
 
 void EnableSimulatedClock() { sim_clock_enabled_ = true; }
 

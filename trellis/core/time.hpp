@@ -83,9 +83,19 @@ TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessag
 TimePoint TimePointFromTimestamp(const google::protobuf::Timestamp& timestamp);
 
 /**
+ * @brief Create a time point from a Timestamp
+ */
+SystemTimePoint SystemTimePointFromTimestamp(const google::protobuf::Timestamp& timestamp);
+
+/**
  * TimePointToTimestamp create a google::protobuf::Timestamp from a time point
  */
 google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp);
+
+/**
+ * @brief Create a google::protobuf::Timestamp from a system time point
+ */
+google::protobuf::Timestamp TimePointToTimestamp(const SystemTimePoint& tp);
 
 /**
  * EnableSimulatedClock enable the simulated system clock
