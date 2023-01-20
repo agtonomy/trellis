@@ -23,7 +23,7 @@
 namespace trellis {
 namespace containers {
 
-namespace {
+namespace detail {
 template <class T1, class T2>
 struct SameType {
   static const bool value = false;
@@ -33,7 +33,7 @@ template <class T>
 struct SameType<T, T> {
   static const bool value = true;
 };
-}  // namespace
+}  // namespace detail
 
 template <size_t MAX_SIZE, class... Types>
 class MultiFifo {
@@ -67,7 +67,7 @@ class MultiFifo {
   // https://stackoverflow.com/questions/27941661/generating-one-class-member-per-variadic-template-argument
   using fifotupletype = std::tuple<Fifo<Types, MAX_SIZE>...>;
   template <int N, typename T>
-  struct FifoOfType : SameType<T, typename std::tuple_element<N, fifotupletype>::type::value_type> {};
+  struct FifoOfType : detail::SameType<T, typename std::tuple_element<N, fifotupletype>::type::value_type> {};
 
   template <int N, class T, class Tuple,
             bool Match = false>  // this =false is only for clarity

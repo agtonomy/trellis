@@ -30,7 +30,7 @@
 namespace trellis {
 namespace core {
 
-namespace {
+namespace detail {
 // Helper to find the tuple index for a given type
 // Borrowed from https://stackoverflow.com/questions/18063451/get-index-of-a-tuple-elements-type
 template <class T, class Tuple>
@@ -45,7 +45,7 @@ template <class T, class U, class... Types>
 struct Index<T, std::tuple<U, Types...>> {
   static const std::size_t value = 1 + Index<T, std::tuple<Types...>>::value;
 };
-}  // namespace
+}  // namespace detail
 
 /**
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
@@ -254,7 +254,7 @@ class MessageConsumer {
    */
   template <typename MSG_T>
   bool TimedOut(const time::TimePoint& now, unsigned timeout_ms) {
-    const std::size_t tuple_index = Index<MSG_T, std::tuple<Types...>>::value;
+    const std::size_t tuple_index = detail::Index<MSG_T, std::tuple<Types...>>::value;
     const auto& latest_stamp = latest_timestamps_[tuple_index];
     const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - latest_stamp);
     return elapsed_ms.count() > timeout_ms;
