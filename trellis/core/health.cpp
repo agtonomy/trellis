@@ -31,9 +31,6 @@ bool operator==(const trellis::core::HealthStatus& lhs, const trellis::core::Hea
   if (lhs.status_code() != rhs.status_code()) {
     return false;
   }
-  if (lhs.status_description() != rhs.status_description()) {
-    return false;
-  }
   return true;
 }
 }  // namespace
