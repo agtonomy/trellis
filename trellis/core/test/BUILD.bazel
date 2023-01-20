@@ -1,8 +1,6 @@
 proto_library(
     name = "test_proto_lib",
-    srcs = [
-        "test.proto",
-    ],
+    srcs = ["test.proto"],
 )
 
 cc_proto_library(
@@ -12,9 +10,7 @@ cc_proto_library(
 
 cc_library(
     name = "test_fixture",
-    hdrs = [
-        "test_fixture.hpp",
-    ],
+    hdrs = ["test_fixture.hpp"],
     deps = [
         "//trellis/core:core_node",
         "@com_google_googletest//:gtest_main",
@@ -22,11 +18,8 @@ cc_library(
 )
 
 cc_test(
-    name = "test_core_message_consumer",
-    srcs = [
-        "test_message_consumer.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_message_consumer_test",
+    srcs = ["message_consumer_test.cpp"],
     deps = [
         ":test_fixture",
         ":test_proto",
@@ -35,22 +28,14 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_node",
-    srcs = [
-        "test_node.cpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":test_fixture",
-    ],
+    name = "core_node_test",
+    srcs = ["node_test.cpp"],
+    deps = [":test_fixture"],
 )
 
 cc_test(
-    name = "test_core_pubsub",
-    srcs = [
-        "test_pubsub.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_pubsub_test",
+    srcs = ["pubsub_test.cpp"],
     deps = [
         ":test_fixture",
         ":test_proto",
@@ -58,11 +43,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_service",
-    srcs = [
-        "test_service.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_service_test",
+    srcs = ["service_test.cpp"],
     deps = [
         ":test_fixture",
         ":test_proto",
@@ -70,22 +52,14 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_timer",
-    srcs = [
-        "test_timer.cpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":test_fixture",
-    ],
+    name = "core_timer_test",
+    srcs = ["timer_test.cpp"],
+    deps = [":test_fixture"],
 )
 
 cc_test(
-    name = "test_core_time",
-    srcs = [
-        "test_time.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_time_test",
+    srcs = ["time_test.cpp"],
     deps = [
         "//trellis/core:core_time",
         "@com_google_googletest//:gtest_main",
@@ -93,11 +67,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_simtime",
-    srcs = [
-        "test_simtime.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_simtime_test",
+    srcs = ["simtime_test.cpp"],
     deps = [
         ":test_fixture",
         ":test_proto",
@@ -107,11 +78,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_event_loop",
-    srcs = [
-        "test_event_loop.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_event_loop_test",
+    srcs = ["event_loop_test.cpp"],
     deps = [
         "//trellis/core:core_event_loop",
         "@com_google_googletest//:gtest_main",
@@ -119,7 +87,7 @@ cc_test(
 )
 
 cc_test(
-    name = "core_config_test",
+    name = "config_test_test",
     srcs = ["config_test.cpp"],
     data = [
         ":test_base_config.yml",
@@ -132,11 +100,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_proto_utils",
-    srcs = [
-        "test_proto_utils.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_proto_utils_test",
+    srcs = ["proto_utils_test.cpp"],
     deps = [
         "//trellis/core:core_proto_utils",
         "@com_google_googletest//:gtest_main",
@@ -144,11 +109,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_health",
-    srcs = [
-        "test_health.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_health_test",
+    srcs = ["health_test.cpp"],
     deps = [
         "//trellis/core:core_health",
         "@com_google_googletest//:gtest_main",
@@ -156,11 +118,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_health_monitor",
-    srcs = [
-        "test_health_monitor.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_health_monitor_test",
+    srcs = ["health_monitor_test.cpp"],
     deps = [
         "//trellis/core:core_health_monitor",
         "@com_google_googletest//:gtest_main",
@@ -168,11 +127,8 @@ cc_test(
 )
 
 cc_test(
-    name = "test_core_transforms",
-    srcs = [
-        "test_transforms.cpp",
-    ],
-    visibility = ["//visibility:public"],
+    name = "core_transforms_test",
+    srcs = ["transforms_test.cpp"],
     deps = [
         "//trellis/core:core_transforms",
         "@com_google_googletest//:gtest_main",

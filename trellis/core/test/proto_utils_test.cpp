@@ -15,9 +15,9 @@
  *
  */
 
-#include <gtest/gtest.h>
-
 #include "trellis/core/proto_utils.hpp"
+
+#include <gtest/gtest.h>
 
 using namespace trellis::core;
 

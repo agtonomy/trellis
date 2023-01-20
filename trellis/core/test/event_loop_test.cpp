@@ -15,11 +15,11 @@
  *
  */
 
+#include "trellis/core/event_loop.hpp"
+
 #include <gtest/gtest.h>
 
 #include <thread>
-
-#include "trellis/core/event_loop.hpp"
 
 TEST(TrellisEventLoop, DefaultConstruct) { ASSERT_NO_THROW(trellis::core::EventLoop{}); }
 

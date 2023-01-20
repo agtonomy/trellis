@@ -15,9 +15,9 @@
  *
  */
 
-#include <gtest/gtest.h>
-
 #include "trellis/core/health_monitor.hpp"
+
+#include <gtest/gtest.h>
 
 namespace {
 

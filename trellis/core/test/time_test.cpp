@@ -15,11 +15,11 @@
  *
  */
 
+#include "trellis/core/time.hpp"
+
 #include <gtest/gtest.h>
 
 #include <thread>
-
-#include "trellis/core/time.hpp"
 
 using namespace trellis::core;
 

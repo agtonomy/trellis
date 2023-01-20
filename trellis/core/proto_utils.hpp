@@ -18,6 +18,8 @@
 #ifndef TRELLIS_CORE_PROTO_UTILS_HPP
 #define TRELLIS_CORE_PROTO_UTILS_HPP
 
+#include <string>
+
 namespace trellis {
 namespace core {
 namespace proto_utils {

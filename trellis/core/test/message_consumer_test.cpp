@@ -15,9 +15,10 @@
  *
  */
 
+#include "trellis/core/message_consumer.hpp"
+
 #include <gtest/gtest.h>
 
-#include "trellis/core/message_consumer.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
 
