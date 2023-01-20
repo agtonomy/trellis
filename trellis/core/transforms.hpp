@@ -90,12 +90,35 @@ class Transforms {
   const containers::Transforms::Sample GetTransform(const std::string& from, const std::string& to,
                                                     const time::TimePoint& when = time::Now()) const;
 
- private:
-  void NewTransform(const RigidTransform& msg, const time::TimePoint& when);
+  /**
+   * @brief Create a proto from a RigidTransform object.
+   *
+   * @param from The frame to transform from.
+   * @param to The frame to transform to.
+   * @param transform The transform.
+   * @return RigidTransform The created proto.
+   */
   static RigidTransform CreateMessageFromTransform(const std::string& from, const std::string& to,
                                                    const containers::Transforms::RigidTransform& transform);
+
+  /**
+   * @brief Create a RigidTransform from a proto.
+   *
+   * @param msg The proto containing the transform.
+   * @return containers::Transforms::RigidTransform The created transform.
+   */
   static containers::Transforms::RigidTransform CreateTransformFromMessage(const RigidTransform& msg);
+
+  /**
+   * @brief Create a RigidTransform from a config.
+   *
+   * @param config The config containing the transform.
+   * @return containers::Transforms::RigidTransform The created transform.
+   */
   static containers::Transforms::RigidTransform CreateTransformFromConfig(const Config& config);
+
+ private:
+  void NewTransform(const RigidTransform& msg, const time::TimePoint& when);
 
   static constexpr unsigned kQueueDepth = 10u;
   containers::Transforms container_;
@@ -107,4 +130,4 @@ class Transforms {
 }  // namespace core
 }  // namespace trellis
 
-#endif /* TRELLIS_CORE_TRANSFORMS_HPP_ */
+#endif  // TRELLIS_CORE_TRANSFORMS_HPP_

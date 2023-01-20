@@ -166,3 +166,15 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "test_core_transforms",
+    srcs = [
+        "test_transforms.cpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_transforms",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
