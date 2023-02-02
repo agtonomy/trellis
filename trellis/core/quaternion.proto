@@ -1,9 +1,10 @@
 syntax = "proto3";
 
+option go_package = "go.agtonomy.com/trellis/core";
+
 package trellis.core;
 
-message Quaternion
-{
+message Quaternion {
   double x = 1;
   double y = 2;
   double z = 3;

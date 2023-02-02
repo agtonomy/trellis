@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+option go_package = "go.agtonomy.com/trellis/core";
+
 import "trellis/core/health_status.proto";
 
 package trellis.core;
