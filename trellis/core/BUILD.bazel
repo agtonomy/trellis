@@ -204,6 +204,13 @@ cc_library(
 )
 
 cc_library(
+    name = "core_inbox",
+    hdrs = ["inbox.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [":core_message_consumer"],
+)
+
+cc_library(
     name = "core_publisher",
     hdrs = [
         "publisher.hpp",
