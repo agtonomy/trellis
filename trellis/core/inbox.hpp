@@ -29,9 +29,7 @@ class Inbox {
   Inbox(Node& node, MessageConsumer_t::SingleTopicArray topics, MessageTimeouts timeouts)
       : message_consumer_{node, std::move(topics)}, timeouts_{std::move(timeouts)} {}
 
-  // TODO(matt): Consider moving `StampedMessage` outside of the templated `MessageConsumer` class as it does not depend
-  // on the template types of the `MessageConsumer`.
-  using LatestMessages = std::tuple<std::optional<typename MessageConsumer_t::StampedMessage<Types>>...>;
+  using LatestMessages = std::tuple<std::optional<StampedMessage<Types>>...>;
 
   /**
    * @brief Gets the latest message of each type that is not expired (past the corresponding timeout).
@@ -43,7 +41,7 @@ class Inbox {
 
  private:
   template <typename Type>
-  std::optional<typename MessageConsumer_t::StampedMessage<Type>> GetLatestMessage(const time::TimePoint& time) {
+  std::optional<StampedMessage<Type>> GetLatestMessage(const time::TimePoint& time) {
     if (message_consumer_.template Size<Type>() == 0) return std::nullopt;
 
     constexpr auto index = detail::Index<Type, std::tuple<Types...>>::value;

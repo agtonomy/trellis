@@ -47,6 +47,55 @@ struct Index<T, std::tuple<U, Types...>> {
 };
 }  // namespace detail
 
+template <typename MSG_T>
+using MessagePointer = SubscriberImpl<MSG_T>::PointerType;
+
+/**
+ * @brief Structure to hold a timestamp and a message pointer
+ *
+ * Lightweight structure to hold a timestamp and a pointer to a message. This structure is used with the FIFOs of
+ * MessageConsumer.
+ *
+ * @tparam MSG_T Message type to hold
+ */
+template <typename MSG_T>
+struct StampedMessagePtr {
+  time::TimePoint timestamp;
+  MessagePointer<MSG_T> message;
+};
+
+/**
+ * @brief Structure to hold a timestamp and a const ref message pointer
+ *
+ * Lightweight structure to hold a timestamp and a const reference to a message. This structure is passed to users.
+ *
+ * @tparam MSG_T Message type to hold
+ * @see MessageConsumer::Newest<MSG_T>()
+ */
+template <typename MSG_T>
+struct StampedMessage {
+  /**
+   * @brief Construct a stamped message from a stamped message pointer.
+   *
+   * The pointer retains ownership, the constructed object is a non-owning view.
+   *
+   * @param ptr the pointer to created a non-owning view to
+   */
+  explicit StampedMessage(const StampedMessagePtr<MSG_T>& ptr)
+      : StampedMessage{.timestamp = ptr.timestamp, .message = *(ptr.message)} {}
+
+  /**
+   * @brief Construct a new Stamped Message object.
+   *
+   * @param timestamp the timestamp
+   * @param message a const reference to the message, this struct is non-owning.
+   */
+  StampedMessage(time::TimePoint timestamp, const MSG_T& message) : timestamp{timestamp}, message{message} {}
+
+  time::TimePoint timestamp;
+  const MSG_T& message;
+};
+
 /**
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
  *
@@ -69,37 +118,6 @@ struct Index<T, std::tuple<U, Types...>> {
 template <size_t FIFO_DEPTH, typename... Types>
 class MessageConsumer {
  public:
-  template <typename T>
-  using PointerType = SubscriberImpl<T>::PointerType;
-
-  /**
-   * @brief Structure to hold a timestamp and a message pointer
-   *
-   * Lightweight structure to hold a timestamp and a pointer to a message. This structure is used with the FIFOs
-   *
-   * @tparam T Message type to hold
-   */
-  template <typename T>
-  struct StampedMessagePtr {
-    time::TimePoint timestamp;
-    PointerType<T> message;
-  };
-
-  /**
-   * @brief Structure to hold a timestamp and a const ref message pointer
-   *
-   * Lightweight structure to hold a timestamp and a const reference to a message. This structure is passed to users.
-   *
-   * @tparam T Message type to hold
-   * @see Newest<T>()
-   */
-  template <typename T>
-  struct StampedMessage {
-    StampedMessage(const StampedMessagePtr<T>& ptr) : timestamp{ptr.timestamp}, message{*(ptr.message)} {}
-    time::TimePoint timestamp;
-    const T& message;
-  };
-
   /**
    * @brief Callback when a new message of a particular type is received
    *
@@ -295,7 +313,7 @@ class MessageConsumer {
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       const auto message_callback = [topic, this, &latest_stamp](const time::TimePoint& now,
                                                                  const time::TimePoint& msgtime,
-                                                                 SubscriberImpl<MessageType>::PointerType msg) {
+                                                                 MessagePointer<MessageType> msg) {
         latest_stamp = msgtime;
         NewMessage<MessageType>(topic, now, msgtime, std::move(msg));
       };
@@ -328,7 +346,7 @@ class MessageConsumer {
 
   template <typename MSG_T>
   void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
-                  SubscriberImpl<MSG_T>::PointerType msg) {
+                  MessagePointer<MSG_T> msg) {
     fifos_.template Push<StampedMessagePtr<MSG_T>>(StampedMessagePtr<MSG_T>{msgtime, std::move(msg)});
 
     // Check if we have a callback to signal an update
