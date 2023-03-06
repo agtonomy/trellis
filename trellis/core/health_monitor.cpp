@@ -104,12 +104,19 @@ void HealthMonitor::InsertIntoCache(const trellis::core::HealthHistory& status) 
 
 void HealthMonitor::WatchdogExpired(const std::string& name, const time::TimePoint& now) {
   // Add a new entry to signify that the health state was lost
-  std::lock_guard<std::mutex> guard{mutex_};
-  if (health_data_.find(name) != health_data_.end()) {
-    auto& history = health_data_.at(name).history_;
-    trellis::core::HealthStatus* new_status = history.Add();
-    new_status->set_health_state(trellis::core::HealthState::HEALTH_STATE_LOST);
-    *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(now);
+  bool should_callback{false};
+  {
+    std::lock_guard<std::mutex> guard{mutex_};
+    if (health_data_.find(name) != health_data_.end()) {
+      auto& history = health_data_.at(name).history_;
+      trellis::core::HealthStatus* new_status = history.Add();
+      new_status->set_health_state(trellis::core::HealthState::HEALTH_STATE_LOST);
+      *new_status->mutable_timestamp() = trellis::core::time::TimePointToTimestamp(now);
+      should_callback = true;
+    }
+  }
+  // callback after lock is released
+  if (should_callback) {
     health_event_cb_(name, Event::kNodeHealthUpdateLost, now);
   }
 }

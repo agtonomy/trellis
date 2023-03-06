@@ -193,3 +193,48 @@ TEST(TrellisHealthMonitor, UpdatesTriggerCallbacks) {
 
   ASSERT_EQ(callback_count, expected_events.size());
 }
+
+TEST(TrellisHealthMonitor, TimeoutTriggersCallback) {
+  trellis::core::Config config;
+  trellis::core::EventLoop loop;
+  static trellis::core::TimerImpl::Callback watchdog_expired_cb{};
+  static unsigned callback_count{0};
+  static trellis::core::HealthMonitor monitor{
+      loop, config,
+      [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
+        watchdog_expired_cb = cb;
+        return nullptr;
+      },
+      [this](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback) {
+        return nullptr;
+      },
+      [](const std::string& node_name, trellis::core::HealthMonitor::Event event,
+         const trellis::core::time::TimePoint&) {
+        // XXX (bsirang) calling GetLastHealthUpdate here for good measure since there was previously a deadlock
+        // situation when calling GetLastHealthUpdate after a health state lost status
+        auto status = monitor.GetLastHealthUpdate(node_name);
+        if (callback_count == 0) {
+          ASSERT_EQ(status.health_state(), trellis::core::HealthState::HEALTH_STATE_NORMAL);
+        } else if (callback_count == 1) {
+          ASSERT_EQ(status.health_state(), trellis::core::HealthState::HEALTH_STATE_LOST);
+        }
+        ++callback_count;
+      }};
+
+  // Initial conditions
+  ASSERT_EQ(callback_count, 0);
+  ASSERT_FALSE(watchdog_expired_cb);
+
+  // Update with a "NORMAL" state
+  trellis::core::HealthHistory status_node1;
+  status_node1.set_name("node_foo");
+  AddUpdate(status_node1, trellis::core::HealthState::HEALTH_STATE_NORMAL, 0, "");
+  monitor.NewUpdate(status_node1);
+
+  ASSERT_EQ(callback_count, 1);
+  ASSERT_TRUE(watchdog_expired_cb);
+
+  // Update with a health lost state by triggering the expired callback
+  watchdog_expired_cb(trellis::core::time::Now());
+  ASSERT_EQ(callback_count, 2);
+}
