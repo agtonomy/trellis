@@ -53,8 +53,14 @@ class Transforms {
 
   /**
    * AffineTransform3D an Eigen 3-dimensional affine transform representation
+   * TODO(matt): Deprecate in favor of Isometry, a more efficient and accurate representation.
    */
   using AffineTransform3D = Eigen::Transform<double, 3, Eigen::Affine>;
+
+  /**
+   * @brief An Eigen 3-dimensional isometry representation
+   */
+  using Isometry3D = Eigen::Transform<double, 3, Eigen::Isometry>;
 
   /**
    * RigidTransform represents a transformation comprised of a translation and rotation
@@ -70,8 +76,15 @@ class Transforms {
      * @param transform the Eigen affine transform
      */
     RigidTransform(const AffineTransform3D& transform)
-        : translation{GetTranslationFromAffineTransform(transform)},
-          rotation{GetRotationFromAffineTransform(transform)} {}
+        : translation{transform.translation()}, rotation{Eigen::Quaterniond{transform.rotation()}.coeffs()} {}
+
+    /**
+     * @brief Construct a rigid transfrom from an Eigen isometry representation
+     *
+     * @param isometry the Eigen isometry
+     */
+    RigidTransform(const Isometry3D& isometry)
+        : translation{isometry.translation()}, rotation{Eigen::Quaterniond{isometry.rotation()}.coeffs()} {}
 
     /**
      * GetAffineRepresentation return an Eigen affine transform representation of this rigid transform
@@ -84,39 +97,34 @@ class Transforms {
     }
 
     /**
+     * @brief Get the Isometry representation.
+     *
+     * @return the isometry
+     */
+    Isometry3D GetIsometry() const { return Eigen::Translation<double, 3>{translation} * Eigen::Quaterniond{rotation}; }
+
+    /**
      * Inverse retrieve the inverse transform
      *
      * @return the inverse transform
      */
-    RigidTransform Inverse() const { return Transforms::RigidTransform(GetAffineRepresentation().inverse()); }
-
-    /**
-     * Exact quality operator.
-     *
-     * Note: for approximations use Eigen's GetAffineRepresentation().isApprox() instead
-     *
-     * @returns true if both operands are exact copies of each other
-     */
-    bool operator==(const RigidTransform& other) const {
-      return this->translation.x() == other.translation.x() && this->translation.y() == other.translation.y() &&
-             this->translation.z() == other.translation.z() && this->rotation.w() == other.rotation.w() &&
-             this->rotation.x() == other.rotation.x() && this->rotation.y() == other.rotation.y() &&
-             this->rotation.z() == other.rotation.z();
-    }
-
-    bool operator!=(const RigidTransform& other) const { return !(*this == other); }
+    RigidTransform Inverse() const { return Transforms::RigidTransform(GetIsometry().inverse()); }
 
     Translation translation;
     Rotation rotation;
 
    private:
-    static Translation GetTranslationFromAffineTransform(const AffineTransform3D& transform) {
-      return Translation{transform.translation().x(), transform.translation().y(), transform.translation().z()};
-    }
-    static Rotation GetRotationFromAffineTransform(const AffineTransform3D& transform) {
-      const Eigen::Quaterniond q(transform.rotation());
-      return Rotation{q.x(), q.y(), q.z(), q.w()};
-    }
+    /**
+     * @brief Exact equality operator.
+     *
+     * Using hidden friend idiom to avoid polluting namespace.
+     *
+     * Note: for approximations use Eigen's GetIsometry().isApprox() instead
+     *
+     * @returns true if both operands are exact copies of each other
+     */
+    friend bool operator==(const RigidTransform&, const RigidTransform&) = default;
+    friend bool operator!=(const RigidTransform&, const RigidTransform&) = default;
   };
 
   struct Sample {
