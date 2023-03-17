@@ -15,3 +15,9 @@ cc_library(
         "@eigen",
     ],
 )
+
+cc_library(
+    name = "ring_buffer",
+    hdrs = ["ring_buffer.hpp"],
+    visibility = ["//visibility:public"],
+)
