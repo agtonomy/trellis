@@ -66,19 +66,30 @@ Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &Test
 
 }  // namespace
 
+static_assert(IsLatestReceiveType<Latest<int>>, "Test IsLatestReceiveType concept.");
+static_assert(!IsLatestReceiveType<int>, "Test IsLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsNLatestReceiveType<Latest<int>>, "Test IsLatestReceiveType concept, not satisfied by NLatest type.");
+
+static_assert(IsNLatestReceiveType<NLatest<int, 7>>, "Test IsNLatestReceiveType concept.");
+static_assert(!IsNLatestReceiveType<int>, "Test IsNLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsNLatestReceiveType<Latest<int>>, "Test IsNLatestReceiveType concept, not satisfied by Latest type.");
+
+static_assert(IsReceiveType<Latest<int>>, "Test IsReceiveType concept, satisfied by Latest.");
+static_assert(IsReceiveType<NLatest<int, 7>>, "Test IsReceiveType concept, satisfied by NLatest.");
+
 TEST_F(TrellisFixture, InboxNoMessages) {
   StartRunnerThread();
 
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
   auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<test::Test, TestTwo>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetLatestMessages(kT0), FieldsAre(Eq(std::nullopt), Eq(std::nullopt))) << "No messages sent!";
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Eq(std::nullopt), Eq(std::nullopt))) << "No messages sent!";
 }
 
 TEST_F(TrellisFixture, InboxMessagesReceived) {
@@ -87,7 +98,7 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
   auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<test::Test, TestTwo>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -96,7 +107,7 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetLatestMessages(kT0),
+  ASSERT_THAT(inbox.GetMessages(kT0),
               FieldsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0, TestTwoIs("there"))))
       << "Messages sent at receive time, so are still valid.";
 }
@@ -107,7 +118,7 @@ TEST_F(TrellisFixture, InboxMessageTimeout) {
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
   auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<test::Test, TestTwo>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -116,7 +127,7 @@ TEST_F(TrellisFixture, InboxMessageTimeout) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetLatestMessages(kT0 + 101ms),
+  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms),
               FieldsAre(Eq(std::nullopt), StampedMessageIs(kT0 + 1ms, TestTwoIs("there"))))
       << "First message has timed out by 1ms.";
 }
@@ -127,7 +138,7 @@ TEST_F(TrellisFixture, InboxMissedMessages) {
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
   auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<test::Test, TestTwo>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -139,7 +150,7 @@ TEST_F(TrellisFixture, InboxMissedMessages) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetLatestMessages(kT0 + 2ms),
+  ASSERT_THAT(inbox.GetMessages(kT0 + 2ms),
               FieldsAre(StampedMessageIs(kT0 + 1ms, TestIs("good")), StampedMessageIs(kT0 + 1ms, TestTwoIs("bye"))))
       << "Only the latest messages are reported.";
 }
@@ -150,7 +161,7 @@ TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
   auto pub2 = node_.CreatePublisher<test::Test>("topic_2");
 
-  const auto inbox = Inbox<test::Test, test::Test>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<test::Test>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -159,7 +170,7 @@ TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetLatestMessages(kT0),
+  ASSERT_THAT(inbox.GetMessages(kT0),
               FieldsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0, TestIs("there"))))
       << "One inbox output per topic.";
 }
@@ -169,7 +180,7 @@ TEST_F(TrellisFixture, InboxMovable) {
 
   auto pub = node_.CreatePublisher<test::Test>("topic_1");
 
-  auto inbox = Inbox<test::Test>{node_, {"topic_1"}, {100ms}};
+  auto inbox = Inbox<Latest<test::Test>>{node_, {"topic_1"}, {100ms}};
   const auto inbox2 = std::move(inbox);
 
   WaitForDiscovery();
@@ -178,7 +189,7 @@ TEST_F(TrellisFixture, InboxMovable) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox2.GetLatestMessages(kT0), FieldsAre(StampedMessageIs(kT0, TestIs("hello"))))
+  ASSERT_THAT(inbox2.GetMessages(kT0), FieldsAre(StampedMessageIs(kT0, TestIs("hello"))))
       << "An inbox can be safely moved!";
 }
 

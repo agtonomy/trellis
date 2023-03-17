@@ -24,18 +24,47 @@
 
 namespace trellis::core {
 
+template <typename MSG_T>
+struct Latest {
+  using MessageType = MSG_T;
+  using LatestTag = int;  // Add an arbitrary type tag so we know we are using this template.
+};
+
+template <typename MSG_T, size_t N>
+struct NLatest {
+  using MessageType = MSG_T;
+  static constexpr size_t kNLatest = N;
+};
+
+template <typename R>
+concept IsNLatestReceiveType = requires {
+  { R::kNLatest } -> std::convertible_to<size_t>;
+};
+
+template <typename R>
+concept IsLatestReceiveType = requires {
+  typename R::LatestTag;
+};
+
+template <typename R>
+concept IsReceiveType = requires {
+  typename R::MessageType;
+}
+&&(IsLatestReceiveType<R> || IsNLatestReceiveType<R>);
+
 /**
  * @brief A simple wrapper around MessageConsumer that grabs the lastest unexpired message of each type.
  *
  * TODO(matt): Extend to support N latest messages instead of only the latest.
  *
- * @tparam Types the message types to receive
+ * @tparam ReceiveTypes the message receive types which should be IsReceiveTypes, which are specializations of the
+ * templates Latest or NLatest.
  */
-template <typename... Types>
+template <IsReceiveType... ReceiveTypes>
 class Inbox {
  public:
-  using MessageTimeouts = std::array<time::TimePoint::duration, sizeof...(Types)>;
-  using TopicArray = std::array<std::string_view, sizeof...(Types)>;
+  using MessageTimeouts = std::array<time::TimePoint::duration, sizeof...(ReceiveTypes)>;
+  using TopicArray = std::array<std::string_view, sizeof...(ReceiveTypes)>;
 
   /**
    * @brief Construct a new Inbox object.
@@ -47,7 +76,7 @@ class Inbox {
   Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts)
       : receivers_{MakeReceivers(node, topics, timeouts)} {}
 
-  using LatestMessages = std::tuple<std::optional<StampedMessage<Types>>...>;
+  using Messages = std::tuple<std::optional<StampedMessage<typename ReceiveTypes::MessageType>>...>;
 
   /**
    * @brief Gets the latest message of each type that is not expired (past the corresponding timeout).
@@ -55,7 +84,7 @@ class Inbox {
    * @param time the current time at which to check the inbox
    * @return Latest message of each type (if it exists)
    */
-  LatestMessages GetLatestMessages(const time::TimePoint& time) const {
+  Messages GetMessages(const time::TimePoint& time) const {
     return std::apply(
         [&time](const auto&... receivers) { return std::make_tuple(GetLatestValidMessage(time, receivers)...); },
         receivers_);
@@ -74,7 +103,7 @@ class Inbox {
 
   template <size_t Index>
   static auto MakeReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
-    using MSG_T = std::tuple_element_t<Index, std::tuple<Types...>>;
+    using MSG_T = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>::MessageType;
 
     // Not const to allow move.
     auto latest = std::make_unique<StampedMessagePtr<MSG_T>>();
@@ -100,7 +129,7 @@ class Inbox {
    * arrays.
    */
   static auto MakeReceivers(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
-    return MakeReceivers(node, topics, timeouts, std::make_index_sequence<sizeof...(Types)>{});
+    return MakeReceivers(node, topics, timeouts, std::make_index_sequence<sizeof...(ReceiveTypes)>{});
   }
 
   template <typename MSG_T>
@@ -112,7 +141,7 @@ class Inbox {
     return StampedMessage<MSG_T>{*receiver.latest};
   }
 
-  std::tuple<Receiver<Types>...> receivers_;
+  std::tuple<Receiver<typename ReceiveTypes::MessageType>...> receivers_;
 };
 
 }  // namespace trellis::core
