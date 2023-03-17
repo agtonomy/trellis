@@ -24,6 +24,7 @@
 #include <utility>
 
 #include "node.hpp"
+#include "stamped_message.hpp"
 #include "subscriber.hpp"
 #include "trellis/containers/multi_fifo.hpp"
 
@@ -46,55 +47,6 @@ struct Index<T, std::tuple<U, Types...>> {
   static const std::size_t value = 1 + Index<T, std::tuple<Types...>>::value;
 };
 }  // namespace detail
-
-template <typename MSG_T>
-using MessagePointer = SubscriberImpl<MSG_T>::PointerType;
-
-/**
- * @brief Structure to hold a timestamp and a message pointer
- *
- * Lightweight structure to hold a timestamp and a pointer to a message. This structure is used with the FIFOs of
- * MessageConsumer.
- *
- * @tparam MSG_T Message type to hold
- */
-template <typename MSG_T>
-struct StampedMessagePtr {
-  time::TimePoint timestamp;
-  MessagePointer<MSG_T> message;
-};
-
-/**
- * @brief Structure to hold a timestamp and a const ref message pointer
- *
- * Lightweight structure to hold a timestamp and a const reference to a message. This structure is passed to users.
- *
- * @tparam MSG_T Message type to hold
- * @see MessageConsumer::Newest<MSG_T>()
- */
-template <typename MSG_T>
-struct StampedMessage {
-  /**
-   * @brief Construct a stamped message from a stamped message pointer.
-   *
-   * The pointer retains ownership, the constructed object is a non-owning view.
-   *
-   * @param ptr the pointer to created a non-owning view to
-   */
-  explicit StampedMessage(const StampedMessagePtr<MSG_T>& ptr)
-      : StampedMessage{.timestamp = ptr.timestamp, .message = *(ptr.message)} {}
-
-  /**
-   * @brief Construct a new Stamped Message object.
-   *
-   * @param timestamp the timestamp
-   * @param message a const reference to the message, this struct is non-owning.
-   */
-  StampedMessage(time::TimePoint timestamp, const MSG_T& message) : timestamp{timestamp}, message{message} {}
-
-  time::TimePoint timestamp;
-  const MSG_T& message;
-};
 
 /**
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.

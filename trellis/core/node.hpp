@@ -119,20 +119,20 @@ class Node {
    * @return a subscriber handle
    */
   template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(const std::string& topic,
+  Subscriber<MSG_T> CreateSubscriber(std::string_view topic,
                                      typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
                                      std::optional<unsigned> watchdog_timeout_ms = {},
                                      TimerImpl::Callback watchdog_callback = {},
                                      std::optional<double> max_frequency = {}) {
     const auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
-    const auto impl = do_watchdog
-                          ? std::make_shared<SubscriberImpl<MSG_T>>(
-                                GetEventLoop(), topic, callback, update_sim_fn,
-                                [this, watchdog_callback, initial_delay_ms = watchdog_timeout_ms.value()]() {
-                                  return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
-                                })
-                          : std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), topic, callback, update_sim_fn);
+    const auto impl = do_watchdog ? std::make_shared<SubscriberImpl<MSG_T>>(
+                                        GetEventLoop(), std::string{topic}, callback, update_sim_fn,
+                                        [this, watchdog_callback, initial_delay_ms = watchdog_timeout_ms.value()]() {
+                                          return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
+                                        })
+                                  : std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), std::string{topic},
+                                                                            callback, update_sim_fn);
     if (max_frequency.has_value()) {
       impl->SetMaxFrequencyThrottle(*max_frequency);
     }

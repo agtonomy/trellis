@@ -63,7 +63,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  WaitForSendReceive();
 
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);

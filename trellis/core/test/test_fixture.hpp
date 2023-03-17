@@ -31,7 +31,9 @@ namespace test {
 class TrellisFixture : public ::testing::Test {
  protected:
   // Settling time chosen based on eCAL test source code, and the value is derived from REGISTRATION_REFRESH_CYCLE
-  static constexpr unsigned discovery_settling_time_ms{2000};
+  static constexpr auto kDiscoverySettlingTime = std::chrono::milliseconds{2000};
+  // Arbitrary delay that seems to be sufficient.
+  static constexpr auto kSendReceiveTime = std::chrono::milliseconds{100};
   TrellisFixture() : node_{"test_fixture", {}} {
     // allow pub/sub from same process, etc
     eCAL::Util::EnableLoopback(true);
@@ -43,7 +45,8 @@ class TrellisFixture : public ::testing::Test {
       runner_thread_.join();
     }
   }
-  static void WaitForDiscovery() { std::this_thread::sleep_for(std::chrono::milliseconds(discovery_settling_time_ms)); }
+  static void WaitForDiscovery() { std::this_thread::sleep_for(kDiscoverySettlingTime); }
+  static void WaitForSendReceive() { std::this_thread::sleep_for(kSendReceiveTime); }
   void Stop() { node_.Stop(); }
   void StartRunnerThread() {
     runner_thread_ = std::thread([this]() { node_.Run(); });

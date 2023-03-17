@@ -10,6 +10,7 @@ cc_library(
         ":core_event_loop",
         ":core_health",
         ":core_health_monitor",
+        ":core_inbox",
         ":core_logging",
         ":core_message_consumer",
         ":core_monitor_interface",
@@ -176,6 +177,13 @@ cc_library(
 )
 
 cc_library(
+    name = "core_stamped_message",
+    hdrs = ["stamped_message.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [":core_subscriber"],
+)
+
+cc_library(
     name = "core_transforms",
     srcs = [
         "transforms.cpp",
@@ -199,6 +207,9 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_node",
+        ":core_stamped_message",
+        ":core_subscriber",
         "//trellis/containers",
     ],
 )
@@ -207,7 +218,11 @@ cc_library(
     name = "core_inbox",
     hdrs = ["inbox.hpp"],
     visibility = ["//visibility:public"],
-    deps = [":core_message_consumer"],
+    deps = [
+        ":core_node",
+        ":core_stamped_message",
+        ":core_subscriber",
+    ],
 )
 
 cc_library(
