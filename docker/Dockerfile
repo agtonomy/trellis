@@ -10,7 +10,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
   vim \
   git \
   build-essential \
-  clang-format \
   shellcheck \
   golang \
   && rm -rf /var/lib/apt/lists/*
@@ -23,8 +22,17 @@ RUN curl -L https://github.com/bazelbuild/bazelisk/releases/download/v1.10.1/baz
 RUN go install github.com/bazelbuild/buildtools/buildifier@latest && \
     cp ~/go/bin/buildifier /usr/local/bin/
 
+# Get clang-format-15
+RUN curl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-15 main" >> /etc/apt/sources.list
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  clang-format-15 \
+  && rm -rf /var/lib/apt/lists/*
+
 # Default python binary to python3
 RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Default clang-format to clang-format-15
+RUN ln -s /usr/bin/clang-format-15 /usr/bin/clang-format
 
 COPY scripts/* /usr/local/bin/
 COPY ecal.ini /etc/ecal/ecal.ini
