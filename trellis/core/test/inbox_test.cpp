@@ -28,14 +28,17 @@ namespace {
 
 using std::chrono_literals::operator""ms;
 using testing::AllOf;
+using testing::ElementsAre;
 using testing::Eq;
 using testing::ExplainMatchResult;
 using testing::Field;
 using testing::FieldsAre;
 using testing::FloatEq;
+using testing::IsEmpty;
 using testing::Matcher;
 using testing::Optional;
 using testing::Property;
+using testing::SizeIs;
 using time::TimePoint;
 
 constexpr auto kT0 = TimePoint{};
@@ -57,7 +60,7 @@ MATCHER_P(MessageIs, m, "") { return ExplainMatchResult(m, arg.message, result_l
 
 template <typename MSG_T>
 auto StampedMessageIs(const TimePoint& time, const Matcher<MSG_T>& message_matcher) {
-  return Optional(AllOf(Field("timestamp", &StampedMessage<MSG_T>::timestamp, Eq(time)), MessageIs(message_matcher)));
+  return AllOf(Field("timestamp", &StampedMessage<MSG_T>::timestamp, Eq(time)), MessageIs(message_matcher));
 }
 
 Matcher<test::Test> TestIs(const std::string msg) { return Property("msg", &test::Test::msg, Eq(msg)); }
@@ -107,8 +110,8 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0),
-              FieldsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0, TestTwoIs("there"))))
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))),
+                                                Optional(StampedMessageIs(kT0, TestTwoIs("there")))))
       << "Messages sent at receive time, so are still valid.";
 }
 
@@ -128,7 +131,7 @@ TEST_F(TrellisFixture, InboxMessageTimeout) {
   WaitForSendReceive();
 
   ASSERT_THAT(inbox.GetMessages(kT0 + 101ms),
-              FieldsAre(Eq(std::nullopt), StampedMessageIs(kT0 + 1ms, TestTwoIs("there"))))
+              FieldsAre(Eq(std::nullopt), Optional(StampedMessageIs(kT0 + 1ms, TestTwoIs("there")))))
       << "First message has timed out by 1ms.";
 }
 
@@ -145,13 +148,15 @@ TEST_F(TrellisFixture, InboxMissedMessages) {
   pub->Send(MakeTest("hello"), kT0);
   pub2->Send(MakeTestTwo("there"), kT0);
 
+  WaitForSendReceive();
+
   pub->Send(MakeTest("good"), kT0 + 1ms);
   pub2->Send(MakeTestTwo("bye"), kT0 + 1ms);
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 2ms),
-              FieldsAre(StampedMessageIs(kT0 + 1ms, TestIs("good")), StampedMessageIs(kT0 + 1ms, TestTwoIs("bye"))))
+  ASSERT_THAT(inbox.GetMessages(kT0 + 2ms), FieldsAre(Optional(StampedMessageIs(kT0 + 1ms, TestIs("good"))),
+                                                      Optional(StampedMessageIs(kT0 + 1ms, TestTwoIs("bye")))))
       << "Only the latest messages are reported.";
 }
 
@@ -170,17 +175,17 @@ TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0),
-              FieldsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0, TestIs("there"))))
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))),
+                                                Optional(StampedMessageIs(kT0, TestIs("there")))))
       << "One inbox output per topic.";
 }
 
 TEST_F(TrellisFixture, InboxMovable) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
+  auto pub = node_.CreatePublisher<test::Test>("topic");
 
-  auto inbox = Inbox<Latest<test::Test>>{node_, {"topic_1"}, {100ms}};
+  auto inbox = Inbox<Latest<test::Test>>{node_, {"topic"}, {100ms}};
   const auto inbox2 = std::move(inbox);
 
   WaitForDiscovery();
@@ -189,8 +194,106 @@ TEST_F(TrellisFixture, InboxMovable) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox2.GetMessages(kT0), FieldsAre(StampedMessageIs(kT0, TestIs("hello"))))
+  ASSERT_THAT(inbox2.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
       << "An inbox can be safely moved!";
+}
+
+TEST_F(TrellisFixture, InboxNLatestEmpty) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(IsEmpty())) << "No messages in N latest.";
+}
+
+TEST_F(TrellisFixture, InboxNLatestNotFull) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Only 1 message has been sent, so we only get one back.";
+}
+
+TEST_F(TrellisFixture, InboxNLatestFull) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello2"), kT0 + 2ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0 + 3ms), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")),
+                                                                  StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+      << "Multiple messages received, multiple messages returned.";
+}
+
+TEST_F(TrellisFixture, InboxNLatestOverflow) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello2"), kT0 + 2ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello3"), kT0 + 3ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0 + 4ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")),
+                                                                  StampedMessageIs(kT0 + 3ms, TestIs("hello3")))))
+      << "Messages more than 3 old are dropped.";
+}
+
+TEST_F(TrellisFixture, InboxNLatestTimeout) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello2"), kT0 + 2ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+      << "The oldest message has timed out.";
 }
 
 }  // namespace trellis::core::test
