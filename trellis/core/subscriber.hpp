@@ -30,7 +30,13 @@
 namespace trellis {
 namespace core {
 
-template <typename MSG_T>
+/**
+ * @brief The subscriber to get messages from ecal.
+ *
+ * @tparam MSG_T the message type to receive.
+ * @tparam MAX_MSGS the max number of messages that can be allocated and passed out in the callback.
+ */
+template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
 class SubscriberImpl {
  public:
   /**
@@ -41,7 +47,7 @@ class SubscriberImpl {
    *
    */
   // using UniquePtr = std::unique_ptr<MSG_T>;
-  using MessagePool = containers::MemoryPool<MSG_T>;
+  using MessagePool = containers::MemoryPool<MSG_T, MAX_MSGS>;
   using PointerType = MessagePool::UniquePtr;
   using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, PointerType msg)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
@@ -230,8 +236,8 @@ class SubscriberImpl {
   PointerType dynamic_message_prototype_{nullptr};
 };
 
-template <typename MSG_T>
-using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
+template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>>;
 
 using DynamicSubscriberImpl = SubscriberImpl<google::protobuf::Message>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberImpl>;

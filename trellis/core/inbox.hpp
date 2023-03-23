@@ -148,7 +148,10 @@ class Inbox {
     using ReceiveType = R;
     using MessageType = ReceiveType::MessageType;
 
-    Subscriber<MessageType> subscriber;
+    // Increase subscriber memory pool so it can fill the buffer plus the default padding. The buffer may own at most
+    // kNLatest + 2 messages, but a little extra padding allows the inbox thread to get slightly behind the subscriber
+    // thread.
+    Subscriber<MessageType, ReceiveType::kNLatest + containers::kDefaultSlotSize> subscriber;
     // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
     // ptr should always point to the same value.
     std::unique_ptr<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>> buffer;
@@ -184,7 +187,7 @@ class Inbox {
     auto buffer = std::make_unique<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>>();
 
     // Not const to allow move.
-    auto subscriber = node.CreateSubscriber<MessageType>(
+    auto subscriber = node.CreateSubscriber<MessageType, ReceiveType::kNLatest + containers::kDefaultSlotSize>(
         topics[Index],
         [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, MessagePointer<MessageType> msg) {
           buffer.push_back(StampedMessagePtr<MessageType>{msgtime, std::move(msg)});
