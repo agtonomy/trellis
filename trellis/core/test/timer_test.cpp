@@ -15,14 +15,11 @@
  *
  */
 
-#include "trellis/core/timer.hpp"
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <iostream>
 
-#include "trellis/core/event_loop.hpp"
 #include "trellis/core/test/test_fixture.hpp"
 
 using trellis::core::test::TrellisFixture;
