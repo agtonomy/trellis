@@ -37,8 +37,8 @@ void TimerImpl::Reset() {
 }
 
 void TimerImpl::Stop() {
+  cancelled_ = true;
   if (!SimulationActive()) {
-    cancelled_ = true;
     timer_->cancel();
   }
 }
@@ -81,7 +81,7 @@ void TimerImpl::Fire() {
   last_fire_time_ = now;  // used for sim time
   did_fire_ = true;
   callback_(now);
-  if (type_ != kOneShot) {
+  if (type_ != kOneShot && !cancelled_) {
     Reload();
     KickOff();
   }

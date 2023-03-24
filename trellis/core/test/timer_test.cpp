@@ -97,3 +97,19 @@ TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
   // Periodic timer fires immediately, so we expect it fired once before we stopped it
   ASSERT_EQ(fire_count, 1U);
 }
+
+TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
+  static unsigned fire_count{0};
+  StartRunnerThread();
+
+  std::shared_ptr<trellis::core::TimerImpl> timer =
+      node_.CreateTimer(10, [&timer](const trellis::core::time::TimePoint&) {
+        if (++fire_count == 5) {
+          timer->Stop();
+        }
+      });
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  // Periodic timer fires immediately, so we expect it fired 5 times before we stopped it
+  ASSERT_EQ(fire_count, 5);
+}
