@@ -104,7 +104,7 @@ class Config {
   void WriteToFile(std::string_view filename, bool verbose = false) const;
 
  private:
-  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose, std::string key_prefix = "");
+  static void RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose, const std::string& key_prefix = "");
   YAML::Node root_;
 };
 
