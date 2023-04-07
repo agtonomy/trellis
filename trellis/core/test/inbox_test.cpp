@@ -39,6 +39,7 @@ using testing::Matcher;
 using testing::Optional;
 using testing::Property;
 using testing::SizeIs;
+using testing::StrEq;
 using time::TimePoint;
 
 constexpr auto kT0 = TimePoint{};
@@ -294,6 +295,72 @@ TEST_F(TrellisFixture, InboxNLatestTimeout) {
   ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
                                                                     StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
       << "The oldest message has timed out.";
+}
+
+TEST_F(TrellisFixture, InboxSimpleLoopback) {
+  StartRunnerThread();
+
+  auto recv_cnt = int{};
+  const auto sub = node_.CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
+
+  auto inbox = Inbox<Loopback<test::Test>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  inbox.Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
+  ASSERT_THAT(inbox.GetMessages(kT0 + 100ms), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Message stored.";
+}
+
+TEST_F(TrellisFixture, InboxSimpleLoopbackTimeout) {
+  StartRunnerThread();
+
+  auto recv_cnt = int{};
+  const auto sub = node_.CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
+
+  auto inbox = Inbox<Loopback<test::Test>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  inbox.Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
+  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(Eq(std::nullopt))) << "Message timed out.";
+}
+
+namespace {
+
+struct Serializer {
+  test::Test operator()(const std::string& in) {
+    auto out = test::Test{};
+    out.set_msg(in);
+    return out;
+  }
+};
+
+}  // namespace
+
+TEST_F(TrellisFixture, InboxSerializingLoopback) {
+  StartRunnerThread();
+
+  auto latest = std::string{};
+  const auto sub =
+      node_.CreateSubscriber<test::Test>("topic", [&latest](auto, auto, auto msg) { latest = msg->msg(); });
+
+  auto inbox = Inbox<Loopback<std::string, test::Test, Serializer>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  inbox.Send(std::string{"hello"}, kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(latest, StrEq("hello")) << "Message was sent.";
+  ASSERT_THAT(inbox.GetMessages(kT0 + 100ms), FieldsAre(Optional(StampedMessageIs<std::string>(kT0, StrEq("hello")))))
+      << "Message stored.";
 }
 
 }  // namespace trellis::core::test

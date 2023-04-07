@@ -50,6 +50,22 @@ struct NLatest {
   static constexpr size_t kNLatest = N;
 };
 
+/**
+ * @brief Type for representing how to receive a single topic which is coming from the owner of the inbox so it does not
+ * need to be received, only set.
+ *
+ * @tparam MSG_T The message type.
+ * @tparam SERIALIZED_T The type to serialize to (default is the same as MSG_T).
+ * @tparam SERIALIZATION_FN_T The type of function to call to serialize the message (default is identity). For now the
+ * Inbox only supports stateless functors (see example in unit tests).
+ */
+template <typename MSG_T, typename SERIALIZED_T = MSG_T, typename SERIALIZATION_FN_T = std::identity>
+struct Loopback {
+  using MessageType = MSG_T;
+  using SerializedType = SERIALIZED_T;
+  using SerializationFn = SERIALIZATION_FN_T;
+};
+
 /// @brief Concept for a type that derives from Latest.
 template <typename R>
 concept IsLatestReceiveType = requires { typename R::LatestTag; };
@@ -60,14 +76,20 @@ concept IsNLatestReceiveType = requires {
                                  { R::kNLatest } -> std::convertible_to<size_t>;
                                };
 
+/// @brief Concept for a type that derives from Loopback.
+template <typename R>
+concept IsLoopbackReceiveType = requires {
+                                  typename R::SerializedType;
+                                  typename R::SerializationFn;
+                                };
+
 /// @brief Concept for a type that derives from either Latest or NLatest and is valid for use in the inbox.
 template <typename R>
-concept IsReceiveType = requires { typename R::MessageType; } && (IsLatestReceiveType<R> || IsNLatestReceiveType<R>);
+concept IsReceiveType = requires { typename R::MessageType; } &&
+                        (IsLatestReceiveType<R> || IsNLatestReceiveType<R> || IsLoopbackReceiveType<R>);
 
 /**
- * @brief A simple wrapper around MessageConsumer that grabs the lastest unexpired message of each type.
- *
- * TODO(matt): Extend to support N latest messages instead of only the latest.
+ * @brief An inbox for getting the latest messages on various channels.
  *
  * @tparam ReceiveTypes the message receive types which should be IsReceiveTypes, which are specializations of the
  * templates Latest or NLatest.
@@ -103,6 +125,12 @@ class Inbox {
     using type = std::optional<StampedMessage<typename R::MessageType>>;
   };
 
+  /// @brief Defines what a Loopback receive type will return in GetMessages.
+  template <IsLoopbackReceiveType R>
+  struct InboxReturnType<R> {
+    using type = std::optional<StampedMessage<typename R::MessageType>>;
+  };
+
   /// @brief A convenient helper for InboxReturnType.
   template <IsReceiveType R>
   using InboxReturnType_t = typename InboxReturnType<R>::type;
@@ -120,6 +148,42 @@ class Inbox {
   Messages GetMessages(const time::TimePoint& time) const {
     return std::apply([&time](const auto&... receivers) { return std::make_tuple(Receive(time, receivers)...); },
                       receivers_);
+  }
+
+  /**
+   * @brief Gets the index of the loopback receiver for MSG_T.
+   *
+   * @tparam MSG_T the message type to find the looback receiver for
+   */
+  template <class MSG_T>
+  struct LoobackIndex {
+    static constexpr std::size_t value = []() {
+      constexpr std::array<bool, sizeof...(ReceiveTypes)> matches{
+          {(IsLoopbackReceiveType<ReceiveTypes> && std::is_same_v<typename ReceiveTypes::MessageType, MSG_T>)...}};
+      // As we are in constant expression, we will get a compilation error not a runtime expection.
+      if (std::ranges::count(matches, true) != 1) {
+        throw std::runtime_error("Expected exactly 1 loopback receiver of the given type.");
+      }
+      return std::distance(matches.begin(), std::ranges::find(matches, true));
+    }();
+  };
+
+  /**
+   * @brief Sends a loopback message, which also stores it for getting in GetMessages.
+   *
+   * Similar in interface to PublisherImpl::Send.
+   *
+   * @tparam MSG_T the message type
+   * @param msg the message, encouraged to move into this function as we store the message
+   * @param time the send time, default is the current time
+   * @return time::TimePoint the time the message was sent
+   */
+  template <typename MSG_T>
+  time::TimePoint Send(MSG_T msg, const time::TimePoint& time = trellis::core::time::Now()) {
+    auto& receiver = std::get<LoobackIndex<MSG_T>::value>(receivers_);
+    const auto send_time = receiver.publisher->Send(receiver.serializer(msg), time);
+    receiver.latest.emplace(send_time, std::move(msg));
+    return send_time;
   }
 
  private:
@@ -155,6 +219,26 @@ class Inbox {
     // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
     // ptr should always point to the same value.
     std::unique_ptr<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>> buffer;
+    time::TimePoint::duration timeout;
+  };
+
+  /// @brief Struct to hold the state required for receiving the loopback message.
+  /// @tparam R the ReceiveType to follow.
+  template <IsLoopbackReceiveType R>
+  struct Receiver<R> {
+    using ReceiveType = R;
+    using MessageType = ReceiveType::MessageType;
+    using SerializedType = ReceiveType::SerializedType;
+
+    struct TimedMessage {
+      time::TimePoint timestamp;
+      MessageType message;
+    };
+
+    // TODO(matt): Should we support non-simple funtors?
+    ReceiveType::SerializationFn serializer = {};
+    Publisher<SerializedType> publisher;
+    std::optional<TimedMessage> latest;
     time::TimePoint::duration timeout;
   };
 
@@ -196,6 +280,16 @@ class Inbox {
     return Receiver<ReceiveType>{std::move(subscriber), std::move(buffer), timeouts[Index]};
   }
 
+  /// @brief Make a loopback receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
+  template <size_t Index>
+  static auto MakeLoopbackReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+    using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
+    using SerializedType = ReceiveType::SerializedType;
+
+    return Receiver<ReceiveType>{.publisher = node.CreatePublisher<SerializedType>(std::string{topics[Index]}),
+                                 .timeout = timeouts[Index]};
+  }
+
   /// @brief Make the receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
   static auto MakeReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
@@ -205,6 +299,8 @@ class Inbox {
       return MakeLatestReceiver<Index>(node, topics, timeouts);
     } else if constexpr (IsNLatestReceiveType<ReceiveType>) {
       return MakeNLatestReceiver<Index>(node, topics, timeouts);
+    } else if constexpr (IsLoopbackReceiveType<ReceiveType>) {
+      return MakeLoopbackReceiver<Index>(node, topics, timeouts);
     }
   }
 
@@ -237,6 +333,14 @@ class Inbox {
       ret.emplace_back(message);
     }
     return ret;
+  }
+
+  /// @brief Messages return generation for receiving the loopback messages.
+  template <IsLoopbackReceiveType R>
+  static InboxReturnType_t<R> Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (!receiver.latest.has_value()) return std::nullopt;
+    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    return StampedMessage<typename R::MessageType>{receiver.latest->timestamp, receiver.latest->message};
   }
 
   std::tuple<Receiver<ReceiveTypes>...> receivers_;
