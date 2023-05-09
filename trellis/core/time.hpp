@@ -130,9 +130,27 @@ void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
 TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
- * TimePointToSystemTime get the system time associated with a given time point
+ * @brief TimePointToSystemTimeOffset is the duration offset of system time minus trellis time (steady clock).
+ *
+ * @return TimePoint::duration The duration offset.
+ */
+TimePoint::duration TimePointToSystemTimeOffset();
+
+/**
+ * @brief TimePointToSystemTime get the system time associated with a given TimePoint.
+ *
+ * @param time The input TimePoint.
+ * @return SystemTimePoint The corresponding SystemTimePoint.
  */
 SystemTimePoint TimePointToSystemTime(const TimePoint& time);
+
+/**
+ * @brief TimePointToSystemTime get the TimePoint associated with a given SystemTimePoint.
+ *
+ * @param time The input SystemTimePoint.
+ * @return TimePoint The corresponding TimePoint.
+ */
+TimePoint TimePointFromSystemTime(const SystemTimePoint& time);
 
 }  // namespace time
 }  // namespace core

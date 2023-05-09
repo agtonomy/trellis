@@ -94,11 +94,20 @@ void SetSimulatedTime(const TimePoint& now) {
 
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration) { SetSimulatedTime(simulated_now_ + duration); }
 
+TimePoint::duration TimePointToSystemTimeOffset() {
+  return std::chrono::system_clock::now().time_since_epoch() - Now().time_since_epoch();
+}
+
 SystemTimePoint TimePointToSystemTime(const TimePoint& time) {
-  // Subtract a duration in trellis clock domain (steady clock) from current system clock
-  // to get the equivalent time in system clock domain
-  return std::chrono::system_clock::now() +
-         std::chrono::duration_cast<std::chrono::system_clock::duration>(time - Now());
+  // Add a duration in trellis clock domain (steady clock) to current system clock to get the equivalent time in system
+  // clock domain.
+  return SystemTimePoint{(time + TimePointToSystemTimeOffset()).time_since_epoch()};
+}
+
+TimePoint TimePointFromSystemTime(const SystemTimePoint& time) {
+  // Add a duration in system clock domain to current trellis clock to get the equivalent time in trellis clock domain
+  // (steady clock).
+  return TimePoint{(time - TimePointToSystemTimeOffset()).time_since_epoch()};
 }
 
 }  // namespace time

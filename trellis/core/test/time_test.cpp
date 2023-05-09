@@ -109,13 +109,19 @@ TEST(TrellisTimeAPI, IncrementSimTime) {
   ASSERT_EQ(delta.count(), 1500);
 }
 
-TEST(TrellisTimeAPI, SystemTimeConversion) {
+TEST(TrellisTimeAPI, ToSystemTimeConversion) {
   const TimePoint start(std::chrono::milliseconds(500));
   const TimePoint end(std::chrono::milliseconds(2500));
 
   SetSimulatedTime(start);
   const auto system_start = TimePointToSystemTime(start);
   const auto system_end = TimePointToSystemTime(end);
+
+  // Check that these are within one microsecond.
+  EXPECT_NEAR(system_start.time_since_epoch().count(),
+              (start + TimePointToSystemTimeOffset()).time_since_epoch().count(), 1000);
+  EXPECT_NEAR(system_end.time_since_epoch().count(), (end + TimePointToSystemTimeOffset()).time_since_epoch().count(),
+              1000);
 
   const auto dt = system_end - system_start;
   const auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(system_end - system_start).count();
@@ -134,6 +140,27 @@ TEST(TrellisTimeAPI, SystemTimeConversion) {
   ASSERT_TRUE(system_seconds_start_absolute > 1651626686);
   // And for good measure make sure they're two seconds off in absolute time too
   ASSERT_EQ(system_seconds_start_absolute + 2, system_seconds_end_absolute);
+}
+
+TEST(TrellisTimeAPI, FromSystemTimeConversion) {
+  const SystemTimePoint start = std::chrono::system_clock::now();
+  const SystemTimePoint end = start + std::chrono::milliseconds(2000);
+
+  // Get the end time first since a tiny amount of system time elapses between these function calls.
+  const auto trellis_end = TimePointFromSystemTime(end);
+  const auto trellis_start = TimePointFromSystemTime(start);
+
+  // Check that these are within one microsecond.
+  EXPECT_NEAR(trellis_start.time_since_epoch().count(),
+              (start - TimePointToSystemTimeOffset()).time_since_epoch().count(), 1000);
+  EXPECT_NEAR(trellis_end.time_since_epoch().count(), (end - TimePointToSystemTimeOffset()).time_since_epoch().count(),
+              1000);
+
+  const auto dt = trellis_end - trellis_start;
+  const auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(trellis_end - trellis_start).count();
+
+  ASSERT_TRUE(trellis_end > trellis_start);
+  ASSERT_EQ(dt_ms, 2000);
 }
 
 namespace {
