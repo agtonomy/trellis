@@ -172,9 +172,9 @@ class SubscriberImpl {
     }
 
     if (should_callback) {
-      auto now = time::Now();
-      asio::post(*ev_, [now = std::move(now), msgtime = std::move(msgtime), user_msg = std::move(user_msg),
-                        callback]() mutable { callback(now, msgtime, std::move(user_msg)); });
+      asio::post(*ev_, [msgtime = std::move(msgtime), user_msg = std::move(user_msg), callback]() mutable {
+        callback(time::Now(), msgtime, std::move(user_msg));
+      });
     }
   }
 
