@@ -121,7 +121,7 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
     asio::post(*ev_loop_, [this, new_time]() {
       auto existing_time = time::Now();
       bool reset_timers{false};
-      if (new_time > existing_time) {
+      if (new_time >= existing_time) {
         if (timers_.size() > 0) {
           if (time::TimePointToMilliseconds(existing_time) != 0) {
             // Use a priority queue to store the timers we need to fire in order of nearest expiration
