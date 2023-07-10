@@ -269,6 +269,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_logging",
         ":core_monitor_interface",
         ":core_time",
         ":core_timer",

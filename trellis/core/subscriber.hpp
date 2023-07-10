@@ -21,6 +21,7 @@
 #include <ecal/msg/protobuf/dynamic_subscriber.h>
 #include <ecal/msg/protobuf/subscriber.h>
 
+#include "logging.hpp"
 #include "monitor_interface.hpp"
 #include "proto_utils.hpp"
 #include "time.hpp"
@@ -80,17 +81,29 @@ class SubscriberImpl {
    * @param watchdog_create_fn the function to create a watchdog timer
    */
   SubscriberImpl(EventLoop ev, std::string topic, Callback callback, UpdateSimulatedClockFunction update_sim_fn,
-                 auto watchdog_create_fn)
+                 TimerImpl::Callback watchdog_callback, auto watchdog_create_fn)
       : ev_{ev},
         topic_{std::move(topic)},
         ecal_sub_{topic_},
         ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
         update_sim_fn_{std::move(update_sim_fn)} {
-    auto callback_wrapper = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn)](
+    auto watchdog_wrapper =
+        (watchdog_callback == nullptr)
+            ? watchdog_callback
+            : [this, watchdog_callback = std::move(watchdog_callback)](const time::TimePoint& tp) mutable {
+                if (messages_pending_count_.load() == 0) {
+                  watchdog_callback(tp);
+                } else {
+                  trellis::core::Log::Warn("Watchdog timer fired while messages are pending. Ignoring!");
+                }
+              };
+
+    auto callback_wrapper = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn),
+                             watchdog_wrapper = std::move(watchdog_wrapper)](
                                 const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
                                 long long clock_, long long id_) mutable {
       if (watchdog_timer_ == nullptr) {
-        watchdog_timer_ = watchdog_create_fn();
+        watchdog_timer_ = watchdog_create_fn(std::move(watchdog_wrapper));
       } else {
         watchdog_timer_->Reset();
       }
@@ -128,9 +141,9 @@ class SubscriberImpl {
     }
 
     if (ev_.Stopped()) {
-      // If the event loop hasn't been started yet, it means we're not ready to process them yet (e.g. the applicaiton
-      // may still be initializing). In this case, we'll drop the messages as to avoid unnecessarily exhaust our
-      // memory pool.
+      // If the event loop hasn't been started yet, it means we're not ready to process them
+      // yet (e.g. the application may still be initializing). In this case, we'll drop the
+      // messages as to avoid unnecessarily exhausting our memory pool.
       return;
     }
 
@@ -148,8 +161,8 @@ class SubscriberImpl {
     }
 
     if (user_msg != nullptr) {
-      // Here's the handoff from the serialization layer. After this point, the message shall not be copied on its way
-      // back to the user
+      // Here's the handoff from the serialization layer. After this point, the message
+      // shall not be copied on its way back to the user
       user_msg->ParseFromString(msg.payload());
       CallbackHelperLogic(trellis::core::time::TimePointFromTimestampedMessage(msg), callback, std::move(user_msg));
     }
@@ -172,7 +185,9 @@ class SubscriberImpl {
     }
 
     if (should_callback) {
-      asio::post(*ev_, [msgtime = std::move(msgtime), user_msg = std::move(user_msg), callback]() mutable {
+      ++messages_pending_count_;
+      asio::post(*ev_, [this, msgtime = std::move(msgtime), user_msg = std::move(user_msg), callback]() mutable {
+        --messages_pending_count_;
         callback(time::Now(), msgtime, std::move(user_msg));
       });
     }
@@ -234,6 +249,7 @@ class SubscriberImpl {
   bool did_receive_{false};
   Timer watchdog_timer_{nullptr};
   PointerType dynamic_message_prototype_{nullptr};
+  std::atomic<unsigned> messages_pending_count_{0U};
 };
 
 template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
