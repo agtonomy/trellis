@@ -79,7 +79,9 @@ auto TimePointToTimestampImpl(const TimePointType& tp) {
 
 google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp) { return TimePointToTimestampImpl(tp); }
 
-google::protobuf::Timestamp TimePointToTimestamp(const SystemTimePoint& tp) { return TimePointToTimestampImpl(tp); }
+google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp) {
+  return TimePointToTimestampImpl(tp);
+}
 
 void EnableSimulatedClock() { sim_clock_enabled_ = true; }
 

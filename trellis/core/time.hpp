@@ -95,7 +95,7 @@ google::protobuf::Timestamp TimePointToTimestamp(const TimePoint& tp);
 /**
  * @brief Create a google::protobuf::Timestamp from a system time point
  */
-google::protobuf::Timestamp TimePointToTimestamp(const SystemTimePoint& tp);
+google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp);
 
 /**
  * EnableSimulatedClock enable the simulated system clock

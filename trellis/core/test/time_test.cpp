@@ -199,8 +199,8 @@ TEST(TrellisTimeAPI, TimePointToTimestamp) {
   ASSERT_THAT(TimePointToTimestamp(TimePoint{12s + 18ns}), Eq(MakeTimestamp(12, 18)));
   ASSERT_THAT(TimePointToTimestamp(TimePoint{-12s + 18ns}), Eq(MakeTimestamp(-12, 18)))
       << "Protobuf timestamps should always have positive nanos.";
-  ASSERT_THAT(TimePointToTimestamp(SystemTimePoint{12s + 18ns}), Eq(MakeTimestamp(12, 18)));
-  ASSERT_THAT(TimePointToTimestamp(SystemTimePoint{-12s + 18ns}), Eq(MakeTimestamp(-12, 18)))
+  ASSERT_THAT(SystemTimePointToTimestamp(SystemTimePoint{12s + 18ns}), Eq(MakeTimestamp(12, 18)));
+  ASSERT_THAT(SystemTimePointToTimestamp(SystemTimePoint{-12s + 18ns}), Eq(MakeTimestamp(-12, 18)))
       << "Protobuf timestamps should always have positive nanos.";
 }
 

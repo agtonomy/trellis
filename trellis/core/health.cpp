@@ -102,7 +102,7 @@ trellis::core::HealthHistory Health::CreateHealthHistoryMessage(const std::strin
 trellis::core::HealthStatus Health::CreateHealthUpdateMessage(const trellis::core::HealthState& state, const Code& code,
                                                               const std::string& description) {
   trellis::core::HealthStatus msg;
-  *msg.mutable_timestamp() = time::TimePointToTimestamp(time::Now());
+  *msg.mutable_timestamp() = time::SystemTimePointToTimestamp(time::TimePointToSystemTime(time::Now()));
   msg.set_health_state(state);
   msg.set_status_code(code);
   msg.set_status_description(description);
