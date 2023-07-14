@@ -23,8 +23,9 @@ namespace trellis {
 namespace core {
 
 Transforms::Transforms(Node& node)
-    : container_{},
-      publisher_{node.CreatePublisher<RigidTransform>("/trellis/transforms")},
+    : node_{node},
+      container_{},
+      publisher_{nullptr},  // we construct lazily upon use
       inputs_{node,
               {{"/trellis/transforms"}},
               [this](const std::string& topic, const RigidTransform& msg, const time::TimePoint& now,
@@ -54,6 +55,11 @@ void Transforms::UpdateTransform(const std::string& from, const std::string& to,
   // We'll add the transform to our container now since our publishes don't seem to be looping
   // back through our subscriber
   NewTransform(msg, when);
+
+  // Not all users of this library call UpdateTransform, so we only want to create the publisher if it was used
+  if (publisher_ == nullptr) {
+    publisher_ = node_.CreatePublisher<RigidTransform>("/trellis/transforms");
+  }
   publisher_->Send(msg, when);
 }
 

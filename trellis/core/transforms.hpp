@@ -121,8 +121,8 @@ class Transforms {
   void NewTransform(const RigidTransform& msg, const time::TimePoint& when);
 
   static constexpr unsigned kQueueDepth = 10u;
+  Node& node_;
   containers::Transforms container_;
-
   Publisher<RigidTransform> publisher_;
   MessageConsumer<kQueueDepth, RigidTransform> inputs_;
 };
