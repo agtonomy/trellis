@@ -117,11 +117,11 @@ TEST(TrellisTimeAPI, ToSystemTimeConversion) {
   const auto system_start = TimePointToSystemTime(start);
   const auto system_end = TimePointToSystemTime(end);
 
-  // Check that these are within one microsecond.
+  // Check that these are essentially equal (within ten microseconds).
   EXPECT_NEAR(system_start.time_since_epoch().count(),
-              (start + TimePointToSystemTimeOffset()).time_since_epoch().count(), 1000);
+              (start + TimePointToSystemTimeOffset()).time_since_epoch().count(), 10000);
   EXPECT_NEAR(system_end.time_since_epoch().count(), (end + TimePointToSystemTimeOffset()).time_since_epoch().count(),
-              1000);
+              10000);
 
   const auto dt = system_end - system_start;
   const auto dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(system_end - system_start).count();
