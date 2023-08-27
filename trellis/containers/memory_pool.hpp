@@ -29,7 +29,7 @@
 namespace trellis {
 namespace containers {
 
-constexpr size_t kDefaultSlotSize = 120U;
+constexpr size_t kDefaultSlotSize = 60U;
 
 /**
  * @brief A simple memory pool implementation for allocating memory for a particlar object type.

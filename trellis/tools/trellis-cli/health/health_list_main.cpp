@@ -48,8 +48,11 @@ int health_list_main(int argc, char* argv[]) {
       [&node](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
         return node.CreateOneShotTimer(interval_ms, cb);
       },
-      [&node](const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback cb) {
-        return node.CreateSubscriber<trellis::core::HealthHistory>(topic, cb);
+      [&node](const std::string& topic,
+              trellis::core::SubscriberImpl<trellis::core::HealthHistory,
+                                            trellis::core::HealthMonitor::kMemoryPoolSize>::Callback cb) {
+        return node.CreateSubscriber<trellis::core::HealthHistory, trellis::core::HealthMonitor::kMemoryPoolSize>(topic,
+                                                                                                                  cb);
       },
       [&last_event_time, &got_event](const std::string& app_name, trellis::core::HealthMonitor::Event even,
                                      const trellis::core::time::TimePoint& now) {
