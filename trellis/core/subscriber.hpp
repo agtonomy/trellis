@@ -27,6 +27,7 @@
 #include "time.hpp"
 #include "timer.hpp"
 #include "trellis/containers/memory_pool.hpp"
+#include "trellis/utils/protobuf/file_descriptor.hpp"
 
 namespace trellis {
 namespace core {
@@ -40,6 +41,8 @@ namespace core {
 template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
 class SubscriberImpl {
  public:
+  using MessagePool = containers::MemoryPool<MSG_T, MAX_MSGS>;
+  using PointerType = MessagePool::UniquePtr;
   /**
    * @brief Message receive callback
    * @param now the time at which the callback was dispatched
@@ -47,9 +50,6 @@ class SubscriberImpl {
    * @param msg the message object that was received
    *
    */
-  // using UniquePtr = std::unique_ptr<MSG_T>;
-  using MessagePool = containers::MemoryPool<MSG_T, MAX_MSGS>;
-  using PointerType = MessagePool::UniquePtr;
   using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, PointerType msg)>;
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
 
@@ -153,8 +153,7 @@ class SubscriberImpl {
     } catch (const std::runtime_error& e) {
       // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
       // publisher comes online and before we can retrieve the message schema
-      if (std::chrono::duration_cast<std::chrono::milliseconds>(time::Now() - first_receive_time_).count() >
-          kMonitorSettlingTime) {
+      if (time::Now() - first_receive_time_ > kMonitorSettlingTime) {
         // Only throw if enough time has passed since our first message was received
         throw e;
       }
@@ -224,8 +223,8 @@ class SubscriberImpl {
     return std::unique_ptr<MSG_T>(dynamic_message_prototype_->New());
   }
 
-  // For dynamic subscribers, how long before we give up on metadata from the monitor layer
-  static constexpr unsigned kMonitorSettlingTime{1000U};
+  static constexpr std::chrono::milliseconds kMonitorSettlingTime{
+      1000U};  // how long to wait for metadata on the monitoring layer
 
   EventLoop ev_;
   std::string topic_;
@@ -252,11 +251,110 @@ class SubscriberImpl {
   std::atomic<unsigned> messages_pending_count_{0U};
 };
 
+/**
+ * @brief Raw subscriber implementation
+ *
+ * This subscriber implementation can be used to subscribe to any protobuf channel and receive the message payloads as
+ * they come without deserializing them. Moreover, it provides some APIs to access the underlying message schema.
+ *
+ * This class is good for use-cases such as logging where you do not want to waste CPU cycles deserializing the message,
+ * but you still want to access the message schema for self-descriptive logging purposes.
+ *
+ * Note: User callbacks are called on the subscriber's background thread not the event loop, this is due to the fact
+ * that the eCAL API only allows us to borrow access to the message without copying it, so it can't be retained for
+ * later.
+ *
+ */
+class SubscriberRawImpl {
+ public:
+  using RawCallback = std::function<void(const time::TimePoint& now, const trellis::core::TimestampedMessage& msg)>;
+  /**
+   * @brief Construct a raw subscriber for a given topic
+   *
+   * @param topic the topic string to subscribe to
+   * @param callback the callback function to receive messages on
+   */
+  SubscriberRawImpl(std::string topic, RawCallback callback) : topic_{std::move(topic)}, ecal_sub_{topic_} {
+    auto callback_wrapper = [this, callback = std::move(callback)](
+                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                                long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
+    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
+  }
+
+  /**
+   * @brief Get the top-level Google protobuf descriptor for the subscriber
+   *
+   * This is useful if you want to access the message schema for this particular message topic
+   *
+   * @return const google::protobuf::Descriptor* a pointer to the descriptor or nullptr if it has not yet been received
+   * from the monitoring layer
+   */
+  const google::protobuf::Descriptor* GetDescriptor() {
+    return (dynamic_message_prototype_ == nullptr) ? nullptr : dynamic_message_prototype_->GetDescriptor();
+  }
+
+  /**
+   * @brief Generate a file descriptor set from the underlying message schema
+   *
+   * @return google::protobuf::FileDescriptorSet the file descriptor set in protobuf form
+   */
+  google::protobuf::FileDescriptorSet GenerateFileDescriptorSet() {
+    const auto descriptor = GetDescriptor();
+    if (descriptor == nullptr) {
+      throw std::runtime_error("Attempt to generate file descriptor set without the descriptor available");
+    }
+    return trellis::utils::protobuf::GenerateFileDescriptorSetFromTopLevelDescriptor(descriptor);
+  }
+
+ private:
+  static constexpr std::chrono::milliseconds kMonitorSettlingTime{
+      1000U};  // how long to wait for metadata on the monitoring layer
+  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const RawCallback& callback) {
+    if (!did_receive_) {
+      first_receive_time_ = time::Now();
+      did_receive_ = true;
+    }
+
+    CacheMessageSchemaIfNecessary();
+    callback(time::Now(), msg);
+  }
+
+  void CacheMessageSchemaIfNecessary() {
+    // If we haven't cached the message prototype yet, let's go ahead and attempt to do that
+    if (dynamic_message_prototype_ == nullptr) {
+      std::unique_ptr<google::protobuf::Message> prototype{nullptr};
+      try {
+        prototype = monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));
+      } catch (const std::runtime_error& e) {
+        if (time::Now() - first_receive_time_ > kMonitorSettlingTime) {
+          // Only throw if enough time has passed since our first message was received
+          throw e;
+        }
+        return;  // Bail until we can get the message prototype from the topic
+      }
+      dynamic_message_prototype_ = std::move(prototype);
+    }
+  }
+
+  std::string topic_;
+  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
+
+  trellis::core::time::TimePoint last_sent_{};
+  trellis::core::MonitorInterface monitor_{};
+
+  // Used to know how long to wait for the monitor layer
+  time::TimePoint first_receive_time_{};
+  bool did_receive_{false};
+  std::unique_ptr<google::protobuf::Message> dynamic_message_prototype_{nullptr};
+};
+
 template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
 using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>>;
 
 using DynamicSubscriberImpl = SubscriberImpl<google::protobuf::Message>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberImpl>;
+
+using SubscriberRaw = std::shared_ptr<SubscriberRawImpl>;
 
 }  // namespace core
 }  // namespace trellis

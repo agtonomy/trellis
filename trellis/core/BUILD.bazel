@@ -274,6 +274,7 @@ cc_library(
         ":core_time",
         ":core_timer",
         "//trellis/containers",
+        "//trellis/utils/protobuf:file_descriptor",
         "@ecal",
     ],
 )

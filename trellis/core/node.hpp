@@ -178,6 +178,18 @@ class Node {
   }
 
   /**
+   * @brief CreateRawSubscriber create a handle to a raw subscriber. A raw subscriber can be used to receive the raw
+   * message payload before deserialization.
+   *
+   * @param topic the topic name to subscribe to
+   * @param callback the function to call for every new inbound message
+   * @return SubscriberRaw
+   */
+  SubscriberRaw CreateRawSubscriber(std::string topic, SubscriberRawImpl::RawCallback callback) {
+    return std::make_shared<SubscriberRawImpl>(std::move(topic), std::move(callback));
+  }
+
+  /**
    * CreateServiceClient create a handle to a remote procedure call service client
    *
    * @tparam RPC_T the datatype of the proto service definition

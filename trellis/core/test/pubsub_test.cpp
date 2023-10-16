@@ -162,3 +162,36 @@ TEST_F(TrellisFixture, SendReturnsTimestamp) {
 
   ASSERT_EQ(send_time, time);
 }
+
+TEST_F(TrellisFixture, RawSubscriberBasicTest) {
+  static unsigned receive_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_raw_sub_topic");
+  auto sub = node_.CreateRawSubscriber("test_raw_sub_topic",
+                                       [](const time::TimePoint& now, const trellis::core::TimestampedMessage& msg) {
+                                         test::Test proto;
+                                         proto.ParseFromString(msg.payload());
+                                         ASSERT_EQ(proto.id(), receive_count);
+                                         ++receive_count;
+                                       });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < 10U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_EQ(receive_count, 10U);
+
+  const std::string descriptor = sub->GenerateFileDescriptorSet().SerializeAsString();
+  ASSERT_TRUE(descriptor.size() > 0);
+}
