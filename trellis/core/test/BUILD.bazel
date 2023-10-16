@@ -5,12 +5,14 @@ proto_library(
 
 cc_proto_library(
     name = "test_proto",
+    visibility = ["//visibility:public"],
     deps = [":test_proto_lib"],
 )
 
 cc_library(
     name = "test_fixture",
     hdrs = ["test_fixture.hpp"],
+    visibility = ["//visibility:public"],
     deps = [
         "//trellis/core:core_node",
         "@com_google_googletest//:gtest_main",

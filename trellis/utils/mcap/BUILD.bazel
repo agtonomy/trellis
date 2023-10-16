@@ -1,0 +1,14 @@
+cc_library(
+    name = "writer",
+    srcs = [
+        "writer.cpp",
+    ],
+    hdrs = [
+        "writer.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_node",
+        "@mcap",
+    ],
+)

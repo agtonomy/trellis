@@ -1,0 +1,10 @@
+cc_test(
+    name = "test_mcap_writer",
+    srcs = ["test_mcap_writer.cpp"],
+    deps = [
+      "//trellis/utils/mcap:writer",
+      "//trellis/core/test:test_fixture",
+      "//trellis/core/test:test_proto",
+      "@com_google_googletest//:gtest_main",
+    ],
+)

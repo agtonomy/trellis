@@ -193,3 +193,27 @@ def trellis_deps():
             "https://github.com/agtonomy/eigen/archive/refs/tags/3.4.0.tar.gz",
         ],
     )
+    maybe(
+        http_archive,
+        name = "mcap",
+        build_file = "//third_party:mcap.BUILD",
+        sha256 = "2833f72344308ea58639f3b363a0cf17669580ae7ab435f43f3b104cff6ef548",
+        strip_prefix = "mcap-releases-cpp-v0.8.0",
+        urls = ["https://github.com/foxglove/mcap/archive/refs/tags/releases/cpp/v0.8.0.tar.gz"],
+    )
+    maybe(
+        http_archive,
+        name = "lz4",
+        build_file = "//third_party:lz4.BUILD",
+        sha256 = "0b0e3aa07c8c063ddf40b082bdf7e37a1562bda40a0ff5272957f3e987e0e54b",
+        strip_prefix = "lz4-1.9.4",
+        urls = ["https://github.com/lz4/lz4/archive/refs/tags/v1.9.4.tar.gz"],
+    )
+    maybe(
+        http_archive,
+        name = "zstd",
+        build_file = "//third_party:zstd.BUILD",
+        sha256 = "7c42d56fac126929a6a85dbc73ff1db2411d04f104fae9bdea51305663a83fd0",
+        strip_prefix = "zstd-1.5.2",
+        urls = ["https://github.com/facebook/zstd/releases/download/v1.5.2/zstd-1.5.2.tar.gz"],
+    )
