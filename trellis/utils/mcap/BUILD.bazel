@@ -31,6 +31,7 @@ cc_library(
 cc_library(
     name = "mcap_impl",
     srcs = ["mcap_impl.cpp"],
+    visibility = ["//visibility:public"],
     deps = [
         "@mcap",
     ],
