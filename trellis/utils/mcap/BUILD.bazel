@@ -8,7 +8,30 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":mcap_impl",
         "//trellis/core:core_node",
+    ],
+)
+
+cc_library(
+    name = "reader",
+    hdrs = [
+        "reader.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mcap_impl",
+        "//trellis/core:core_time",
+    ],
+)
+
+# MCAP expects users to build a source file that includes
+# the library headers with MCAP_IMPLEMENTATION defined beforehand
+# to actually build the library
+cc_library(
+    name = "mcap_impl",
+    srcs = ["mcap_impl.cpp"],
+    deps = [
         "@mcap",
     ],
 )

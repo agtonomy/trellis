@@ -52,6 +52,14 @@ double NowInSeconds();
 unsigned long long TimePointToNanoseconds(const TimePoint& tp);
 
 /**
+ * @brief NanosecondsToTimePoint Create a time point from nanoseconds
+ *
+ * @param nanoseconds a timestamp in nanoseconds from the time base
+ * @return TimePoint a time point representing the given time in nanoseconds
+ */
+TimePoint NanosecondsToTimePoint(unsigned long long nanoseconds);
+
+/**
  * NowInNanoseconds Get the current time in nanoseconds
  * @return a the time in nanoseconds since Unix epoch as an unsigned long long
  */

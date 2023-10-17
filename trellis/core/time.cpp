@@ -41,6 +41,10 @@ unsigned long long TimePointToNanoseconds(const TimePoint& tp) {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
 }
 
+TimePoint NanosecondsToTimePoint(unsigned long long nanoseconds) {
+  return TimePoint(std::chrono::nanoseconds(nanoseconds));
+}
+
 unsigned long long NowInNanoseconds() { return TimePointToNanoseconds(Now()); }
 
 unsigned long long TimePointToMilliseconds(const TimePoint& tp) {
