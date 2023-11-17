@@ -23,7 +23,7 @@
 
 #include <ostream>
 
-#include "ecal/pb/monitoring.pb.h"
+#include "ecal/core/pb/monitoring.pb.h"
 
 namespace trellis {
 namespace core {

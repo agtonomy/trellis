@@ -103,6 +103,8 @@ cc_library(
         "contrib/ecalhdf5/src/eh5_meas_file_v4.h",
         "contrib/ecalhdf5/src/eh5_meas_file_v5.cpp",
         "contrib/ecalhdf5/src/eh5_meas_file_v5.h",
+        "contrib/ecalhdf5/src/eh5_meas_file_writer_v5.cpp",
+        "contrib/ecalhdf5/src/eh5_meas_file_writer_v5.h",
         "contrib/ecalhdf5/src/eh5_meas_impl.h",
         "contrib/ecalhdf5/src/escape.cpp",
         "contrib/ecalhdf5/src/escape.h",
@@ -172,7 +174,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":custom_tclap",
-        ":ecal_cc_proto",
+        ":ecal_core_cc_proto",
         ":ecal_utils",
         ":libecaltime-localtime.so",
         "@asio",
@@ -231,6 +233,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":ecal",
+        ":ecal_app_cc_proto",
         ":ecal_hdf5",
         ":ecal_parser",
         ":threading_utils",
@@ -263,7 +266,9 @@ cc_library(
     ],
     deps = [
         ":ecal",
+        ":ecal_app_cc_proto",
         ":ecal_hdf5",
+        ":sim_time_cc_proto",
         ":threading_utils",
         "@spdlog",
     ],
@@ -293,6 +298,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":ecal_app_cc_proto",
         ":rec_client_core",
         ":threading_utils",
     ],
@@ -301,8 +307,6 @@ cc_library(
 cc_library(
     name = "play_cli",
     srcs = [
-        "app/play/play_cli/src/convert_utf.cpp",
-        "app/play/play_cli/src/convert_utf.h",
         "app/play/play_cli/src/ecal_play_cli.cpp",
         "app/play/play_cli/src/ecal_play_service.cpp",
         "app/play/play_cli/src/ecal_play_service.h",
@@ -312,6 +316,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":ecal_app_cc_proto",
         ":play_core",
         "@termcolor",
     ],
@@ -338,23 +343,55 @@ cc_library(
         "contrib/mma/src/query_manager.cpp",
         "contrib/mma/src/zombie_instance_killer.cpp",
     ],
-    includes = ["contrib/mma/include"],
+    includes = [
+        "contrib/mma/include",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":ecal",
+        ":ecal_app_cc_proto",
         ":threading_utils",
     ],
 )
 
 proto_library(
-    name = "ecal_proto",
-    srcs = glob(["ecal/**/*.proto"]),
-    strip_import_prefix = "ecal/pb/src",
+    name = "ecal_core_proto",
+    srcs = glob([
+        "ecal/core_pb/src/ecal/core/pb/*.proto",
+    ]),
+    strip_import_prefix = "ecal/core_pb/src",
+)
+
+proto_library(
+    name = "ecal_app_proto",
+    srcs = glob([
+        "app/app_pb/src/ecal/app/pb/mma/*.proto",
+        "app/app_pb/src/ecal/app/pb/play/*.proto",
+        "app/app_pb/src/ecal/app/pb/rec/*.proto",
+        "app/app_pb/src/ecal/app/pb/sys/*.proto",
+    ]),
+    strip_import_prefix = "app/app_pb/src",
+)
+
+proto_library(
+    name = "sim_time_proto",
+    srcs = ["contrib/ecaltime/ecaltime_pb/src/ecal/ecaltime/pb/sim_time.proto"],
+    strip_import_prefix = "contrib/ecaltime/ecaltime_pb/src",
 )
 
 cc_proto_library(
-    name = "ecal_cc_proto",
-    deps = [":ecal_proto"],
+    name = "ecal_core_cc_proto",
+    deps = [":ecal_core_proto"],
+)
+
+cc_proto_library(
+    name = "ecal_app_cc_proto",
+    deps = [":ecal_app_proto"],
+)
+
+cc_proto_library(
+    name = "sim_time_cc_proto",
+    deps = [":sim_time_proto"],
 )
 
 genrule(
@@ -365,9 +402,11 @@ genrule(
         "#ifndef ecal_defs_h_included",
         "#define ecal_defs_h_included",
         "#define ECAL_VERSION_MAJOR (5)",
-        "#define ECAL_VERSION_MINOR (9)",
+        "#define ECAL_VERSION_MINOR (12)",
         "#define ECAL_VERSION_PATCH (0)",
-        "#define ECAL_VERSION \"v5.9.0\"",
+        "#define ECAL_VERSION_CALCULATE(major, minor, patch)   (((major)<<16)|((minor)<<8)|(patch))",
+        "#define ECAL_VERSION_INTEGER        ECAL_VERSION_CALCULATE(ECAL_VERSION_MAJOR, ECAL_VERSION_MINOR, ECAL_VERSION_PATCH)",
+        "#define ECAL_VERSION \"v5.12.0\"",
         "#define ECAL_DATE \"\"",
         "#define ECAL_PLATFORMTOOLSET \"\"",
         "#define ECAL_INSTALL_CONFIG_DIR \"/etc/ecal\"",
@@ -397,6 +436,7 @@ cc_library(
     ],
     deps = [
         ":ecal",
+        ":ecal_app_cc_proto",
         ":ecal_parser",
         "@spdlog",
     ],
@@ -413,5 +453,8 @@ cc_library(
         "--std=c++17",
     ],
     visibility = ["//visibility:public"],
-    deps = [":sys_client_core"],
+    deps = [
+        "ecal_app_cc_proto",
+        ":sys_client_core",
+    ],
 )
