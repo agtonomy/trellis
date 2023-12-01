@@ -66,10 +66,10 @@ class SubscriberImpl {
         ecal_sub_{topic_},
         ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
         update_sim_fn_{std::move(update_sim_fn)} {
-    auto callback_wrapper = [this, callback = std::move(callback)](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
-    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
+    callback_wrapper_ = [this, callback = std::move(callback)](
+                            const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                            long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
+    ecal_sub_.AddReceiveCallback(callback_wrapper_);
   }
 
   /**
@@ -98,10 +98,10 @@ class SubscriberImpl {
                 }
               };
 
-    auto callback_wrapper = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn),
-                             watchdog_wrapper = std::move(watchdog_wrapper)](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) mutable {
+    callback_wrapper_ = [this, callback = std::move(callback), watchdog_create_fn = std::move(watchdog_create_fn),
+                         watchdog_wrapper = std::move(watchdog_wrapper)](
+                            const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
+                            long long clock_, long long id_) mutable {
       if (watchdog_timer_ == nullptr) {
         watchdog_timer_ = watchdog_create_fn(std::move(watchdog_wrapper));
       } else {
@@ -110,7 +110,51 @@ class SubscriberImpl {
 
       CallbackWrapperLogic(msg_, callback);
     };
-    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
+    ecal_sub_.AddReceiveCallback(callback_wrapper_);
+  }
+
+  /**
+   * @brief Destroys the subscriber and stops the watchdog (if it has one).
+   *
+   */
+  ~SubscriberImpl() {
+    if (watchdog_timer_ != nullptr) {
+      watchdog_timer_->Stop();
+    }
+  }
+
+  /**
+   * @brief Allows users to check if a callback is enabled.
+   *
+   * @return true Enabled.
+   * @return false Disabled.
+   */
+  bool Enabled() const { return callback_enabled_; }
+
+  /**
+   * @brief Enables a callback if it isn't already enabled.
+   *
+   */
+  void Enable() {
+    if (!callback_enabled_) {
+      ecal_sub_.AddReceiveCallback(callback_wrapper_);
+      callback_enabled_ = true;
+    }
+  }
+
+  /**
+   * @brief Disables a callback and its watchdog (if it has one) if it isn't already disabled.
+   *
+   */
+  void Disable() {
+    if (watchdog_timer_ != nullptr) {
+      watchdog_timer_->Stop();
+      watchdog_timer_.reset();
+    }
+    if (callback_enabled_) {
+      ecal_sub_.RemReceiveCallback();
+      callback_enabled_ = false;
+    }
   }
 
   /**
@@ -231,6 +275,9 @@ class SubscriberImpl {
 
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
+  // The callback is stored as a class member so that it can be enabled and disabled.
+  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage>::MsgReceiveCallbackT callback_wrapper_;
+
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
       ecal_sub_raw_;  // exists to provide MSG_T metadata on the monitoring layer
 
@@ -249,6 +296,8 @@ class SubscriberImpl {
   Timer watchdog_timer_{nullptr};
   PointerType dynamic_message_prototype_{nullptr};
   std::atomic<unsigned> messages_pending_count_{0U};
+
+  bool callback_enabled_{true};
 };
 
 /**
