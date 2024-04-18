@@ -21,6 +21,7 @@
 #include "node.hpp"
 #include "stamped_message.hpp"
 #include "subscriber.hpp"
+#include "trellis/containers/dynamic_ring_buffer.hpp"
 #include "trellis/containers/ring_buffer.hpp"
 
 namespace trellis::core {
@@ -51,8 +52,26 @@ struct NLatest {
 };
 
 /**
+ * @brief Type for representing how to receive a single topic where we get the latest messages on the topic that are not
+ * timed out.
+ *
+ * Slightly more convenient than NLatest for the common case of getting all the latest messages, with the drawback that
+ * there is no cap on how many messages are stored and returned.
+ *
+ * Also less efficient than NLatest as we have to copy out of the receiver's memory pool since we don't know the amount
+ * of messages we may need to store.
+ *
+ * @tparam MSG_T The message type to receive.
+ */
+template <typename MSG_T>
+struct AllLatest {
+  using MessageType = MSG_T;
+  using AllLatestTag = int;  // Add an arbitrary type tag so we know we are using this template.
+};
+
+/**
  * @brief Type for representing how to receive a single topic which is coming from the owner of the inbox so it does not
- * need to be received, only set.
+ * need to be received, only sent.
  *
  * @tparam MSG_T The message type.
  * @tparam SERIALIZED_T The type to serialize to (default is the same as MSG_T).
@@ -76,6 +95,10 @@ concept IsNLatestReceiveType = requires {
                                  { R::kNLatest } -> std::convertible_to<size_t>;
                                };
 
+/// @brief Concept for a type that derives from AllLatest.
+template <typename R>
+concept IsAllLatestReceiveType = requires { typename R::AllLatestTag; };
+
 /// @brief Concept for a type that derives from Loopback.
 template <typename R>
 concept IsLoopbackReceiveType = requires {
@@ -83,16 +106,17 @@ concept IsLoopbackReceiveType = requires {
                                   typename R::SerializationFn;
                                 };
 
-/// @brief Concept for a type that derives from either Latest or NLatest and is valid for use in the inbox.
+/// @brief Concept for a type that derives from one of our receive types and is valid for use in the inbox.
 template <typename R>
 concept IsReceiveType = requires { typename R::MessageType; } &&
-                        (IsLatestReceiveType<R> || IsNLatestReceiveType<R> || IsLoopbackReceiveType<R>);
+                        (IsLatestReceiveType<R> || IsNLatestReceiveType<R> || IsAllLatestReceiveType<R> ||
+                         IsLoopbackReceiveType<R>);
 
 /**
  * @brief An inbox for getting the latest messages on various channels.
  *
  * @tparam ReceiveTypes the message receive types which should be IsReceiveTypes, which are specializations of the
- * templates Latest or NLatest.
+ * templates Latest, NLatest, AllLatest, or Loopback.
  */
 template <IsReceiveType... ReceiveTypes>
 class Inbox {
@@ -113,20 +137,16 @@ class Inbox {
   template <typename R>
   struct InboxReturnType;
 
-  /// @brief Defines what a NLatest receive type will return in GetMessages.
-  template <IsNLatestReceiveType R>
+  /// @brief Defines what a NLatest or AllLatest receive type will return in GetMessages.
+  template <typename R>
+    requires IsNLatestReceiveType<R> || IsAllLatestReceiveType<R>
   struct InboxReturnType<R> {
     using type = std::vector<StampedMessage<typename R::MessageType>>;
   };
 
-  /// @brief Defines what a Latest receive type will return in GetMessages.
-  template <IsLatestReceiveType R>
-  struct InboxReturnType<R> {
-    using type = std::optional<StampedMessage<typename R::MessageType>>;
-  };
-
-  /// @brief Defines what a Loopback receive type will return in GetMessages.
-  template <IsLoopbackReceiveType R>
+  /// @brief Defines what a Latest or Loopback receive type will return in GetMessages.
+  template <typename R>
+    requires IsLatestReceiveType<R> || IsLoopbackReceiveType<R>
   struct InboxReturnType<R> {
     using type = std::optional<StampedMessage<typename R::MessageType>>;
   };
@@ -222,6 +242,22 @@ class Inbox {
     time::TimePoint::duration timeout;
   };
 
+  /// @brief Struct to hold the state required for receiving the all-latest messages.
+  /// @tparam R the ReceiveType to follow.
+  template <IsAllLatestReceiveType R>
+  struct Receiver<R> {
+    using ReceiveType = R;
+    using MessageType = ReceiveType::MessageType;
+
+    // We use the default subscriber memory pool size since we will copy messages out of the subscriber since we don't
+    // know how large to size it.
+    Subscriber<MessageType> subscriber;
+    // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
+    // ptr should always point to the same value.
+    std::unique_ptr<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>> buffer;
+    time::TimePoint::duration timeout;
+  };
+
   /// @brief Struct to hold the state required for receiving the loopback message.
   /// @tparam R the ReceiveType to follow.
   template <IsLoopbackReceiveType R>
@@ -280,6 +316,25 @@ class Inbox {
     return Receiver<ReceiveType>{std::move(subscriber), std::move(buffer), timeouts[Index]};
   }
 
+  /// @brief Make an all-latest receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
+  template <size_t Index>
+  static auto MakeAllLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+    using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
+    using MessageType = ReceiveType::MessageType;
+
+    // Not const to allow move.
+    auto buffer = std::make_unique<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>>();
+
+    // Not const to allow move.
+    auto subscriber = node.CreateSubscriber<MessageType>(
+        topics[Index],
+        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, MessagePointer<MessageType> msg) {
+          buffer.push_back({msgtime, *msg});  // Copies the message out of the subscriber memory pool.
+        });
+
+    return Receiver<ReceiveType>{std::move(subscriber), std::move(buffer), timeouts[Index]};
+  }
+
   /// @brief Make a loopback receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
   static auto MakeLoopbackReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
@@ -301,6 +356,8 @@ class Inbox {
       return MakeNLatestReceiver<Index>(node, topics, timeouts);
     } else if constexpr (IsLoopbackReceiveType<ReceiveType>) {
       return MakeLoopbackReceiver<Index>(node, topics, timeouts);
+    } else if constexpr (IsAllLatestReceiveType<ReceiveType>) {
+      return MakeAllLatestReceiver<Index>(node, topics, timeouts);
     }
   }
 
@@ -332,6 +389,20 @@ class Inbox {
       if (message.timestamp < time - receiver.timeout) continue;  // Message too old.
       ret.emplace_back(message);
     }
+    return ret;
+  }
+
+  /// @brief Messages return generation for receiving the all-latest messages.
+  template <IsAllLatestReceiveType R>
+  static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
+    // Clear out stale messages from the buffer. Single pops are very efficient in the ring buffer.
+    while (!receiver.buffer->empty() && receiver.buffer->begin()->first < time - receiver.timeout) {
+      receiver.buffer->pop_front();
+    }
+
+    auto ret = InboxReturnType_t<R>{};
+    ret.reserve(receiver.buffer->size());
+    for (const auto& [time, message] : *receiver.buffer) ret.emplace_back(time, message);
     return ret;
   }
 

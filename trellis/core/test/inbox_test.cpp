@@ -72,14 +72,41 @@ Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &Test
 
 static_assert(IsLatestReceiveType<Latest<int>>, "Test IsLatestReceiveType concept.");
 static_assert(!IsLatestReceiveType<int>, "Test IsLatestReceiveType concept, not satisfied by arbitrary type.");
-static_assert(!IsNLatestReceiveType<Latest<int>>, "Test IsLatestReceiveType concept, not satisfied by NLatest type.");
+static_assert(!IsLatestReceiveType<NLatest<int, 7>>,
+              "Test IsLatestReceiveType concept, not satisfied by NLatest type.");
+static_assert(!IsLatestReceiveType<AllLatest<int>>,
+              "Test IsLatestReceiveType concept, not satisfied by AllLatest type.");
+static_assert(!IsLatestReceiveType<Loopback<int>>, "Test IsLatestReceiveType concept, not satisfied by Loopback type.");
 
 static_assert(IsNLatestReceiveType<NLatest<int, 7>>, "Test IsNLatestReceiveType concept.");
 static_assert(!IsNLatestReceiveType<int>, "Test IsNLatestReceiveType concept, not satisfied by arbitrary type.");
 static_assert(!IsNLatestReceiveType<Latest<int>>, "Test IsNLatestReceiveType concept, not satisfied by Latest type.");
+static_assert(!IsNLatestReceiveType<AllLatest<int>>,
+              "Test IsNLatestReceiveType concept, not satisfied by AllLatest type.");
+static_assert(!IsNLatestReceiveType<Loopback<int>>,
+              "Test IsNLatestReceiveType concept, not satisfied by Loopback type.");
+
+static_assert(IsAllLatestReceiveType<AllLatest<int>>, "Test IsAllLatestReceiveType concept.");
+static_assert(!IsAllLatestReceiveType<int>, "Test IsAllLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsAllLatestReceiveType<Latest<int>>,
+              "Test IsAllLatestReceiveType concept, not satisfied by Latest type.");
+static_assert(!IsAllLatestReceiveType<NLatest<int, 7>>,
+              "Test IsAllLatestReceiveType concept, not satisfied by NLatest type.");
+static_assert(!IsAllLatestReceiveType<Loopback<int>>,
+              "Test IsAllLatestReceiveType concept, not satisfied by Loopback type.");
+
+static_assert(IsLoopbackReceiveType<Loopback<int>>, "Test IsLoopbackReceiveType concept.");
+static_assert(!IsLoopbackReceiveType<int>, "Test IsLoopbackReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsLoopbackReceiveType<Latest<int>>, "Test IsLoopbackReceiveType concept, not satisfied by Latest type.");
+static_assert(!IsLoopbackReceiveType<NLatest<int, 7>>,
+              "Test IsLoopbackReceiveType concept, not satisfied by NLatest type.");
+static_assert(!IsLoopbackReceiveType<AllLatest<int>>,
+              "Test IsLoopbackReceiveType concept, not satisfied by AllLatest type.");
 
 static_assert(IsReceiveType<Latest<int>>, "Test IsReceiveType concept, satisfied by Latest.");
 static_assert(IsReceiveType<NLatest<int, 7>>, "Test IsReceiveType concept, satisfied by NLatest.");
+static_assert(IsReceiveType<AllLatest<int>>, "Test IsReceiveType concept, satisfied by AllLatest.");
+static_assert(IsReceiveType<Loopback<int>>, "Test IsReceiveType concept, satisfied by Loopback.");
 
 TEST_F(TrellisFixture, InboxNoMessages) {
   StartRunnerThread();
@@ -282,6 +309,80 @@ TEST_F(TrellisFixture, InboxNLatestTimeout) {
   auto pub = node_.CreatePublisher<test::Test>("topic");
 
   const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello2"), kT0 + 2ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+      << "The oldest message has timed out.";
+}
+
+TEST_F(TrellisFixture, InboxAllLatestEmpty) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(IsEmpty())) << "No messages in all latest.";
+}
+
+TEST_F(TrellisFixture, InboxAllLatestOne) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Only 1 message has been sent, so we only get one back.";
+}
+
+TEST_F(TrellisFixture, InboxAllLatestMany) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello2"), kT0 + 2ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0 + 3ms), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")),
+                                                                  StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+      << "Multiple messages received, multiple messages returned.";
+}
+
+TEST_F(TrellisFixture, InboxAllLatestTimeout) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
 
   WaitForDiscovery();
 

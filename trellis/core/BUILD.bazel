@@ -222,6 +222,7 @@ cc_library(
         ":core_node",
         ":core_stamped_message",
         ":core_subscriber",
+        "//trellis/containers:dynamic_ring_buffer",
         "//trellis/containers:ring_buffer",
     ],
 )

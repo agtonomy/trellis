@@ -12,8 +12,6 @@ using testing::IsEmpty;
 using testing::Pointee;
 using testing::SizeIs;
 
-constexpr size_t kTestCapacity = 10;
-
 // unique_ptr is a good test element because it has move but not copy semantics.
 using TestBuffer = RingBuffer<std::unique_ptr<int>, 3>;
 

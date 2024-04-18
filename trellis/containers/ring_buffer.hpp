@@ -20,7 +20,6 @@
 
 #include <array>
 #include <cstddef>
-
 namespace trellis::containers {
 
 /**

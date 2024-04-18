@@ -21,3 +21,9 @@ cc_library(
     hdrs = ["ring_buffer.hpp"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "dynamic_ring_buffer",
+    hdrs = ["dynamic_ring_buffer.hpp"],
+    visibility = ["//visibility:public"],
+)

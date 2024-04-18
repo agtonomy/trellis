@@ -45,3 +45,12 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "dynamic_ring_buffer_test",
+    srcs = ["dynamic_ring_buffer_test.cpp"],
+    deps = [
+        "//trellis/containers:dynamic_ring_buffer",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
