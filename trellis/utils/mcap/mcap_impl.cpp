@@ -18,7 +18,7 @@
 // For whatever reason, the MCAP library was designed to be "pseudo" header only, meaning
 // that in exactly one translation unit in your project, the preprocessor macro `MCAP_IMPLEMENTATION` must be defined
 // before including the library headers so that the implementation gets compiled in. This source file serves that
-// purose.
+// purpose.
 #define MCAP_IMPLEMENTATION
 #include <mcap/reader.hpp>
 #include <mcap/writer.hpp>

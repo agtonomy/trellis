@@ -52,9 +52,9 @@ class ServiceClientImpl {
   template <typename REQ_T, typename RESP_T>
   void CallAsync(const std::string& method_name, const REQ_T& req, Callback<RESP_T> cb, unsigned timeout_ms = 0) {
     // XXX(bsirang): look into eliminating the copy of `req` here
-    asio::post(*priv_ev_loop_, [this, cb, method_name, req, timeout_ms]() {
+    asio::post(*priv_ev_loop_, [this, cb = std::move(cb), method_name, req, timeout_ms]() {
       if (!client_->IsConnected()) {
-        asio::post(*priv_ev_loop_, [cb]() {
+        asio::post(*priv_ev_loop_, [cb = std::move(cb)]() {
           if (cb) cb(kFailure, nullptr);
         });
         return;
@@ -70,12 +70,12 @@ class ServiceClientImpl {
             resp.ParseFromString(service_response.response);
           }
           // Invoke callback from event loop thread...
-          asio::post(*priv_ev_loop_, [status, cb, resp = std::move(resp)]() {
+          asio::post(*priv_ev_loop_, [status, cb = std::move(cb), resp = std::move(resp)]() {
             if (cb) cb(status, &resp);
           });
         }
       } else {
-        asio::post(*priv_ev_loop_, [cb]() {
+        asio::post(*priv_ev_loop_, [cb = std::move(cb)]() {
           if (cb) cb(kTimedOut, nullptr);
         });
       }

@@ -23,7 +23,7 @@ namespace core {
 TimerImpl::TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms)
     : loop_{loop},
       type_{type},
-      callback_{callback},
+      callback_{std::move(callback)},
       interval_ms_{interval_ms},
       delay_ms_(delay_ms),
       timer_{CreateSteadyTimer(loop, delay_ms)} {

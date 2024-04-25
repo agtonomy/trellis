@@ -17,77 +17,105 @@
 
 #include "writer.hpp"
 
-namespace trellis {
-namespace utils {
-namespace mcap {
-Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string& outfile,
-               ::mcap::McapWriterOptions options)
-    : subscribers_{} {
-  CreateSubscriberList(node, topics);
-  const auto res = writer_.open(outfile, options);
-  if (!res.ok()) {
-    throw std::runtime_error("Failed to open " + outfile + " for writing: " + res.message);
-  }
+namespace trellis::utils::mcap {
+
+namespace {
+
+struct FileWriter {
+  ::mcap::McapWriter writer = {};
+  std::mutex mutex = {};
+};
+
+std::shared_ptr<FileWriter> MakeFileWriter(const std::string_view outfile, ::mcap::McapWriterOptions options) {
+  const auto ret = std::make_shared<FileWriter>();
+  const auto res = ret->writer.open(outfile, options);
+  if (!res.ok()) throw(std::runtime_error{fmt::format("Failed to open {} for writing: {}", outfile, res.message)});
+  return ret;
 }
 
-Writer::~Writer() { writer_.close(); }
+// Data for each subscriber
+struct SubscriberData {
+  bool initialized = {};  /// track initialization to know mcap schema and channel exists for this subscriber
+  std::string topic{};    /// topic name
+  std::shared_ptr<FileWriter> file_writer = {};            /// the mutex protected file writer
+  std::weak_ptr<core::SubscriberRawImpl> subscriber = {};  /// the subscriber object, weak ptr to avoid circular ref
+  ::mcap::ChannelId channel_id = {};                       /// Identifier to reference the channel for this subscriber
+  unsigned sequence = {};                                  /// sequence number for each message
+};
 
-void Writer::CreateSubscriberList(core::Node& node, const std::vector<std::string>& topics) {
-  unsigned subscriber_index{0};
-  for (const auto& topic : topics) {
-    subscribers_.emplace_back(SubscriberInfo{
-        false, topic,
-        node.CreateRawSubscriber(
-            topic, [this, subscriber_index](const core::time::TimePoint& now, const core::TimestampedMessage& msg) {
-              std::lock_guard<std::mutex> guard(mutex_);
-              if (subscribers_.at(subscriber_index).initialized == false) {
-                InitializeMcapChannel(subscriber_index);
-              }
-              WriteMessage(subscriber_index, now, msg);
-            })});
-    ++subscriber_index;
+// mutex should be locked before calling this function
+void TryInitializeMcapChannel(SubscriberData& data) {
+  // The subscriber may still be being constructed (unlikely), so we guard against it being nullptr.
+  const auto subscriber = data.subscriber.lock();
+  if (subscriber == nullptr) {
+    core::Log::Error("Subscriber is nullptr, cannot initialize MCAP channel");
+    return;
   }
-}
 
-void Writer::InitializeMcapChannel(unsigned subscriber_index) {
-  const auto& subscriber = subscribers_.at(subscriber_index).subscriber;
-  const auto& topic = subscribers_.at(subscriber_index).topic;
-  const auto& message_name = subscriber->GetDescriptor()->full_name();
-  auto& channel_id = subscribers_.at(subscriber_index).channel_id;
-  auto& initialized = subscribers_.at(subscriber_index).initialized;
+  const auto descriptor = subscriber->GetDescriptor();
+  if (descriptor == nullptr) {
+    core::Log::Error("Descriptor is nullptr, cannot initialize MCAP channel");
+    return;
+  }
+
+  const auto& message_name = descriptor->full_name();
 
   // Add both the schema and channel to the writer, and then record the channel ID for the future
-  ::mcap::Schema schema(message_name, "protobuf", subscriber->GenerateFileDescriptorSet().SerializeAsString());
-  writer_.addSchema(schema);
-  ::mcap::Channel channel(topic, "protobuf", schema.id);
-  writer_.addChannel(channel);
-  channel_id = channel.id;
-  initialized = true;
-
-  core::Log::Info("Initialized MCAP recorder channel for {} on {} with id {}", message_name, topic, channel_id);
+  // Not const to receive the schema id
+  auto schema = ::mcap::Schema{
+      message_name, "protobuf",
+      trellis::utils::protobuf::GenerateFileDescriptorSetFromTopLevelDescriptor(descriptor).SerializeAsString()};
+  data.file_writer->writer.addSchema(schema);
+  // Not const to receive the channel id
+  auto channel = ::mcap::Channel{data.topic, "protobuf", schema.id};
+  data.file_writer->writer.addChannel(channel);
+  data.channel_id = channel.id;
+  data.initialized = true;
+  core::Log::Info("Initialized MCAP recorder channel for {} on {} with id {}", message_name, data.topic,
+                  data.channel_id);
 }
 
-void Writer::WriteMessage(unsigned subscriber_index, const core::time::TimePoint& now,
-                          const core::TimestampedMessage& msg) {
-  auto& subscriber = subscribers_.at(subscriber_index);
-  const auto& channel_id = subscriber.channel_id;
-  auto& sequence = subscriber.sequence;
-  ::mcap::Message mcap_msg;
-  mcap_msg.channelId = channel_id;
-  mcap_msg.sequence = sequence;
-  mcap_msg.publishTime = core::time::TimePointToNanoseconds(core::time::TimePointFromTimestamp(msg.timestamp()));
-  mcap_msg.logTime = core::time::TimePointToNanoseconds(now);
-  mcap_msg.data = reinterpret_cast<const std::byte*>(msg.payload().data());
-  mcap_msg.dataSize = msg.payload().size();
+void WriteMessage(const core::time::TimePoint& now, const core::TimestampedMessage& msg, SubscriberData& data) {
+  const auto mcap_msg = ::mcap::Message{
+      .channelId = data.channel_id,
+      .sequence = data.sequence,
+      .logTime = core::time::TimePointToNanoseconds(now),
+      .publishTime = core::time::TimePointToNanoseconds(core::time::TimePointFromTimestamp(msg.timestamp())),
+      .dataSize = msg.payload().size(),
+      .data = reinterpret_cast<const std::byte*>(msg.payload().data())};
 
-  const auto res = writer_.write(mcap_msg);
+  const auto res = data.file_writer->writer.write(mcap_msg);
   if (!res.ok()) {
-    writer_.close();
-    throw std::runtime_error("MCAP write failed: " + res.message);
+    data.file_writer->writer.close();
+    throw(std::runtime_error{fmt::format("MCAP write failed: {}", res.message)});
   }
-  ++sequence;
+  ++data.sequence;
 }
 
-}  // namespace mcap
-}  // namespace utils
-}  // namespace trellis
+core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view topic,
+                                     std::shared_ptr<FileWriter> file_writer) {
+  // A bit of a chicken and egg problem, we need the callback to be able to access the subscriber to fill in the schema.
+  // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
+  // Hence we use a shared ptr to update the data after creating the subscriber, and we guard in the
+  // InitalizeMcapChannel function against data with nullptr subscriber.
+  const auto data = std::make_shared<SubscriberData>(
+      SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});
+  const auto ret = node.CreateRawSubscriber(
+      std::string{topic}, [data](const core::time::TimePoint& now, const core::TimestampedMessage& msg) {
+        const auto lock = std::scoped_lock{data->file_writer->mutex};
+        if (!data->initialized) TryInitializeMcapChannel(*data);
+        if (data->initialized) WriteMessage(now, msg, *data);
+      });
+  data->subscriber = ret;
+  return ret;
+}
+
+}  // namespace
+
+Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
+               const ::mcap::McapWriterOptions& options) {
+  const auto file_writer = MakeFileWriter(outfile, options);
+  for (const auto& topic : topics) subscribers_.push_back(CreateSubscriber(node, topic, file_writer));
+}
+
+}  // namespace trellis::utils::mcap

@@ -6,10 +6,10 @@ def trellis_deps():
         http_archive,
         name = "ecal",
         build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "5a0e575a73ab54b4ec2e48815af13860ce9fda43c9fa46341e244a543ccb1dd5",
-        strip_prefix = "ecal-5.12.0",
+        sha256 = "356e5cf65cc76b8c8a1aeb710d402fe9f5780746e679d74a0f70dfe8fd71ec9a",
+        strip_prefix = "ecal-5.12.4",
         urls = [
-            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.12.0.tar.gz",
+            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.12.4.tar.gz",
         ],
     )
 
@@ -197,9 +197,9 @@ def trellis_deps():
         http_archive,
         name = "mcap",
         build_file = Label("//third_party:mcap.BUILD"),
-        sha256 = "2833f72344308ea58639f3b363a0cf17669580ae7ab435f43f3b104cff6ef548",
-        strip_prefix = "mcap-releases-cpp-v0.8.0",
-        urls = ["https://github.com/foxglove/mcap/archive/refs/tags/releases/cpp/v0.8.0.tar.gz"],
+        sha256 = "64ff3e51119f37ffcfaf9deecbd987a7cb4d4d9035d74a3fd3773395a470fda1",
+        strip_prefix = "mcap-releases-cpp-v1.4.0",
+        urls = ["https://github.com/foxglove/mcap/archive/refs/tags/releases/cpp/v1.4.0.tar.gz"],
     )
     maybe(
         http_archive,

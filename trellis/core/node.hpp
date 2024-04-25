@@ -129,9 +129,9 @@ class Node {
     const auto impl =
         do_watchdog
             ? std::make_shared<SubscriberImpl<MSG_T, MAX_MSGS>>(
-                  GetEventLoop(), std::string{topic}, callback, update_sim_fn, watchdog_callback,
+                  GetEventLoop(), std::string{topic}, std::move(callback), update_sim_fn, std::move(watchdog_callback),
                   [this, initial_delay_ms = watchdog_timeout_ms.value()](TimerImpl::Callback watchdog_callback) {
-                    return CreateOneShotTimer(initial_delay_ms, watchdog_callback);
+                    return CreateOneShotTimer(initial_delay_ms, std::move(watchdog_callback));
                   })
             : std::make_shared<SubscriberImpl<MSG_T, MAX_MSGS>>(GetEventLoop(), std::string{topic}, callback,
                                                                 update_sim_fn);
@@ -173,8 +173,8 @@ class Node {
       const std::string& topic, typename trellis::core::SubscriberImpl<google::protobuf::Message>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {}, TimerImpl::Callback watchdog_callback = {},
       std::optional<double> max_frequency = {}) {
-    return CreateSubscriber<google::protobuf::Message>(topic, callback, watchdog_timeout_ms, watchdog_callback,
-                                                       max_frequency);
+    return CreateSubscriber<google::protobuf::Message>(topic, std::move(callback), watchdog_timeout_ms,
+                                                       std::move(watchdog_callback), max_frequency);
   }
 
   /**

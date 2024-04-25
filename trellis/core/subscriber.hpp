@@ -69,6 +69,7 @@ class SubscriberImpl {
     callback_wrapper_ = [this, callback = std::move(callback)](
                             const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
                             long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
+    // TODO: This forces a copy of the callback.
     ecal_sub_.AddReceiveCallback(callback_wrapper_);
   }
 
@@ -110,6 +111,7 @@ class SubscriberImpl {
 
       CallbackWrapperLogic(msg_, callback);
     };
+    // TODO: This forces a copy of the callback.
     ecal_sub_.AddReceiveCallback(callback_wrapper_);
   }
 
@@ -137,6 +139,7 @@ class SubscriberImpl {
    */
   void Enable() {
     if (!callback_enabled_) {
+      // TODO: This forces a copy of the callback.
       ecal_sub_.AddReceiveCallback(callback_wrapper_);
       callback_enabled_ = true;
     }
@@ -276,6 +279,8 @@ class SubscriberImpl {
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
 
   // The callback is stored as a class member so that it can be enabled and disabled.
+  // TODO: This forces all callbacks to be copiable, which is not ideal for users who want to create callbacks without
+  // resorting to shared_ptrs.
   eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage>::MsgReceiveCallbackT callback_wrapper_;
 
   std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>

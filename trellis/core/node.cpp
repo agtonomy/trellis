@@ -95,7 +95,8 @@ Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsi
 }
 
 Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) {
-  auto timer = std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, callback, 0, initial_delay_ms);
+  auto timer =
+      std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, std::move(callback), 0, initial_delay_ms);
 
   timers_.push_back(timer);
   return timer;
