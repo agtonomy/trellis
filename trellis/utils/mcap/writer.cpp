@@ -75,14 +75,15 @@ void TryInitializeMcapChannel(SubscriberData& data) {
                   data.channel_id);
 }
 
-void WriteMessage(const core::time::TimePoint& now, const core::TimestampedMessage& msg, SubscriberData& data) {
-  const auto mcap_msg = ::mcap::Message{
-      .channelId = data.channel_id,
-      .sequence = data.sequence,
-      .logTime = core::time::TimePointToNanoseconds(now),
-      .publishTime = core::time::TimePointToNanoseconds(core::time::TimePointFromTimestamp(msg.timestamp())),
-      .dataSize = msg.payload().size(),
-      .data = reinterpret_cast<const std::byte*>(msg.payload().data())};
+void WriteMessage(const core::TimestampedMessage& msg, SubscriberData& data) {
+  // MCAP files are indexed by log time, so we use send time as log time.
+  const auto time = core::time::TimePointToNanoseconds(core::time::TimePointFromTimestamp(msg.timestamp()));
+  const auto mcap_msg = ::mcap::Message{.channelId = data.channel_id,
+                                        .sequence = data.sequence,
+                                        .logTime = time,
+                                        .publishTime = time,
+                                        .dataSize = msg.payload().size(),
+                                        .data = reinterpret_cast<const std::byte*>(msg.payload().data())};
 
   const auto res = data.file_writer->writer.write(mcap_msg);
   if (!res.ok()) {
@@ -100,12 +101,12 @@ core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view to
   // InitalizeMcapChannel function against data with nullptr subscriber.
   const auto data = std::make_shared<SubscriberData>(
       SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});
-  const auto ret = node.CreateRawSubscriber(
-      std::string{topic}, [data](const core::time::TimePoint& now, const core::TimestampedMessage& msg) {
-        const auto lock = std::scoped_lock{data->file_writer->mutex};
-        if (!data->initialized) TryInitializeMcapChannel(*data);
-        if (data->initialized) WriteMessage(now, msg, *data);
-      });
+  const auto ret = node.CreateRawSubscriber(std::string{topic},
+                                            [data](const core::time::TimePoint&, const core::TimestampedMessage& msg) {
+                                              const auto lock = std::scoped_lock{data->file_writer->mutex};
+                                              if (!data->initialized) TryInitializeMcapChannel(*data);
+                                              if (data->initialized) WriteMessage(msg, *data);
+                                            });
   data->subscriber = ret;
   return ret;
 }
