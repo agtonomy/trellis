@@ -6,10 +6,10 @@ def trellis_deps():
         http_archive,
         name = "ecal",
         build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "356e5cf65cc76b8c8a1aeb710d402fe9f5780746e679d74a0f70dfe8fd71ec9a",
-        strip_prefix = "ecal-5.12.4",
+        sha256 = "e1abbc512fba94a504ca86ae33c6007259f2ec0adec06f4f55dacff7f0c0a35c",
+        strip_prefix = "ecal-5.12.5",
         urls = [
-            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.12.4.tar.gz",
+            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.12.5.tar.gz",
         ],
     )
 
