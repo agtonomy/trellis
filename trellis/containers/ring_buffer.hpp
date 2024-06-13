@@ -45,6 +45,12 @@ class RingBuffer {
     if (size_ > capacity) IncrementBegin();
   }
 
+  void pop_front() {
+    if (!empty()) {
+      IncrementBegin();
+    }
+  }
+
   class ConstIterator {
    public:
     using iterator_category = std::random_access_iterator_tag;

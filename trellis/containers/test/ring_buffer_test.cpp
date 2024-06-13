@@ -44,4 +44,20 @@ TEST(RingBuffer, PushBackOverflow) {
   ASSERT_THAT(ring, ElementsAre(Pointee(2), Pointee(3), Pointee(4)));
 }
 
+TEST(RingBuffer, PopFront) {
+  auto ring = TestBuffer{};
+  ring.push_back(std::make_unique<int>(0));
+  ring.push_back(std::make_unique<int>(1));
+  ring.push_back(std::make_unique<int>(2));
+  ring.pop_front();
+  ASSERT_THAT(ring, SizeIs(2));
+  ASSERT_THAT(ring, ElementsAre(Pointee(1), Pointee(2)));
+  ring.pop_front();
+  ASSERT_THAT(ring, SizeIs(1));
+  ASSERT_THAT(ring, ElementsAre(Pointee(2)));
+  ring.pop_front();
+  ASSERT_THAT(ring, SizeIs(0));
+  ASSERT_THAT(ring, IsEmpty());
+}
+
 }  // namespace trellis::containers
