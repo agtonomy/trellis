@@ -51,6 +51,8 @@ class RingBuffer {
     }
   }
 
+  const T& operator[](size_t index) const { return data_[(begin_ + index) % kArraySize]; }
+
   class ConstIterator {
    public:
     using iterator_category = std::random_access_iterator_tag;

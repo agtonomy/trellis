@@ -60,4 +60,22 @@ TEST(RingBuffer, PopFront) {
   ASSERT_THAT(ring, IsEmpty());
 }
 
+TEST(RingBuffer, IndexOperator) {
+  auto ring = RingBuffer<int, 5>{};
+  ring.push_back(1);
+  ring.push_back(2);
+  ring.push_back(3);
+
+  // Test non-const access
+  EXPECT_EQ(ring[0], 1);
+  EXPECT_EQ(ring[1], 2);
+  EXPECT_EQ(ring[2], 3);
+
+  // Test const access
+  const auto& const_ring = ring;
+  EXPECT_EQ(const_ring[0], 1);
+  EXPECT_EQ(const_ring[1], 2);
+  EXPECT_EQ(const_ring[2], 3);
+}
+
 }  // namespace trellis::containers
