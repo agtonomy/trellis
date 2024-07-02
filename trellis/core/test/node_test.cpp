@@ -17,10 +17,13 @@
 
 #include <gtest/gtest.h>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/test/test_fixture.hpp"
 
 using namespace trellis::core;
 using namespace trellis::core::test;
+
+constexpr auto kBaseFilename = "trellis/core/test/test_base_config.yml";
 
 TEST_F(TrellisFixture, StartAndStopNode) {
   // Simply start the runner thread and then test that it will gracefully
@@ -30,4 +33,10 @@ TEST_F(TrellisFixture, StartAndStopNode) {
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
   Stop();
+}
+
+TEST(TrellisNode, Name) {
+  Config config(kBaseFilename);
+  Node node("name", config);
+  ASSERT_EQ("name", node.GetName());
 }

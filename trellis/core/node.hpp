@@ -330,6 +330,13 @@ class Node {
    */
   const trellis::core::Config& GetConfig() { return config_; }
 
+  /**
+   * Returns the name of the node
+   *
+   * @return The name of the node
+   */
+  inline const std::string& GetName() const { return name_; }
+
  private:
   // Helper to determine if we should not be running anymore
   bool ShouldRun();

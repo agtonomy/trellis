@@ -32,6 +32,9 @@ cc_test(
 cc_test(
     name = "core_node_test",
     srcs = ["node_test.cpp"],
+    data = [
+        ":test_base_config.yml",
+    ],
     deps = [":test_fixture"],
 )
 
