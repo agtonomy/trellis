@@ -75,8 +75,7 @@ bool Node::RunN(unsigned n) {
   // poll_one will return immediately (never block). If it returned 0 there's
   // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
   // polling so long as work is being done
-  while (ShouldRun() && ev_loop_.PollOne() && count++ < n)
-    ;
+  while (ShouldRun() && ev_loop_.PollOne() && count++ < n);
   return ShouldRun();
 }
 

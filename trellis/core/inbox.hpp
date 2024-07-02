@@ -92,8 +92,8 @@ concept IsLatestReceiveType = requires { typename R::LatestTag; };
 /// @brief Concept for a type that derives from NLatest.
 template <typename R>
 concept IsNLatestReceiveType = requires {
-                                 { R::kNLatest } -> std::convertible_to<size_t>;
-                               };
+  { R::kNLatest } -> std::convertible_to<size_t>;
+};
 
 /// @brief Concept for a type that derives from AllLatest.
 template <typename R>
@@ -102,15 +102,15 @@ concept IsAllLatestReceiveType = requires { typename R::AllLatestTag; };
 /// @brief Concept for a type that derives from Loopback.
 template <typename R>
 concept IsLoopbackReceiveType = requires {
-                                  typename R::SerializedType;
-                                  typename R::SerializationFn;
-                                };
+  typename R::SerializedType;
+  typename R::SerializationFn;
+};
 
 /// @brief Concept for a type that derives from one of our receive types and is valid for use in the inbox.
 template <typename R>
-concept IsReceiveType = requires { typename R::MessageType; } &&
-                        (IsLatestReceiveType<R> || IsNLatestReceiveType<R> || IsAllLatestReceiveType<R> ||
-                         IsLoopbackReceiveType<R>);
+concept IsReceiveType = requires {
+  typename R::MessageType;
+} && (IsLatestReceiveType<R> || IsNLatestReceiveType<R> || IsAllLatestReceiveType<R> || IsLoopbackReceiveType<R>);
 
 /**
  * @brief An inbox for getting the latest messages on various channels.
@@ -289,10 +289,8 @@ class Inbox {
 
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<MessageType>(
-        topics[Index],
-        [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime, MessagePointer<MessageType> msg) {
-          latest = {msgtime, std::move(msg)};
-        });
+        topics[Index], [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime,
+                                           MessagePointer<MessageType> msg) { latest = {msgtime, std::move(msg)}; });
 
     return Receiver<ReceiveType>{std::move(subscriber), std::move(latest), timeouts[Index]};
   }
