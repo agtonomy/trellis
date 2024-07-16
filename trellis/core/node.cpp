@@ -122,21 +122,21 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
       auto existing_time = time::Now();
       bool reset_timers{false};
       if (new_time >= existing_time) {
-        if (timers_.size() > 0) {
+        if (!timers_.empty()) {
           if (time::TimePointToMilliseconds(existing_time) != 0) {
             // Use a priority queue to store the timers we need to fire in order of nearest expiration
             auto timer_comp = [](const Timer& a, const Timer& b) { return a->GetExpiry() > b->GetExpiry(); };
             std::priority_queue<Timer, std::vector<Timer>, decltype(timer_comp)> expired_timers(timer_comp);
 
-            // First find all the timers that are expiring before our new_time
+            // First find all the non-cancelled timers that are expiring before our new_time
             for (auto& timer : timers_) {
-              if (new_time >= timer->GetExpiry()) {
+              if (!timer->IsCancelled() && new_time >= timer->GetExpiry()) {
                 expired_timers.push(timer);
               }
             }
 
             // Step forward in time while firing the timers that are expiring until there are no more timers to fire
-            while (expired_timers.size()) {
+            while (!expired_timers.empty()) {
               auto top = expired_timers.top();
               expired_timers.pop();
               // Move our simulated time up to the expiration time of this timer

@@ -81,6 +81,8 @@ class TimerImpl {
 
   Type GetType() const { return type_; }
 
+  bool IsCancelled() { return cancelled_; }
+
  private:
   void KickOff();
   void Reload();
