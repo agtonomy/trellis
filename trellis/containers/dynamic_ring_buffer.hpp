@@ -88,17 +88,18 @@ class DynamicRingBuffer {
     ++begin_;
   }
 
-  class ConstIterator {
+  template <bool kMutable>
+  class Iterator {
    public:
     using iterator_category = std::random_access_iterator_tag;
     using value_type = T;
-    using pointer = const T*;
-    using reference = const T&;
+    using pointer = std::conditional_t<kMutable, T*, const T*>;
+    using reference = std::conditional_t<kMutable, T&, const T&>;
     using difference_type = std::ptrdiff_t;
 
     // Constructors.
-    ConstIterator() = default;
-    ConstIterator(const T* data, size_t capacity, size_t index) : data_{data}, capacity_{capacity}, index_{index} {}
+    Iterator() = default;
+    Iterator(pointer data, size_t capacity, size_t index) : data_{data}, capacity_{capacity}, index_{index} {}
 
     // Pointer like operators.
     reference operator*() const { return data_[Mask(index_)]; }
@@ -106,52 +107,59 @@ class DynamicRingBuffer {
     reference operator[](const difference_type offset) const { return data_[Mask(index_ + offset)]; }
 
     // Increment / Decrement
-    ConstIterator& operator++() {
+    Iterator& operator++() {
       ++index_;
       return *this;
     }
 
-    ConstIterator& operator--() {
+    Iterator& operator--() {
       --index_;
       return *this;
     }
 
     // Arithmetic
-    ConstIterator& operator+=(const difference_type offset) {
+    Iterator& operator+=(const difference_type offset) {
       index_ += offset;
       return *this;
     }
 
-    ConstIterator operator+(const difference_type offset) const { return {data_, capacity_, index_ + offset}; }
+    Iterator operator+(const difference_type offset) const { return {data_, capacity_, index_ + offset}; }
 
-    friend ConstIterator operator+(const difference_type offset, const ConstIterator& right) {
+    friend Iterator operator+(const difference_type offset, const Iterator& right) {
       return {right.data_, right.capacity_, right.index_ + offset};
     }
 
-    ConstIterator& operator-=(const difference_type offset) {
+    Iterator& operator-=(const difference_type offset) {
       index_ -= offset;
       return *this;
     }
 
-    ConstIterator operator-(const difference_type offset) const { return {data_, capacity_, index_ - offset}; }
+    Iterator operator-(const difference_type offset) const { return {data_, capacity_, index_ - offset}; }
 
-    difference_type operator-(const ConstIterator& right) const { return index_ - right.index_; }
+    difference_type operator-(const Iterator& right) const { return index_ - right.index_; }
 
    private:
     // Comparison operators
-    friend bool operator==(const ConstIterator&, const ConstIterator&) = default;
-    friend bool operator!=(const ConstIterator&, const ConstIterator&) = default;
+    friend bool operator==(const Iterator&, const Iterator&) = default;
+    friend bool operator!=(const Iterator&, const Iterator&) = default;
 
     // Go from unmasked index to masked index (can be used to access data).
     size_t Mask(const size_t index) const { return index & (capacity_ - 1); }
 
-    const T* data_ = nullptr;
+    pointer data_ = nullptr;
     size_t capacity_ = 0;
     size_t index_ = 0;  // Unmasked, integer overflow works appropriately since capacity is a power of 2.
   };
 
+  using ConstIterator = Iterator<false>;
+  using MutableIterator = Iterator<true>;
+
+  ConstIterator cbegin() const { return {data_, capacity_, begin_}; }
+  ConstIterator cend() const { return {data_, capacity_, end_}; }
   ConstIterator begin() const { return {data_, capacity_, begin_}; }
   ConstIterator end() const { return {data_, capacity_, end_}; }
+  MutableIterator begin() { return {data_, capacity_, begin_}; }
+  MutableIterator end() { return {data_, capacity_, end_}; }
 
  private:
   // Go from unmasked index to masked index (can be used to access data).

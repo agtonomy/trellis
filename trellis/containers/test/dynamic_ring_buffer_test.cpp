@@ -73,4 +73,30 @@ TEST(DynamicRingBuffer, MoveAssignment) {
   ASSERT_THAT(ring2, ElementsAre(Pointee(0)));
 }
 
+TEST(DynamicRingBuffer, Iteration) {
+  auto ring = DynamicTestBuffer{};
+  ring.push_back(std::make_unique<int>(0));
+  ring.push_back(std::make_unique<int>(1));
+  ring.push_back(std::make_unique<int>(2));
+  const auto& const_ring = ring;
+  auto it = const_ring.begin();
+  ASSERT_THAT(*it, Pointee(0));
+  ++it;
+  ASSERT_THAT(*it, Pointee(1));
+  ++it;
+  ASSERT_THAT(*it, Pointee(2));
+  ++it;
+  ASSERT_THAT(it, Eq(const_ring.end()));
+}
+
+TEST(DynamicRingBuffer, MutIteration) {
+  auto ring = DynamicTestBuffer{};
+  ring.push_back(std::make_unique<int>(0));
+  const auto it = ring.begin();
+  ASSERT_THAT(*it, Pointee(0));
+  *it = std::make_unique<int>(3);
+  ASSERT_THAT(*it, Pointee(3));
+  ASSERT_THAT(*ring.begin(), Pointee(3));
+}
+
 }  // namespace trellis::containers
