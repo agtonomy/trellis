@@ -64,6 +64,12 @@ auto StampedMessageIs(const TimePoint& time, const Matcher<MSG_T>& message_match
   return AllOf(Field("timestamp", &StampedMessage<MSG_T>::timestamp, Eq(time)), MessageIs(message_matcher));
 }
 
+template <typename MSG_T>
+auto OwningMessageIs(const TimePoint& time, const Matcher<MSG_T>& message_matcher) {
+  return AllOf(Field("timestamp", &OwningStampedMessage<MSG_T>::timestamp, Eq(time)),
+               Field("message", &OwningStampedMessage<MSG_T>::message, message_matcher));
+}
+
 Matcher<test::Test> TestIs(const std::string msg) { return Property("msg", &test::Test::msg, Eq(msg)); }
 
 Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &TestTwo::bar, Eq(bar)); }
@@ -462,6 +468,45 @@ TEST_F(TrellisFixture, InboxSerializingLoopback) {
   ASSERT_THAT(latest, StrEq("hello")) << "Message was sent.";
   ASSERT_THAT(inbox.GetMessages(kT0 + 100ms), FieldsAre(Optional(StampedMessageIs<std::string>(kT0, StrEq("hello")))))
       << "Message stored.";
+}
+
+TEST_F(TrellisFixture, GetMessagesCopy) {
+  StartRunnerThread();
+
+  auto pub = node_.CreatePublisher<test::Test>("topic_1");
+  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+
+  auto inbox = Inbox<Latest<test::Test>, NLatest<TestTwo, 5>, AllLatest<test::Test>,
+                     Loopback<std::string, test::Test, Serializer>>{
+      node_, {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  pub2->Send(MakeTestTwo("there"), kT0 + 1ms);
+  inbox.Send(std::string{"howdy"}, kT0 + 2ms);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessagesCopy(kT0), FieldsAre(Optional(OwningMessageIs(kT0, TestIs("hello"))),
+                                                    ElementsAre(OwningMessageIs(kT0 + 1ms, TestTwoIs("there"))),
+                                                    ElementsAre(OwningMessageIs(kT0, TestIs("hello"))),
+                                                    Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
+
+  auto promise = std::promise<decltype(inbox)::OwningMessages>{};
+  auto future = promise.get_future();
+  asio::post(*node_.GetEventLoop(), [&inbox, promise = std::move(promise)]() mutable {
+    return promise.set_value(inbox.GetMessagesCopy(kT0));
+  });
+  const auto result = future.get();
+  ASSERT_THAT(result, FieldsAre(Optional(OwningMessageIs(kT0, TestIs("hello"))),
+                                ElementsAre(OwningMessageIs(kT0 + 1ms, TestTwoIs("there"))),
+                                ElementsAre(OwningMessageIs(kT0, TestIs("hello"))),
+                                Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))))
+      << "Demonstrate that GetMessagesCopy can be called from the event loop.";
+
+  ASSERT_THAT(inbox.GetMessagesCopy(kT0 + 110ms), FieldsAre(Eq(std::nullopt), IsEmpty(), IsEmpty(), Eq(std::nullopt)))
+      << "Messages have timed out.";
 }
 
 }  // namespace trellis::core::test

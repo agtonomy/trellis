@@ -132,7 +132,7 @@ class Inbox {
    * @param timeouts the timeout for each type
    */
   Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts)
-      : receivers_{MakeReceivers(node, topics, timeouts)} {}
+      : ev_{node.GetEventLoop()}, receivers_{MakeReceivers(node, topics, timeouts)} {}
 
   template <typename R>
   struct InboxReturnType;
@@ -142,6 +142,7 @@ class Inbox {
     requires IsNLatestReceiveType<R> || IsAllLatestReceiveType<R>
   struct InboxReturnType<R> {
     using type = std::vector<StampedMessage<typename R::MessageType>>;
+    using owning_type = std::vector<OwningStampedMessage<typename R::MessageType>>;
   };
 
   /// @brief Defines what a Latest or Loopback receive type will return in GetMessages.
@@ -149,6 +150,7 @@ class Inbox {
     requires IsLatestReceiveType<R> || IsLoopbackReceiveType<R>
   struct InboxReturnType<R> {
     using type = std::optional<StampedMessage<typename R::MessageType>>;
+    using owning_type = std::optional<OwningStampedMessage<typename R::MessageType>>;
   };
 
   /// @brief A convenient helper for InboxReturnType.
@@ -162,12 +164,49 @@ class Inbox {
    * @brief Gets the messages for each topic that are not expired (past the corresponding timeout) according to the
    * receive type.
    *
+   * Since the return type of GetMessages is a borrowing view of the messages cached in the inbox, the messages are only
+   * guaranteed to have liftime as long as the node event loop is blocked. I.e. GetMessages is safe to call from a timer
+   * or subscriber callback, but not from a service callback.
+   *
    * @param time the current time at which to check the inbox
    * @return Messages for each topic.
    */
   Messages GetMessages(const time::TimePoint& time) const {
     return std::apply([&time](const auto&... receivers) { return std::make_tuple(Receive(time, receivers)...); },
                       receivers_);
+  }
+
+  /// @brief A convenient helper for InboxReturnType.
+  template <IsReceiveType R>
+  using InboxOwningReturnType_t = typename InboxReturnType<R>::owning_type;
+
+  /// @brief The return type for GetMessagesCopy.
+  using OwningMessages = std::tuple<InboxOwningReturnType_t<ReceiveTypes>...>;
+
+  /**
+   * @brief Gets the messages for each topic that are not expired (past the corresponding timeout) according to the
+   * receive type.
+   *
+   * Instead of returning borrowing views as in GetMessages, GetMessagesCopy safely copies the messages into an owning
+   * type. It also handles synchronization so it can be run from a thread other than the node's event loop, such as a
+   * service callback.
+   *
+   * Also note that this method hands out a pointer to the inbox, so please be wary that the inbox should not be moved
+   * during the execution of this method.
+   *
+   * @param time the current time at which to check the inbox
+   * @return OwningMessages for each topic.
+   */
+  OwningMessages GetMessagesCopy(const time::TimePoint& time) const {
+    auto promise = std::promise<OwningMessages>{};
+    auto future = promise.get_future();
+    // Queue the promise to be fulfilled on the event loop, as this function may be called from a different thread.
+    // Dispatch is used in case GetMessagesCopy was called from the event loop to prevent deadlock.
+    asio::dispatch(*ev_, [this, time, promise = std::move(promise)]() mutable {
+      promise.set_value(std::apply(
+          [&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); }, receivers_));
+    });
+    return future.get();  // Blocks until the promise is fulfilled.
   }
 
   /**
@@ -266,15 +305,10 @@ class Inbox {
     using MessageType = ReceiveType::MessageType;
     using SerializedType = ReceiveType::SerializedType;
 
-    struct TimedMessage {
-      time::TimePoint timestamp;
-      MessageType message;
-    };
-
     // TODO(matt): Should we support non-simple funtors?
     ReceiveType::SerializationFn serializer = {};
     Publisher<SerializedType> publisher;
-    std::optional<TimedMessage> latest;
+    std::optional<OwningStampedMessage<MessageType>> latest;
     time::TimePoint::duration timeout;
   };
 
@@ -379,6 +413,14 @@ class Inbox {
     return StampedMessage<typename R::MessageType>{*receiver.latest};
   }
 
+  /// @brief Message return generation for receiving a copy of the latest message.
+  template <IsLatestReceiveType R>
+  static InboxOwningReturnType_t<R> ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (receiver.latest->message == nullptr) return std::nullopt;                   // No message received yet.
+    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    return {{.timestamp = receiver.latest->timestamp, .message = *receiver.latest->message}};
+  }
+
   /// @brief Messages return generation for receiving the latest N messages.
   template <IsNLatestReceiveType R>
   static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
@@ -386,6 +428,17 @@ class Inbox {
     for (const auto& message : *receiver.buffer) {
       if (message.timestamp < time - receiver.timeout) continue;  // Message too old.
       ret.emplace_back(message);
+    }
+    return ret;
+  }
+
+  /// @brief Messages return generation for receiving a copy of the latest N messages.
+  template <IsNLatestReceiveType R>
+  static auto ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
+    auto ret = InboxOwningReturnType_t<R>{};
+    for (const auto& message : *receiver.buffer) {
+      if (message.timestamp < time - receiver.timeout) continue;  // Message too old.
+      ret.emplace_back(message.timestamp, *message.message);
     }
     return ret;
   }
@@ -404,6 +457,20 @@ class Inbox {
     return ret;
   }
 
+  /// @brief Messages return generation for receiving a copy of the all-latest messages.
+  template <IsAllLatestReceiveType R>
+  static auto ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
+    // Clear out stale messages from the buffer. Single pops are very efficient in the ring buffer.
+    while (!receiver.buffer->empty() && receiver.buffer->begin()->first < time - receiver.timeout) {
+      receiver.buffer->pop_front();
+    }
+
+    auto ret = InboxOwningReturnType_t<R>{};
+    ret.reserve(receiver.buffer->size());
+    for (const auto& [time, message] : *receiver.buffer) ret.emplace_back(time, message);
+    return ret;
+  }
+
   /// @brief Messages return generation for receiving the loopback messages.
   template <IsLoopbackReceiveType R>
   static InboxReturnType_t<R> Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
@@ -412,6 +479,15 @@ class Inbox {
     return StampedMessage<typename R::MessageType>{receiver.latest->timestamp, receiver.latest->message};
   }
 
+  /// @brief Messages return generation for receiving a copy of the loopback messages.
+  template <IsLoopbackReceiveType R>
+  static InboxOwningReturnType_t<R> ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (!receiver.latest.has_value()) return std::nullopt;
+    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    return {{.timestamp = receiver.latest->timestamp, .message = receiver.latest->message}};
+  }
+
+  EventLoop ev_;
   std::tuple<Receiver<ReceiveTypes>...> receivers_;
 };
 

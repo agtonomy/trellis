@@ -71,6 +71,17 @@ struct StampedMessage {
   const MSG_T& message;
 };
 
+/**
+ * @brief Structure to hold a message that is owned by the structure, i.e. not in the message pool.
+ *
+ * @tparam MSG_T Message type to hold
+ */
+template <typename MSG_T>
+struct OwningStampedMessage {
+  time::TimePoint timestamp = {};
+  MSG_T message = {};
+};
+
 }  // namespace trellis::core
 
 #endif  // TRELLIS_CORE_MESSAGE_CONSUMER_HPP_
