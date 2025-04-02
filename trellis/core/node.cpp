@@ -161,8 +161,8 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
           }
         }
       } else {
-        Log::Warn("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
-                  time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
+        Log::Debug("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
+                   time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
       }
     });
   }
