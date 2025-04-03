@@ -68,8 +68,11 @@ class Health {
    * @param state the discrete health enumeration
    * @param code an application-defined numeric code associated with the update
    * @param description an application-defined string associated with the update
+   * @param compare_description A flag signalling that the description should be used in the status comparison; defaults
+   * to false
    */
-  void Update(const trellis::core::HealthState& state, const Code& code, const std::string& description);
+  void Update(const trellis::core::HealthState& state, const Code& code, const std::string& description,
+              const bool compare_description = false);
 
   /**
    * GetHealthState retrieve the health enumeration for the most recent update

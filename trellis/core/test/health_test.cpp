@@ -105,3 +105,27 @@ TEST(TrellisHealth, FillHistory) {
     ++i;
   }
 }
+
+TEST(TrellisHealth, CompareDescription) {
+  trellis::core::Health health{kTestAppName, trellis::core::Config(YAML::Load(kTestConfigString)),
+                               [this](const std::string& topic) { return test_publisher; },
+                               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; }};
+
+  // First confirm it's empty
+  ASSERT_TRUE(health.GetHealthHistory().empty());
+  health.Update(trellis::core::HealthState::HEALTH_STATE_CRITICAL, 0x01, "Inputs timed out");
+  // Now update again with out the flag.
+  health.Update(trellis::core::HealthState::HEALTH_STATE_CRITICAL, 0x01, "Inputs timed out again");
+  // We should have a single update
+  ASSERT_EQ(health.GetHealthHistory().size(), 1);
+  ASSERT_EQ(health.GetLastHealthStatus().health_state(), trellis::core::HealthState::HEALTH_STATE_CRITICAL);
+  ASSERT_EQ(health.GetLastHealthStatus().status_code(), 0x01);
+  ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out");
+  // Now update again with the flag.
+  health.Update(trellis::core::HealthState::HEALTH_STATE_CRITICAL, 0x01, "Inputs timed out again", true);
+  // We should have a two updates
+  ASSERT_EQ(health.GetHealthHistory().size(), 2);
+  ASSERT_EQ(health.GetLastHealthStatus().health_state(), trellis::core::HealthState::HEALTH_STATE_CRITICAL);
+  ASSERT_EQ(health.GetLastHealthStatus().status_code(), 0x01);
+  ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out again");
+}

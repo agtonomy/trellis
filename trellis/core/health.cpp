@@ -44,13 +44,13 @@ Health::Health(const std::string& name, const trellis::core::Config& config,
       publisher_create_fn_{publisher_create_fn},
       timer_create_fn_{timer_create_fn} {}
 
-void Health::Update(const trellis::core::HealthState& state, const Code& code, const std::string& description) {
+void Health::Update(const trellis::core::HealthState& state, const Code& code, const std::string& description,
+                    const bool compare_description) {
   const auto update = CreateHealthUpdateMessage(state, code, description);
   if (!health_history_.empty()) {
     const auto& last = health_history_.back();
-    if (update == last) {
-      return;  // don't push a new update if it's identical to the last
-    }
+    // Don't push a new update if it's identical to the last.
+    if (update == last && (!compare_description || update.status_description() == last.status_description())) return;
   }
 
   LogUpdate(update);

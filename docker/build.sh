@@ -1,5 +1,22 @@
 #!/bin/bash
 
+Help()
+{
+  echo "Usage: build.sh [-h] [-b 1/0]"
+  echo "h   Print usage"
+  echo "b   Use docker build kit"
+  exit 1
+}
+
+USE_DOCKER_BUILD_KIT=1
+while getopts "hb:" OPTION; do
+  case $OPTION in
+    b) USE_DOCKER_BUILD_KIT=${OPTARG}; ;;
+    h) Help; ;;
+    *) Help; ;;
+  esac;
+done;
+
 set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
@@ -18,4 +35,4 @@ case $ARCHITECTURE in
 esac
 
 cd "$SCRIPT_DIR"
-DOCKER_BUILDKIT=1 docker build . -t "$DOCKER_IMAGE_NAME"
+DOCKER_BUILDKIT=$USE_DOCKER_BUILD_KIT docker build . -t "$DOCKER_IMAGE_NAME"

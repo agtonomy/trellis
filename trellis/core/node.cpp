@@ -106,8 +106,13 @@ void Node::Stop() {
   eCAL::Finalize();
 }
 
-void Node::UpdateHealth(trellis::core::HealthState state, Health::Code code, const std::string& description) {
-  health_.Update(state, code, description);
+void Node::UpdateHealth(const trellis::core::HealthStatus& status, const bool compare_description) {
+  UpdateHealth(status.health_state(), status.status_code(), status.status_description(), compare_description);
+}
+
+void Node::UpdateHealth(trellis::core::HealthState state, Health::Code code, const std::string& description,
+                        const bool compare_description) {
+  health_.Update(state, code, description, compare_description);
 }
 
 trellis::core::HealthState Node::GetHealthState() const { return health_.GetHealthState(); }

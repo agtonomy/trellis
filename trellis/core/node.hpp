@@ -243,14 +243,28 @@ class Node {
    * UpdateHealth update application health state
    *
    * An application can call this to update health information that is broadcast to the rest of the system
-   * @param state the enumerated health state value
-   * @param code an optional application-defined integer representing the condition causing the health state update
-   * @param description an optional application-defined, human-readable string represending the condition causing the
-   * health state update
+   * @param status The health status
+   * @param compare_description A flag signalling that the description should be used in the status comparison; defaults
+   * to false health state update
    *
    * @ see health.hpp
    */
-  void UpdateHealth(trellis::core::HealthState state, Health::Code code = 0, const std::string& description = "");
+  void UpdateHealth(const trellis::core::HealthStatus& status, const bool compare_description = false);
+
+  /**
+   * UpdateHealth update application health state
+   *
+   * An application can call this to update health information that is broadcast to the rest of the system
+   * @param state the enumerated health state value
+   * @param code an optional application-defined integer representing the condition causing the health state update
+   * @param description an optional application-defined, human-readable string represending the condition causing the
+   * @param compare_description A flag signalling that the description should be used in the status comparison; defaults
+   * to false health state update
+   *
+   * @ see health.hpp
+   */
+  void UpdateHealth(trellis::core::HealthState state, Health::Code code = 0, const std::string& description = "",
+                    const bool compare_description = false);
 
   /**
    * GetHealthState get current app health state value

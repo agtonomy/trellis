@@ -1,6 +1,30 @@
 #!/bin/bash
 
+Help()
+{
+  echo "Syntax: run_clang_format [-i|h]"
+  echo 
+  echo "i   Run clang-format in place"
+  echo 
+  echo "h   Print this help"
+}
+
+CLANGFORMATARG="--dry-run"
+
+while getopts ":hi" option; do
+  case $option in
+    h) # Display help
+      Help
+      exit;;
+    i) # Set interactive
+      CLANGFORMATARG="-i";;
+    \?) # Invalid option
+      echo "Invalid option!"
+      Help
+      exit;;
+  esac
+done
+
 set -ex
 
-# Check certain directories for clang-formatted files
-find . -type f -iname '*.cpp' -print0 -o -iname '*.hpp' -print0 | xargs --null clang-format --dry-run -Werror
+find . -type f -iname '*.cpp' -print0 -o -iname '*.hpp' -print0 | xargs --null clang-format $CLANGFORMATARG -Werror
