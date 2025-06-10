@@ -111,12 +111,23 @@ core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view to
   return ret;
 }
 
+void FlushWriter(std::shared_ptr<FileWriter> file_writer) {
+  const auto lock = std::scoped_lock{file_writer->mutex};
+  file_writer->writer.closeLastChunk();
+}
+
 }  // namespace
 
 Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
-               const ::mcap::McapWriterOptions& options) {
+               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms) {
   const auto file_writer = MakeFileWriter(outfile, options);
   for (const auto& topic : topics) subscribers_.push_back(CreateSubscriber(node, topic, file_writer));
+
+  // Set up periodic flush timer if interval is greater than 0
+  if (flush_interval_ms.count() > 0) {
+    flush_timer_ = node.CreateTimer(
+        flush_interval_ms.count(), [file_writer](const core::time::TimePoint&) { FlushWriter(file_writer); }, 0);
+  }
 }
 
 }  // namespace trellis::utils::mcap

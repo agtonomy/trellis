@@ -47,12 +47,15 @@ class Writer {
    * @param topics list of topics to subscribe to
    * @param outfile the path of the output mcap file
    * @param options mcap writer options (optional) the default has some compression
+   * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
    */
   Writer(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
-         const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"));
+         const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
+         std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
 
  private:
   std::vector<core::SubscriberRaw> subscribers_;
+  core::Timer flush_timer_;
 };
 
 }  // namespace trellis::utils::mcap
