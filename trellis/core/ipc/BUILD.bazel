@@ -1,0 +1,5 @@
+cc_library(
+    name = "named_resource_registry",
+    hdrs = ["named_resource_registry.hpp"],
+    visibility = ["//visibility:public"],
+)
