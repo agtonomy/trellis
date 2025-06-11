@@ -2,9 +2,11 @@ on:
   pull_request:
     branches:
       - master
+      - trellis-v2
   push:
     branches:
       - master
+      - trellis-v2
 
 jobs:
   bazel_build_job:
