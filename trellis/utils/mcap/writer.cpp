@@ -119,7 +119,8 @@ void FlushWriter(std::shared_ptr<FileWriter> file_writer) {
 }  // namespace
 
 Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
-               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms) {
+               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms)
+    : node_{node} {
   const auto file_writer = MakeFileWriter(outfile, options);
   for (const auto& topic : topics) subscribers_.push_back(CreateSubscriber(node, topic, file_writer));
 
@@ -128,6 +129,17 @@ Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const s
     flush_timer_ = node.CreateTimer(
         flush_interval_ms.count(), [file_writer](const core::time::TimePoint&) { FlushWriter(file_writer); }, 0);
   }
+}
+
+Writer::~Writer() {
+  if (flush_timer_) {
+    flush_timer_->Stop();             // Stop the timer held by the node
+    flush_timer_->Fire();             // Ensure the timer is fired to flush any remaining data
+    node_.RemoveTimer(flush_timer_);  // Remove timer ptr reference from node
+  }
+
+  // Clear subscribers explicitly
+  subscribers_.clear();
 }
 
 }  // namespace trellis::utils::mcap

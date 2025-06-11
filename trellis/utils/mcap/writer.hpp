@@ -52,10 +52,12 @@ class Writer {
   Writer(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
          const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
          std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+  ~Writer();
 
  private:
   std::vector<core::SubscriberRaw> subscribers_;
   core::Timer flush_timer_;
+  core::Node& node_;
 };
 
 }  // namespace trellis::utils::mcap

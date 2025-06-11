@@ -89,7 +89,7 @@ Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsi
   auto timer =
       std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms, initial_delay_ms);
 
-  timers_.push_back(timer);
+  timers_.insert(timer);
   return timer;
 }
 
@@ -97,8 +97,15 @@ Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback ca
   auto timer =
       std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, std::move(callback), 0, initial_delay_ms);
 
-  timers_.push_back(timer);
+  timers_.insert(timer);
   return timer;
+}
+
+void Node::RemoveTimer(const Timer& timer) {
+  // timers are shared_ptrs. if the caller still holds a reference to the timer, it will not be deleted
+  if (timer) {
+    timers_.erase(timer);
+  }
 }
 
 void Node::Stop() {
