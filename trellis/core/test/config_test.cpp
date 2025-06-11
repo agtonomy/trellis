@@ -104,4 +104,34 @@ TEST(WriteToFile, Overlaid) {
   ASSERT_THAT(read_config_option["integral_scalar"].as<int>(), Eq(config_option["integral_scalar"].as<int>()));
 }
 
+TEST(TrellisConfigAPI, AsIfExistsTests) {
+  Config config(kBaseFilename);
+
+  {
+    // Key exists float
+    const auto floating_scalar = config.AsIfExists<double>("root_key.option1.floating_scalar", 1.0);
+    ASSERT_EQ(floating_scalar, 10.0);  // value from config
+  }
+  {
+    // Key exists int
+    const auto integral_scalar = config.AsIfExists<double>("root_key.option1.integral_scalar", 111);
+    ASSERT_EQ(integral_scalar, 1);  // value from config
+  }
+  {
+    // Key exists, bad type
+    EXPECT_THROW(config.AsIfExists<std::vector<int>>("root_key.option1.floating_scalar", {}), YAML::BadConversion);
+  }
+  {
+    // Leaf doesn't exist
+    const auto missing_floating_scalar = config.AsIfExists<double>("root_key.option1.floating_scalar2", 1.0);
+    ASSERT_EQ(missing_floating_scalar, 1.0);
+  }
+
+  {
+    // Root doesn't exist
+    const auto missing_floating_scalar = config.AsIfExists<double>("bad_key.option1.floating_scalar", 1.0);
+    ASSERT_EQ(missing_floating_scalar, 1.0);
+  }
+}
+
 }  // namespace trellis::core

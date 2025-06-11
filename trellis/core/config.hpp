@@ -23,6 +23,44 @@
 namespace trellis {
 namespace core {
 
+namespace {
+std::string TrimFirstPathSegment(const std::string& path, std::string::size_type dot_idx) {
+  if (dot_idx == std::string::npos) {
+    return "";  // No '.' found, return empty string
+  }
+  return path.substr(dot_idx + 1);
+}
+
+std::string GetFirstPathSegment(const std::string& path, std::string::size_type dot_idx) {
+  if (dot_idx == std::string::npos) {
+    return path;  // No dot found, return the whole string
+  }
+  return path.substr(0, dot_idx);
+}
+
+template <typename T>
+T AsIfExistsRecursive(const YAML::Node& current, const std::string& path, const T& default_value) {
+  if (!current || path.empty()) {
+    return default_value;
+  }
+
+  const auto dot_idx = path.find('.');
+  if (dot_idx == std::string::npos) {
+    YAML::Node child = current[path];
+    return child ? child.as<T>() : default_value;
+  }
+
+  const std::string key = GetFirstPathSegment(path, dot_idx);
+  if (!current[key]) {
+    return default_value;
+  }
+
+  const std::string rest = TrimFirstPathSegment(path, dot_idx);
+  return AsIfExistsRecursive<T>(current[key], rest, default_value);
+}
+
+}  // namespace
+
 /**
  * Config class to represent the configuration structure used by applications
  */
@@ -102,6 +140,19 @@ class Config {
    * @param verbose log output
    */
   void WriteToFile(std::string_view filename, bool verbose = false) const;
+
+  /**
+   * @brief Returns the given value as type T if it exists. Default otherwise.
+   *
+   * @param path A period-delimited path to the config value
+   * @param default_value The fallback (default) value if the value does not exist in the path
+   *
+   * @throws bad_conversion if the path exists but the type conversion failed
+   */
+  template <typename T>
+  T AsIfExists(const std::string& path, const T& default_value) const {
+    return AsIfExistsRecursive(root_, path, default_value);
+  }
 
  private:
   static void RecursiveOverlay(YAML::Node base, YAML::Node overlay, bool verbose, const std::string& key_prefix = "");
