@@ -29,7 +29,7 @@ TEST(UDPTests, SendAndReceive) {
   std::array<uint8_t, 1024> buffer;
   static unsigned receive_count = 0;
 
-  UDP receiver(loop, 0);
+  UDP receiver(loop, static_cast<uint16_t>(0));
   UDP sender(loop);
 
   receiver.AsyncReceiveFrom(
@@ -61,11 +61,12 @@ TEST(UDPTests, Receiver) {
   static unsigned receive_count = 0;
   static unsigned receive_bytes_count = 0;
 
-  UDPReceiver<1024> receiver(loop, 0, [](const void* data, size_t size, const asio::ip::udp::endpoint& ep) {
-    std::cout << "Received " << size << " bytes!" << std::endl;
-    ++receive_count;
-    receive_bytes_count += size;
-  });
+  UDPReceiver<1024> receiver(loop, static_cast<uint16_t>(0),
+                             [](const void* data, size_t size, const asio::ip::udp::endpoint& ep) {
+                               std::cout << "Received " << size << " bytes!" << std::endl;
+                               ++receive_count;
+                               receive_bytes_count += size;
+                             });
 
   UDP sender(loop);
 

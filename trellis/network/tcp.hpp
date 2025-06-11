@@ -132,11 +132,36 @@ class TCP {
   uint16_t GetPort() const { return socket_->local_endpoint().port(); }
 
   /**
+   * GetRemotePort retrieves the port that the remote peer is using (if available).
+   *
+   * This is useful for logging, debugging, or identifying which remote port is connected to us.
+   * @return optionally, the port number the remote endpoint is currently using if connected
+   */
+  std::optional<uint16_t> GetRemotePort() const {
+    trellis::core::error_code ec;
+    const auto ep = socket_->remote_endpoint(ec);
+    if (!ec) {
+      return ep.port();
+    }
+    return {};
+  }
+
+  /**
    * GetAddress retrieve a string representing the address the socket is bound to
    *
    * @return a string containing the local address
    */
   std::string GetAddress() const { return socket_->local_endpoint().address().to_string(); }
+
+  /**
+   * Cancel all pending events
+   */
+  void Cancel() { socket_->cancel(); }
+
+  /**
+   * Close the underlying socket
+   */
+  void Close() { socket_->close(); }
 
  private:
   SocketPtr socket_;
@@ -170,10 +195,12 @@ class TCPServer {
   void AcceptNextConnection() {
     auto socket = std::make_shared<asio::ip::tcp::socket>(*loop_);
     acceptor_.async_accept(*socket, [this, socket](const trellis::core::error_code& error) {
-      connection_callback_(error, TCP(socket));  // pass socket back to user
-      if (!error) {
-        AcceptNextConnection();  // accept any other inbounds
+      if (error == asio::error::operation_aborted) {
+        // Exit immediately because `this` would have been inavlidated
+        return;
       }
+      connection_callback_(error, TCP(socket));  // pass socket back to user
+      AcceptNextConnection();                    // accept any other inbounds
     });
   }
   trellis::core::EventLoop loop_;

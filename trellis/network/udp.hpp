@@ -42,7 +42,7 @@ class UDP {
    *
    * @param loop the event loop thread handle to use for IO
    */
-  UDP(trellis::core::EventLoop loop) : loop_{loop}, socket_{*loop, asio::ip::udp::v4()} {}
+  explicit UDP(trellis::core::EventLoop loop) : loop_{loop}, socket_{*loop, asio::ip::udp::v4()} {}
 
   /**
    * UDP opens a UDP socket bound to a given port on all interfaces
@@ -50,8 +50,17 @@ class UDP {
    * @param loop the event loop thread handle to use for IO
    * @param ipv4_port The UDP port to bind to
    */
-  UDP(trellis::core::EventLoop loop, uint16_t ipv4_port)
+  explicit UDP(trellis::core::EventLoop loop, uint16_t ipv4_port)
       : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::udp::v4(), ipv4_port)} {}
+
+  /**
+   * UDP creates a UDP socket assigned to the given file descriptor
+   *
+   * @param loop the event loop thread handle to use for IO
+   * @param socket_fd The socket file descriptor to assign to this socket
+   */
+  explicit UDP(trellis::core::EventLoop loop, asio::ip::udp::socket::native_handle_type socket_fd)
+      : loop_{loop}, socket_(*loop, asio::ip::udp::v4(), socket_fd) {}
 
   /**
    * UDP opens a UDP socket bound to a given port on the interface given by address
@@ -60,7 +69,7 @@ class UDP {
    * @param ipv4_address the IPv4 address to bind to in dotted decimal notation (e.g. xxx.xxx.xxx.xxx)
    * @param ipv4_port The UDP port to bind to
    */
-  UDP(trellis::core::EventLoop loop, std::string ipv4_address, uint16_t ipv4_port)
+  explicit UDP(trellis::core::EventLoop loop, std::string ipv4_address, uint16_t ipv4_port)
       : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::make_address(ipv4_address), ipv4_port)} {}
 
   void AsyncSendTo(std::string ipv4_address, uint16_t ipv4_port, const void* data, size_t length,
@@ -129,8 +138,23 @@ class UDPReceiver {
    * @param ipv4_port the IPv4 port number to bind this socket to
    * @param callback the callback to invoke any time inbound data has arrived
    */
-  UDPReceiver(trellis::core::EventLoop loop, uint16_t ipv4_port, Callback callback)
-      : udp_{loop, ipv4_port}, callback_{callback} {
+  explicit UDPReceiver(trellis::core::EventLoop loop, uint16_t ipv4_port, Callback callback)
+      : udp_(loop, ipv4_port), callback_{callback} {
+    udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
+                          [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
+                                 size_t size) { DidReceive(code, ep, size); });
+  }
+
+  /**
+   * UDPReceiver constructor for receiving UDP packets
+   *
+   * @param loop the event loop thread handle to use for IO
+   * @param ipv4_port the IPv4 port number to bind this socket to
+   * @param callback the callback to invoke any time inbound data has arrived
+   */
+  explicit UDPReceiver(trellis::core::EventLoop loop, asio::ip::udp::socket::native_handle_type socket_fd,
+                       Callback callback)
+      : udp_(loop, socket_fd), callback_{callback} {
     udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
                           [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
                                  size_t size) { DidReceive(code, ep, size); });
