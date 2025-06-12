@@ -1,0 +1,52 @@
+/*
+ * Copyright (C) 2025 Agtonomy
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+/**
+ * Note: This file was inspired by eCAL https://projects.eclipse.org/projects/automotive.ecal
+ */
+
+syntax = "proto3";
+
+import "trellis/core/discovery/pb/process.proto";
+import "trellis/core/discovery/pb/service.proto";
+import "trellis/core/discovery/pb/topic.proto";
+
+package trellis.core.discovery.pb;
+
+enum SampleType  // command type
+{
+  unknown = 0;                  // undefined command
+  publisher_registration = 1;   // register publisher
+  subscriber_registration = 2;  // register subscriber
+  process_registration = 3;     // register process
+  service_registration = 4;     // register service
+  client_registration = 5;      // register client
+
+  publisher_unregistration = 6;   // unregister publisher
+  subscriber_unregistration = 7;  // unregister subscriber
+  process_unregistration = 8;     // unregister process
+  service_unregistration = 9;     // unregister service
+  client_unregistration = 10;     // unregister client
+}
+
+message Sample {
+  SampleType type = 1;  // sample command type
+  Process process = 2;  // process information
+  Service service = 3;  // service information
+  Client client = 4;    // client information
+  Topic topic = 5;      // topic information
+}

@@ -1,0 +1,44 @@
+cc_library(
+    name = "discovery",
+    srcs = [
+        "discovery.cpp",
+    ],
+    hdrs = [
+        "discovery.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":utils",
+        ":types",
+        "//trellis/core:core_event_loop",
+        "//trellis/core:core_config",
+        "//trellis/core:core_timer",
+        "//trellis/network",
+        "@fmt",
+    ],
+)
+
+cc_library(
+    name = "utils",
+    srcs = [
+        "utils.cpp",
+    ],
+    hdrs = [
+        "utils.hpp",
+    ],
+    deps = [
+        ":types",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "types",
+    hdrs = [
+        "types.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core/discovery/pb:cc_proto",
+    ],
+)

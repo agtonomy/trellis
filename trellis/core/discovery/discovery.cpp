@@ -1,0 +1,369 @@
+/*
+ * Copyright (C) 2025 Agtonomy
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+#include "trellis/core/discovery/discovery.hpp"
+
+#include <fmt/core.h>
+
+namespace trellis::core::discovery {
+
+namespace {
+
+/**
+ * Creates and returns a socket file descriptor with SO_REUSEADDR and SO_REUSEPORT
+ */
+int CreateNativeUDPSocket(uint16_t port) {
+  int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    throw std::runtime_error("Failed to create UDP socket");
+  }
+
+  // Enable SO_REUSEADDR and SO_REUSEPORT so we can bind even if another process is already bound
+  int reuse = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to set SO_REUSEADDR");
+  }
+
+  // Enable SO_REUSEPORT (optional, allows multiple sockets to bind to the same port)
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to set SO_REUSEPORT");
+  }
+
+  int yes = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to set SO_BROADCAST");
+  }
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = htons(port);
+  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to bind UDP socket");
+  }
+  return fd;
+}
+
+struct SampleHeader {
+  char head[4];  //-V112
+  int32_t version;
+  int32_t len;  // header: complete size of message, data: current size of that part
+};
+
+static constexpr std::string_view kDefaultSendAddress = "127.255.255.255";
+static constexpr unsigned kDefaultDiscoveryPort = 1400u;
+static constexpr unsigned kDefaultDiscoveryInterval = 1000u;
+static constexpr unsigned kDefaultSampleTimeout = 2000u;
+
+}  // namespace
+
+Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
+    : node_name_{std::move(node_name)},
+      send_addr_{config.AsIfExists<std::string>("trellis.discovery.send_address", std::string(kDefaultSendAddress))},
+      discovery_port_{config.AsIfExists<unsigned>("trellis.discovery.port", kDefaultDiscoveryPort)},
+      management_interval_{config.AsIfExists<unsigned>("trellis.discovery.interval", kDefaultDiscoveryInterval)},
+      sample_timeout_ms_{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
+      udp_receiver_(loop,
+                    static_cast<asio::ip::udp::socket::native_handle_type>(CreateNativeUDPSocket(discovery_port_)),
+                    [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
+                      ReceiveData(trellis::core::time::Now(), data, len);
+                    }),
+      udp_sender_(loop, CreateNativeUDPSocket(0)),
+      management_timer_{std::make_shared<TimerImpl>(
+          loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); }, management_interval_,
+          management_interval_)} {
+  Register(GetNodeProcessSample());
+}
+
+void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
+  PurgeStaleSamples(now, process_samples_, process_sample_callbacks_);
+  PurgeStaleSamples(now, publisher_samples_, publisher_sample_callbacks_);
+  PurgeStaleSamples(now, subscriber_samples_, subscriber_sample_callbacks_);
+  PurgeStaleSamples(now, service_samples_, service_sample_callbacks_);
+  BroadcastSamples();
+}
+
+void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
+                                  const SampleCallbackMap& callback_map) {
+  std::scoped_lock scoped_lock(callback_mutex_);
+  for (auto it = map.begin(); it != map.end();) {
+    if (now - it->second.stamp > sample_timeout_ms_) {
+      for (const auto& callback : callback_map) {
+        if (callback.second) callback.second(EventType::kNewUnregistration, std::move(it->second.sample));
+      }
+      it = map.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len) {
+  static constexpr size_t kHeaderSize = sizeof(SampleHeader);
+  const char* buf = static_cast<const char*>(data);
+
+  // Do we have enough data to cover the header?
+  if (len < kHeaderSize) {
+    return;
+  }
+
+  const SampleHeader* header = reinterpret_cast<const SampleHeader*>(data);
+  // Do we have enough data to cover the sample name length field?
+  if (len < kHeaderSize + sizeof(uint16_t)) {
+    return;
+  }
+
+  // Do we have enough data to cover the sample name string?
+  const uint16_t sample_name_len = (buf[kHeaderSize + 1] << 8) + buf[kHeaderSize];
+  if (len < kHeaderSize + sizeof(uint16_t) + sample_name_len) {
+    return;
+  }
+
+  // Note now that we calculated the sample name length, we now skip over the sample name string since it's redundant
+  // and we have no use for it here.
+
+  // Let's parse and process the sample
+  Sample sample;
+  const unsigned sample_start_offset = kHeaderSize + sizeof(sample_name_len) + sample_name_len;
+  if (!sample.ParseFromArray(buf + sample_start_offset, header->len - sizeof(sample_name_len) - sample_name_len)) {
+    return;
+  }
+  // At this point we have successfully decoded a sample. Let's pass it on based on type
+  switch (sample.type()) {
+    case discovery::unknown:
+      break;
+    case discovery::process_registration:
+      ProcessProcessSample(now, EventType::kNewRegistration, std::move(sample));
+      break;
+    case discovery::process_unregistration:
+      ProcessProcessSample(now, EventType::kNewUnregistration, std::move(sample));
+      break;
+    case discovery::service_registration:
+      ProcessServiceSample(now, EventType::kNewRegistration, std::move(sample));
+      break;
+    case discovery::service_unregistration:
+      ProcessServiceSample(now, EventType::kNewUnregistration, std::move(sample));
+      break;
+    case discovery::client_registration:
+      break;
+    case discovery::client_unregistration:
+      break;
+    case discovery::subscriber_registration:
+      ProcessSubscriberSample(now, EventType::kNewRegistration, std::move(sample));
+      break;
+    case discovery::subscriber_unregistration:
+      ProcessSubscriberSample(now, EventType::kNewUnregistration, std::move(sample));
+      break;
+    case discovery::publisher_registration:
+      ProcessPublisherSample(now, EventType::kNewRegistration, std::move(sample));
+      break;
+    case discovery::publisher_unregistration:
+      ProcessPublisherSample(now, EventType::kNewUnregistration, std::move(sample));
+      break;
+    default:
+      break;
+  }
+}
+
+namespace {
+
+void ProcessSamplesMap(Discovery::SamplesMap& map, trellis::core::time::TimePoint now, Discovery::EventType event,
+                       Sample sample) {
+  if (event == Discovery::EventType::kNewRegistration) {
+    const auto topic_id = sample.topic().tid();  // copy map key before moving sample
+    map[topic_id] = Discovery::TimestampedSample{.stamp = now, .sample = std::move(sample)};
+  } else if (event == Discovery::EventType::kNewUnregistration) {
+    auto it = map.find(sample.topic().tid());
+    if (it != map.end()) {
+      map.erase(it);
+    }
+  }
+}
+
+}  // namespace
+
+void Discovery::ProcessProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
+  ProcessSamplesMap(process_samples_, now, event, sample);
+}
+
+void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
+  ProcessSamplesMap(subscriber_samples_, now, event, sample);
+  std::scoped_lock scoped_lock(callback_mutex_);
+  for (const auto& callback : subscriber_sample_callbacks_) {
+    if (callback.second) callback.second(event, sample);
+  }
+}
+
+void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
+  ProcessSamplesMap(publisher_samples_, now, event, sample);
+  std::scoped_lock scoped_lock(callback_mutex_);
+  for (const auto& callback : publisher_sample_callbacks_) {
+    if (callback.second) callback.second(event, sample);
+  }
+}
+
+void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
+  ProcessSamplesMap(service_samples_, now, event, sample);
+  std::scoped_lock scoped_lock(callback_mutex_);
+  for (const auto& callback : service_sample_callbacks_) {
+    if (callback.second) callback.second(event, sample);
+  }
+}
+
+Discovery::RegistrationHandle Discovery::Register(Sample sample) {
+  registered_samples_.emplace(std::make_pair(next_handle_, sample));
+  const auto handle = next_handle_++;
+  return handle;
+}
+
+void Discovery::Unregister(RegistrationHandle handle) {
+  if (handle == kInvalidRegistrationHandle) {
+    return;
+  }
+  const auto it = registered_samples_.find(handle);
+  if (it != registered_samples_.end()) {
+    registered_samples_.erase(it);
+  }
+}
+
+void Discovery::BroadcastSamples() {
+  for (const auto& sample : registered_samples_) {
+    BroadcastSample(sample.second);
+  }
+}
+
+void Discovery::BroadcastSample(const Sample& sample) {
+  SampleHeader* header = reinterpret_cast<SampleHeader*>(send_buf_.data());
+  header->head[0] = 'T';
+  header->head[1] = 'R';
+  header->head[2] = 'L';
+  header->head[3] = 'S';
+  header->version = 1;
+
+  const std::string serialized = sample.SerializeAsString();
+
+  // TODO overrun checks
+  const uint16_t name_length = sample.topic().tname().size() + 1;
+  ::memcpy(send_buf_.data() + sizeof(SampleHeader), &name_length, sizeof(name_length));
+  ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length), sample.topic().tname().data(), name_length);
+  ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length) + name_length, serialized.data(),
+           serialized.size());
+
+  header->len = sizeof(name_length) + name_length + serialized.size();
+
+  udp_sender_.AsyncSendTo(send_addr_, discovery_port_, send_buf_.data(), header->len + sizeof(SampleHeader),
+                          [](const trellis::core::error_code&, size_t) {});
+}
+
+Sample Discovery::GetNodeProcessSample() {
+  Sample process;
+  process.set_type(discovery::process_registration);
+  process.mutable_process()->set_hname(utils::GetHostname());
+  process.mutable_process()->set_pid(::getpid());
+  process.mutable_process()->set_pname(utils::GetExecutablePath());
+  process.mutable_process()->set_uname(node_name_);
+  process.mutable_process()->set_pparam(utils::GetArgv0());
+  return process;
+}
+
+Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {
+  std::scoped_lock scoped_lock(callback_mutex_);
+  const unsigned handle = next_callback_handle_++;
+  publisher_sample_callbacks_[handle] = std::move(callback);
+  return handle;
+}
+
+Discovery::CallbackHandle Discovery::AsyncReceiveSubscribers(SampleCallback callback) {
+  std::scoped_lock scoped_lock(callback_mutex_);
+  const unsigned handle = next_callback_handle_++;
+  subscriber_sample_callbacks_[handle] = std::move(callback);
+  return handle;
+}
+
+Discovery::CallbackHandle Discovery::AsyncReceiveServices(SampleCallback callback) {
+  std::scoped_lock scoped_lock(callback_mutex_);
+  const unsigned handle = next_callback_handle_++;
+  service_sample_callbacks_[handle] = std::move(callback);
+  return handle;
+}
+
+void Discovery::StopReceive(Discovery::CallbackHandle handle) {
+  if (handle == kInvalidCallbackHandle) {
+    return;
+  }
+  std::scoped_lock scoped_lock(callback_mutex_);
+  if (publisher_sample_callbacks_.find(handle) != publisher_sample_callbacks_.end()) {
+    publisher_sample_callbacks_.erase(handle);
+  }
+  if (subscriber_sample_callbacks_.find(handle) != subscriber_sample_callbacks_.end()) {
+    subscriber_sample_callbacks_.erase(handle);
+  }
+}
+
+std::vector<Sample> Discovery::GetPubSubSamples() const {
+  std::vector<Sample> samples;
+  for (const auto& [name, timestamped_sample] : publisher_samples_) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  for (const auto& [name, timestamped_sample] : subscriber_samples_) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  return samples;
+}
+
+std::vector<Sample> Discovery::GetServiceSamples() const {
+  std::vector<Sample> samples;
+  for (const auto& [name, timestamped_sample] : service_samples_) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  return samples;
+}
+
+std::vector<Sample> Discovery::GetProcessSamples() const {
+  std::vector<Sample> samples;
+  for (const auto& [name, timestamped_sample] : process_samples_) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  return samples;
+}
+
+void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) {
+  auto it = registered_samples_.find(handle);
+  if (it == registered_samples_.end()) {
+    throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
+                                       static_cast<unsigned>(handle)));
+  }
+  auto& sample = it->second;
+  sample.mutable_topic()->set_dclock(stats.send_receive_count);
+  sample.mutable_topic()->set_dfreq(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
+}
+
+std::string Discovery::GetPubSubId(RegistrationHandle handle) const {
+  auto it = registered_samples_.find(handle);
+  if (it == registered_samples_.end()) {
+    throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
+                                       static_cast<unsigned>(handle)));
+  }
+  auto& sample = it->second;
+  return sample.topic().tid();
+}
+
+}  // namespace trellis::core::discovery

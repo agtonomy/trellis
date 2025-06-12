@@ -1,0 +1,52 @@
+/*
+ * Copyright (C) 2025 Agtonomy
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+/**
+ * Note: This file was inspired by eCAL https://projects.eclipse.org/projects/automotive.ecal
+ */
+
+syntax = "proto3";
+
+import "trellis/core/discovery/pb/layer.proto";
+
+package trellis.core.discovery.pb;
+
+message DataTypeInformation {
+  string name = 1;      // name of the datatype
+  string encoding = 2;  // encoding of the datatype (e.g. protobuf, flatbuffers, capnproto)
+  bytes desc = 3;       // descriptor information of the datatype (necessary for reflection)
+}
+
+message Topic {
+  string hname = 1;  // host name
+  int32 pid = 2;     // process id
+  string pname = 3;  // process name
+  string uname = 4;  // unit name
+  string tid = 5;    // topic id
+  string tname = 6;  // topic name
+
+  DataTypeInformation tdatatype = 7;  // topic datatype information (encoding & type & description)
+
+  repeated TransportLayer tlayer = 8;  // active topic transport layers and it's specific parameter
+
+  int32 connections_loc = 9;  // number of local connected entities
+  int32 message_drops = 10;   // dropped messages
+
+  int64 did = 11;     // data send id (publisher setid)
+  int64 dclock = 12;  // data clock (send / receive action)
+  int32 dfreq = 13;   // data frequency (send / receive samples per second) [mHz]
+}

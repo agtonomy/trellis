@@ -1,0 +1,12 @@
+proto_library(
+    name = "proto",
+    srcs = glob([
+        "*.proto",
+    ]),
+)
+
+cc_proto_library(
+    name = "cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":proto"],
+)
