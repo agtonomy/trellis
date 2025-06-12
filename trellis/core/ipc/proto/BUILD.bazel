@@ -1,0 +1,13 @@
+cc_library(
+    name = "dynamic_message_cache",
+    srcs = [
+        "dynamic_message_cache.cpp",
+    ],
+    hdrs = [
+        "dynamic_message_cache.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:protobuf",
+    ]
+)

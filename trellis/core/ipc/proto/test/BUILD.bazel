@@ -1,0 +1,10 @@
+cc_test(
+    name = "dynamic_message_cache_test",
+    srcs = ["dynamic_message_cache_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/proto:dynamic_message_cache",
+        "//trellis/core/discovery:utils",
+        "//trellis/core/test:test_proto",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
