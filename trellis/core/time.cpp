@@ -89,6 +89,8 @@ google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp
 
 void EnableSimulatedClock() { sim_clock_enabled_ = true; }
 
+void DisableSimulatedClock() { sim_clock_enabled_ = false; }
+
 bool IsSimulatedClockEnabled() { return sim_clock_enabled_; }
 
 void SetSimulatedTime(const TimePoint& now) {

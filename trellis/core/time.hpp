@@ -113,6 +113,12 @@ google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp
 void EnableSimulatedClock();
 
 /**
+ * DisableSimulatedClock disable the simulated system clock
+ * @see EnableSimulatedClock
+ */
+void DisableSimulatedClock();
+
+/**
  * IsSimulatedClockEnabled returns true if the simulated clock is running
  */
 bool IsSimulatedClockEnabled();
