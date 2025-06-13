@@ -1,0 +1,16 @@
+cc_library(
+    name = "socket_event",
+    srcs = [
+        "socket_event.cpp",
+    ],
+    hdrs = [
+        "socket_event.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_event_loop",
+        "//trellis/core:core_logging",
+        "//trellis/core/ipc:named_resource_registry",
+        "@asio",
+    ],
+)

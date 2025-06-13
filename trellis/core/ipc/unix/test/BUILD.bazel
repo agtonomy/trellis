@@ -1,0 +1,8 @@
+cc_test(
+    name = "socket_event_test",
+    srcs = ["socket_event_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/unix:socket_event",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
