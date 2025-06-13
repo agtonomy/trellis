@@ -1,0 +1,45 @@
+cc_library(
+    name = "shm_read_write_lock",
+    srcs = ["shm_read_write_lock.cpp"],
+    hdrs = ["shm_read_write_lock.hpp"],
+    linkopts = ["-lrt"],
+    deps = [
+        "//trellis/core:core_time",
+    ],
+)
+
+cc_library(
+    name = "shm_file",
+    srcs = ["shm_file.cpp"],
+    hdrs = ["shm_file.hpp"],
+    linkopts = ["-lrt"],
+    deps = [
+        "//trellis/core/ipc:named_resource_registry",
+        "@fmt",
+    ],
+)
+
+cc_library(
+    name = "shm_reader",
+    srcs = ["shm_reader.cpp"],
+    hdrs = ["shm_reader.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":shm_file",
+        ":shm_read_write_lock",
+        "//trellis/core/ipc/unix:socket_event",
+    ],
+)
+
+cc_library(
+    name = "shm_writer",
+    srcs = ["shm_writer.cpp"],
+    hdrs = ["shm_writer.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":shm_file",
+        ":shm_read_write_lock",
+        "//trellis/core/ipc/unix:socket_event",
+        "@fmt",
+    ],
+)
