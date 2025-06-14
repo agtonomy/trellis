@@ -1,0 +1,30 @@
+cc_library(
+    name = "types",
+    hdrs = ["types.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "client",
+    hdrs = ["client.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:protobuf",
+        "//trellis/core:core_event_loop",
+        "//trellis/core/discovery",
+        "//trellis/network",
+        ":types",
+    ],
+)
+
+cc_library(
+    name = "server",
+    hdrs = ["server.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:protobuf",
+        "//trellis/core:core_event_loop",
+        "//trellis/core/discovery",
+        ":types",
+    ],
+)

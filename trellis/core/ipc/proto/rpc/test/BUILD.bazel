@@ -1,0 +1,11 @@
+cc_test(
+    name = "client_server_test",
+    srcs = ["client_server_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/proto/rpc:client",
+        "//trellis/core/ipc/proto/rpc:server",
+        "//trellis/core/test:test_fixture",
+        "//trellis/core/test:test_proto",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
