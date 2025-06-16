@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <filesystem>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/logging.hpp"
@@ -29,7 +30,14 @@ namespace trellis::core::ipc::unix {
 SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string handle)
     : reader_(reader), handle_(std::move(handle)), socket_(*loop) {
   if (reader_) {
+    // First create the base directories if they don't exist
+    std::filesystem::path handle_path(handle_);
+    std::filesystem::create_directories(handle_path.parent_path());
+
+    // Unlink if there is a collision with an existing resource
     ::unlink(handle_.c_str());
+
+    // Open and bind the socket to the handle
     endpoint_ = asio::local::datagram_protocol::endpoint(handle_);
     socket_.open();
     socket_.non_blocking(true);

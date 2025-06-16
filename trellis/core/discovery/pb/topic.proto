@@ -36,17 +36,16 @@ message Topic {
   int32 pid = 2;     // process id
   string pname = 3;  // process name
   string uname = 4;  // unit name
-  string tid = 5;    // topic id
-  string tname = 6;  // topic name
+  string tname = 5;  // topic name
 
-  DataTypeInformation tdatatype = 7;  // topic datatype information (encoding & type & description)
+  DataTypeInformation tdatatype = 6;  // topic datatype information (encoding & type & description)
 
-  repeated TransportLayer tlayer = 8;  // active topic transport layers and it's specific parameter
+  repeated TransportLayer tlayer = 7;  // active topic transport layers and it's specific parameter
 
-  int32 connections_loc = 9;  // number of local connected entities
-  int32 message_drops = 10;   // dropped messages
+  int32 connections_loc = 8;  // number of local connected entities
+  int32 message_drops = 9;   // dropped messages
 
-  int64 did = 11;     // data send id (publisher setid)
-  int64 dclock = 12;  // data clock (send / receive action)
-  int32 dfreq = 13;   // data frequency (send / receive samples per second) [mHz]
+  int64 did = 10;     // data send id (publisher setid)
+  int64 dclock = 11;  // data clock (send / receive action)
+  int32 dfreq = 12;   // data frequency (send / receive samples per second) [mHz]
 }

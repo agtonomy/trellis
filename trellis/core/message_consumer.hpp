@@ -330,10 +330,6 @@ class MessageConsumer {
   std::tuple<std::vector<Subscriber<Types>>...> subscribers_;
   trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessagePtr<Types>...> fifos_;
   LatestTimestampArray latest_timestamps_;
-
-  static_assert(FIFO_DEPTH < containers::kDefaultSlotSize,
-                "We use the default slot side for the subscribers, and the FIFO may hold up to FIFO_DEPTH+1 objects, "
-                "so we need it to be strictly larger.");
 };
 
 }  // namespace core

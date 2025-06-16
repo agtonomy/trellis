@@ -17,6 +17,8 @@
 
 #include "writer.hpp"
 
+#include "trellis/utils/protobuf/file_descriptor.hpp"
+
 namespace trellis::utils::mcap {
 
 namespace {
@@ -75,22 +77,23 @@ void TryInitializeMcapChannel(SubscriberData& data) {
                   data.channel_id);
 }
 
-void WriteMessage(const core::TimestampedMessage& msg, SubscriberData& data) {
+void WriteMessage(const core::time::TimePoint& stamp, const uint8_t* data, size_t len,
+                  SubscriberData& subscriber_data) {
   // MCAP files are indexed by log time, so we use send time as log time.
-  const auto time = core::time::TimePointToNanoseconds(core::time::TimePointFromTimestamp(msg.timestamp()));
-  const auto mcap_msg = ::mcap::Message{.channelId = data.channel_id,
-                                        .sequence = data.sequence,
+  const auto time = core::time::TimePointToNanoseconds(stamp);
+  const auto mcap_msg = ::mcap::Message{.channelId = subscriber_data.channel_id,
+                                        .sequence = subscriber_data.sequence,
                                         .logTime = time,
                                         .publishTime = time,
-                                        .dataSize = msg.payload().size(),
-                                        .data = reinterpret_cast<const std::byte*>(msg.payload().data())};
+                                        .dataSize = len,
+                                        .data = reinterpret_cast<const std::byte*>(data)};
 
-  const auto res = data.file_writer->writer.write(mcap_msg);
+  const auto res = subscriber_data.file_writer->writer.write(mcap_msg);
   if (!res.ok()) {
-    data.file_writer->writer.close();
+    subscriber_data.file_writer->writer.close();
     throw(std::runtime_error{fmt::format("MCAP write failed: {}", res.message)});
   }
-  ++data.sequence;
+  ++subscriber_data.sequence;
 }
 
 core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view topic,
@@ -99,15 +102,15 @@ core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view to
   // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
   // Hence we use a shared ptr to update the data after creating the subscriber, and we guard in the
   // InitalizeMcapChannel function against data with nullptr subscriber.
-  const auto data = std::make_shared<SubscriberData>(
+  const auto subscriber_data = std::make_shared<SubscriberData>(
       SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});
-  const auto ret = node.CreateRawSubscriber(std::string{topic},
-                                            [data](const core::time::TimePoint&, const core::TimestampedMessage& msg) {
-                                              const auto lock = std::scoped_lock{data->file_writer->mutex};
-                                              if (!data->initialized) TryInitializeMcapChannel(*data);
-                                              if (data->initialized) WriteMessage(msg, *data);
-                                            });
-  data->subscriber = ret;
+  const auto ret = node.CreateRawSubscriber(
+      std::string{topic}, [subscriber_data](const core::time::TimePoint& stamp, const uint8_t* data, size_t len) {
+        const auto lock = std::scoped_lock{subscriber_data->file_writer->mutex};
+        if (!subscriber_data->initialized) TryInitializeMcapChannel(*subscriber_data);
+        if (subscriber_data->initialized) WriteMessage(stamp, data, len, *subscriber_data);
+      });
+  subscriber_data->subscriber = ret;
   return ret;
 }
 

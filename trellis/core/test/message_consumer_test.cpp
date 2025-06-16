@@ -30,8 +30,6 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  StartRunnerThread();
-
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
   auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
 
@@ -48,7 +46,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
          ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
          ++receive_count_2;
        }}};
-
+  StartRunnerThread();
   WaitForDiscovery();
 
   // Publish messages on both topics
@@ -80,30 +78,30 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
 
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
+  auto pub = node_.CreatePublisher<test::Test>("consumer_topic_3");
+  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_4");
 
   trellis::core::MessageConsumer<num_burst_messages, test::Test, test::TestTwo> inputs_{
       node_,
-      {{"consumer_topic_1", "consumer_topic_2"}},
+      {{"consumer_topic_3", "consumer_topic_4"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
-         ASSERT_EQ(topic, "consumer_topic_1");
+         ASSERT_EQ(topic, "consumer_topic_3");
          ASSERT_EQ(receive_count_1, msg.id());
          ++receive_count_1;
        },
        [this](const std::string& topic, const test::TestTwo& msg, const time::TimePoint&, const time::TimePoint&) {
-         ASSERT_EQ(topic, "consumer_topic_2");
+         ASSERT_EQ(topic, "consumer_topic_4");
          ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
          ++receive_count_2;
        }},
       {{watchdog1_timeout_ms, watchdog2_timeout_ms}},
       {{[](const std::string& topic, const trellis::core::time::TimePoint&) {
           ++watchdog_count_1;
-          ASSERT_EQ(topic, "consumer_topic_1");
+          ASSERT_EQ(topic, "consumer_topic_3");
         },
         [](const std::string& topic, const trellis::core::time::TimePoint&) {
           ++watchdog_count_2;
-          ASSERT_EQ(topic, "consumer_topic_2");
+          ASSERT_EQ(topic, "consumer_topic_4");
         }}}};
 
   WaitForDiscovery();

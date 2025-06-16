@@ -42,11 +42,7 @@ class HealthMonitor {
     kNodeTransitionToUnhealthy,
   };
 
-  // XXX(bsirang) ideally the memory size can be user configurable, but because that would take a larger refactor,
-  // providing a value that should be large enough for most use cases. Given that the size of the health history message
-  // is relatively small, it should be okay to allocate a memory pool of this size.
-  static constexpr size_t kMemoryPoolSize = 1000U;
-  using HealthSubscriber = trellis::core::Subscriber<trellis::core::HealthHistory, kMemoryPoolSize>;
+  using HealthSubscriber = trellis::core::Subscriber<trellis::core::HealthHistory>;
   using SubscriberCreateFunction = std::function<HealthSubscriber(
       const std::string& topic, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback)>;
   using TimerCreateFunction = std::function<trellis::core::Timer(unsigned, trellis::core::TimerImpl::Callback)>;

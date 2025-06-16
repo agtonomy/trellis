@@ -18,7 +18,8 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "trellis/core/monitor_interface.hpp"
+#include "VariadicTable.h"
+#include "trellis/core/discovery/discovery.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
@@ -35,15 +36,19 @@ int node_list_main(int argc, char* argv[]) {
     return 1;
   }
 
-  eCAL::Initialize(0, nullptr, root_command.data(), eCAL::Init::All);
-
   // Delay to give time for discovery
-  std::this_thread::sleep_for(std::chrono::milliseconds(monitor_delay_ms));
+  trellis::core::EventLoop loop;
+  trellis::core::discovery::Discovery discovery("trellis-cli", loop, trellis::core::Config{});
+  loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
 
-  trellis::core::MonitorInterface mutil;
-  mutil.PrintNodes();
+  const auto process = discovery.GetProcessSamples();
 
-  eCAL::Finalize();
+  VariadicTable<std::string> vt({"Node Name"});
+  for (const auto& sample : process) {
+    vt.addRow(sample.process().uname());
+  }
+  vt.print(std::cout);
+
   return 0;
 }
 

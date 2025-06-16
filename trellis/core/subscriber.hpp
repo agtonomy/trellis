@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 Agtonomy
+ * Copyright (C) 2025 Agtonomy
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,147 +15,107 @@
  *
  */
 
-#ifndef TRELLIS_CORE_SUBSCRIBER_HPP_
-#define TRELLIS_CORE_SUBSCRIBER_HPP_
+#ifndef TRELLIS_CORE_SUBSCRIBER_V2_HPP_
+#define TRELLIS_CORE_SUBSCRIBER_V2_HPP_
 
-#include <ecal/msg/protobuf/dynamic_subscriber.h>
-#include <ecal/msg/protobuf/subscriber.h>
+#include <fmt/core.h>
 
-#include "logging.hpp"
-#include "monitor_interface.hpp"
-#include "proto_utils.hpp"
-#include "time.hpp"
-#include "timer.hpp"
-#include "trellis/containers/memory_pool.hpp"
-#include "trellis/utils/protobuf/file_descriptor.hpp"
+#include "trellis/core/discovery/discovery.hpp"
+#include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
+#include "trellis/core/ipc/shm/shm_reader.hpp"
 
-namespace trellis {
-namespace core {
+namespace trellis::core {
 
 /**
- * @brief The subscriber to get messages from ecal.
+ * @brief Implementation of a protobuf subscriber for shared memory message passing.
  *
- * @tparam MSG_T the message type to receive.
- * @tparam MAX_MSGS the max number of messages that can be allocated and passed out in the callback.
+ * This class handles discovery of publishers, connecting to shared memory regions,
+ * and deserializing received messages (both statically and dynamically typed).
+ *
+ * @tparam MSG_T The protobuf message type expected by the subscriber.
  */
-template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
-class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T, MAX_MSGS>> {
+template <typename MSG_T>
+class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>> {
  public:
-  using MessagePool = containers::MemoryPool<MSG_T, MAX_MSGS>;
-  using PointerType = MessagePool::UniquePtr;
+  /// @brief The type passed to the callback. A unique_ptr to the message.
+  using PointerType = std::unique_ptr<MSG_T>;
+
   /**
-   * @brief Message receive callback
-   * @param now the time at which the callback was dispatched
-   * @param msgtime the time at which the publisher transmitted the message
-   * @param msg the message object that was received
-   *
+   * @brief Callback type for fully parsed messages.
+   * @param now The time the message was received.
+   * @param msgtime The time the message was sent (embedded in header).
+   * @param msg The deserialized message.
    */
   using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, PointerType msg)>;
+
+  /**
+   * @brief Callback type for raw, unparsed messages.
+   * @param now The time the message was received.
+   * @param data Pointer to raw message bytes.
+   * @param size Length of the message.
+   */
+  using RawCallback = std::function<void(const time::TimePoint& now, const uint8_t*, size_t)>;
+
+  /// @brief Optional function to update a simulated clock when a message is received.
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
-  using WatchdogCreateFunction = std::function<Timer(TimerImpl::Callback)>;
+
+  /**
+   * @brief Construct a subscriber and register for discovery notifications.
+   *
+   * @param loop The event loop for posting callbacks.
+   * @param topic The name of the topic to subscribe to.
+   * @param callback Callback invoked on receiving a parsed message (can be nullptr).
+   * @param raw_callback Callback invoked on receiving raw bytes (can be nullptr).
+   * @param update_sim_fn Function to update a simulation clock (can be nullptr).
+   * @param discovery Pointer to the discovery service.
+   */
+  SubscriberImpl(trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
+                 UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery)
+      : loop_{loop},
+        topic_{topic},
+        callback_{std::move(callback)},
+        raw_callback_{std::move(raw_callback)},
+        watchdog_timer_{},
+        update_sim_fn_{std::move(update_sim_fn)},
+        discovery_{discovery},
+        discovery_handle_{discovery_->RegisterSubscriber<MSG_T>(topic)},
+        subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
+        callback_handle_{discovery->AsyncReceivePublishers(
+            [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+              ReceivePublisher(event, sample);
+            })} {}
+
+  /// @brief Destructor unregisters from discovery and stops callbacks.
+  ~SubscriberImpl() {
+    discovery_->Unregister(discovery_handle_);
+    discovery_->StopReceive(callback_handle_);
+  }
 
   SubscriberImpl(const SubscriberImpl&) = delete;
   SubscriberImpl& operator=(const SubscriberImpl&) = delete;
   SubscriberImpl(SubscriberImpl&&) = delete;
   SubscriberImpl& operator=(SubscriberImpl&&) = delete;
 
- private:
-  SubscriberImpl(EventLoop ev, std::string topic, UpdateSimulatedClockFunction update_sim_fn)
-      : ev_{std::move(ev)},
-        topic_{std::move(topic)},
-        ecal_sub_{topic_},
-        ecal_sub_raw_{CreateRawTopicSubscriber(topic_)},
-        update_sim_fn_{std::move(update_sim_fn)} {}
+  /// @return True if a message has ever been received.
+  bool DidReceive() const { return did_receive_; }
 
- public:
-  /**
-   * @brief Construct a subscriber for a given topic
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   * @param update_sim_fn the function to update sim time on receive
-   */
-  static std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>> Create(EventLoop ev, std::string topic, Callback callback,
-                                                                 UpdateSimulatedClockFunction update_sim_fn) {
-    auto ret = std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>>{
-        new SubscriberImpl<MSG_T, MAX_MSGS>{std::move(ev), std::move(topic), std::move(update_sim_fn)}};
+  /// @brief Sets a watchdog timer that is reset upon each received message.
+  void SetWatchdogTimer(Timer timer) { watchdog_timer_ = std::move(timer); }
 
-    auto callback_wrapper = [self = ret->weak_from_this(), callback = std::move(callback)](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) {
-      const auto shared = self.lock();
-      if (shared == nullptr) return;
-      shared->CallbackWrapperLogic(msg_, callback);
-    };
-    ret->ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
-
-    return ret;
+  /// @return The protobuf descriptor of the dynamic message type, if available.
+  const google::protobuf::Descriptor* GetDescriptor() {
+    if (dynamic_message_cache_ == nullptr) {
+      return nullptr;
+    }
+    const auto& msg = dynamic_message_cache_->Get();
+    return msg->GetDescriptor();
   }
 
-  /**
-   * @brief Construct a subscriber for a given topic with a watchdog timer
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   * @param update_sim_fn the function to update sim time on receive
-   * @param watchdog_callback the callback function to call when the watchdog timer fires
-   * @param watchdog_create_fn the function to create a watchdog timer
-   */
-  static std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>> Create(EventLoop ev, std::string topic, Callback callback,
-                                                                 UpdateSimulatedClockFunction update_sim_fn,
-                                                                 TimerImpl::Callback watchdog_callback,
-                                                                 WatchdogCreateFunction watchdog_create_fn) {
-    auto ret = std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>>{
-        new SubscriberImpl<MSG_T, MAX_MSGS>{std::move(ev), std::move(topic), std::move(update_sim_fn)}};
-
-    auto watchdog_wrapper =
-        (watchdog_callback == nullptr)
-            ? watchdog_callback
-            : [self = ret->weak_from_this(),
-               watchdog_callback = std::move(watchdog_callback)](const time::TimePoint& tp) mutable {
-                const auto shared = self.lock();
-                if (shared == nullptr) return;
-                if (shared->messages_pending_count_.load() == 0) {
-                  watchdog_callback(tp);
-                } else {
-                  trellis::core::Log::Warn("Watchdog timer fired while messages are pending. Ignoring!");
-                }
-              };
-
-    auto callback_wrapper = [self = ret->weak_from_this(), callback = std::move(callback),
-                             watchdog_create_fn = std::move(watchdog_create_fn),
-                             watchdog_wrapper = std::move(watchdog_wrapper)](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) mutable {
-      const auto shared = self.lock();
-      if (shared == nullptr) return;
-      if (shared->watchdog_timer_ == nullptr) {
-        shared->watchdog_timer_ = watchdog_create_fn(std::move(watchdog_wrapper));
-      } else {
-        shared->watchdog_timer_->Reset();
-      }
-
-      shared->CallbackWrapperLogic(msg_, callback);
-    };
-    ret->ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
-
-    return ret;
-  }
-
-  /**
-   * SetMaxFrequencyThrottle set the maximum callback frequency for this subscriber
-   *
-   * This is useful in cases where the subscriber wants to process inbound messages
-   * at a rate slower than the nominal publish rate. This rate can be changed
-   * dynamically, which can be helpful in use cases where a downstream client
-   * may want to request data at a specified rate at runtime.
-   *
-   * @param frequency The upper limit on receive frequency (in Hz)
-   */
+  /// @brief Throttles the callback to a maximum frequency in Hz.
   void SetMaxFrequencyThrottle(double frequency_hz) {
     if (frequency_hz != 0.0) {
       const unsigned interval_ms = static_cast<unsigned>(1000 / frequency_hz);
-
       if (interval_ms != 0) {
         rate_throttle_interval_ms_ = interval_ms;
       }
@@ -163,229 +123,156 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T,
   }
 
  private:
-  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const Callback& callback) {
-    if (!did_receive_) {
-      first_receive_time_ = time::Now();
-      did_receive_ = true;
-    }
+  /**
+   * @brief Handles discovery events for publishers.
+   *
+   * Connects to new shared memory regions or disconnects from dropped ones.
+   */
+  void ReceivePublisher(discovery::Discovery::EventType event, const discovery::Sample& sample) {
+    const auto& topic = sample.topic().tname();
+    const auto topic_id = sample.id();
 
-    if (ev_.Stopped()) {
-      // If the event loop hasn't been started yet, it means we're not ready to process them
-      // yet (e.g. the application may still be initializing). In this case, we'll drop the
-      // messages as to avoid unnecessarily exhausting our memory pool.
+    if (topic != topic_) {
       return;
     }
 
-    PointerType user_msg{nullptr};
-    try {
-      user_msg = CreateUserMessage();
-    } catch (const std::runtime_error& e) {
-      // This is a dynamic subscriber, and we need to wait some time for the monitoring layer to settle after a
-      // publisher comes online and before we can retrieve the message schema
-      if (time::Now() - first_receive_time_ > kMonitorSettlingTime) {
-        // Only throw if enough time has passed since our first message was received
-        throw e;
-      }
+    if (dynamic_message_cache_ == nullptr) {
+      dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(sample.topic().tdatatype().desc());
+      dynamic_message_cache_->Create(sample.topic().tdatatype().name());
     }
 
-    if (user_msg != nullptr) {
-      // Here's the handoff from the serialization layer. After this point, the message
-      // shall not be copied on its way back to the user
-      user_msg->ParseFromString(msg.payload());
-      CallbackHelperLogic(trellis::core::time::TimePointFromTimestampedMessage(msg), callback, std::move(user_msg));
-    }
-  }
+    auto it = readers_.find(topic_id);
 
-  // Common logic between dynamic and non-dynamic case
-  void CallbackHelperLogic(trellis::core::time::TimePoint msgtime, const Callback& callback, PointerType user_msg) {
-    const unsigned interval_ms = rate_throttle_interval_ms_.load();
-    // Update simulated clock if necessary
-    update_sim_fn_(msgtime);
-    bool should_callback = (interval_ms == 0);
-    if (interval_ms) {
-      // throttle callback
-      const bool enough_time_elapsed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_sent_).count() > interval_ms;
-      if (enough_time_elapsed) {
-        should_callback = true;
-        last_sent_ = msgtime;
-      }
-    }
+    if (event == discovery::Discovery::EventType::kNewRegistration) {
+      if (it == readers_.end()) {
+        for (const auto& layer : sample.topic().tlayer()) {
+          if (layer.type() == discovery::tl_shm) {
+            const std::vector<std::string> memory_file_list(
+                layer.par_layer().layer_par_shm().memory_file_list().begin(),
+                layer.par_layer().layer_par_shm().memory_file_list().end());
 
-    if (should_callback) {
-      ++messages_pending_count_;
-      asio::post(*ev_, [this, msgtime = std::move(msgtime), user_msg = std::move(user_msg), callback]() mutable {
-        --messages_pending_count_;
-        callback(time::Now(), msgtime, std::move(user_msg));
-      });
-    }
-  }
+            if (memory_file_list.empty()) {
+              return;
+            }
 
-  /*
-   * To support both dynamic subscribers (specialized with `google::protobuf::Message`) as well as specific message
-   * types, we need to use SFINAE (a. la. `std::enable_if_t`) to allow the compiler to select the correct overloads
-   * based on whether or not we're using the `google::protobuf::Message` type.
-   */
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
-    return std::make_shared<eCAL::protobuf::CSubscriber<MSG_T>>(proto_utils::GetRawTopicString(topic));
-  }
-
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  static std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>> CreateRawTopicSubscriber(const std::string& topic) {
-    return nullptr;  // unused for dynamic subscribers
-  }
-
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  PointerType CreateUserMessage() {
-    return pool_.ConstructUniquePointer();
-  }
-
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  PointerType CreateUserMessage() {
-    if (dynamic_message_prototype_ == nullptr) {
-      monitor_.UpdateSnapshot();
-      // This call is expensive, let's cache this message so we can reuse it from here on out.
-      dynamic_message_prototype_ =
-          monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));  // will throw on failure
-    }
-    return std::unique_ptr<MSG_T>(dynamic_message_prototype_->New());
-  }
-
-  static constexpr std::chrono::milliseconds kMonitorSettlingTime{
-      1000U};  // how long to wait for metadata on the monitoring layer
-
-  EventLoop ev_;
-  std::string topic_;
-
-  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
-
-  std::shared_ptr<eCAL::protobuf::CSubscriber<MSG_T>>
-      ecal_sub_raw_;  // exists to provide MSG_T metadata on the monitoring layer
-
-  UpdateSimulatedClockFunction update_sim_fn_;
-
-  MessagePool pool_{};
-  std::atomic<unsigned> rate_throttle_interval_ms_{0};
-  trellis::core::time::TimePoint last_sent_{};
-
-  // Used for dynamic subscribers
-  trellis::core::MonitorInterface monitor_;
-
-  // Used to know how long to wait for the monitor layer
-  time::TimePoint first_receive_time_{};
-  bool did_receive_{false};
-  Timer watchdog_timer_{nullptr};
-  PointerType dynamic_message_prototype_{nullptr};
-  std::atomic<unsigned> messages_pending_count_{0U};
-};
-
-/**
- * @brief Raw subscriber implementation
- *
- * This subscriber implementation can be used to subscribe to any protobuf channel and receive the message payloads as
- * they come without deserializing them. Moreover, it provides some APIs to access the underlying message schema.
- *
- * This class is good for use-cases such as logging where you do not want to waste CPU cycles deserializing the message,
- * but you still want to access the message schema for self-descriptive logging purposes.
- *
- * Note: User callbacks are called on the subscriber's background thread not the event loop, this is due to the fact
- * that the eCAL API only allows us to borrow access to the message without copying it, so it can't be retained for
- * later.
- *
- */
-class SubscriberRawImpl {
- public:
-  using RawCallback = std::function<void(const time::TimePoint& now, const trellis::core::TimestampedMessage& msg)>;
-  /**
-   * @brief Construct a raw subscriber for a given topic
-   *
-   * @param topic the topic string to subscribe to
-   * @param callback the callback function to receive messages on
-   */
-  SubscriberRawImpl(std::string topic, RawCallback callback) : topic_{std::move(topic)}, ecal_sub_{topic_} {
-    auto callback_wrapper = [this, callback = std::move(callback)](
-                                const char* topic_name_, const trellis::core::TimestampedMessage& msg_, long long time_,
-                                long long clock_, long long id_) { CallbackWrapperLogic(msg_, callback); };
-    ecal_sub_.AddReceiveCallback(std::move(callback_wrapper));
-  }
-
-  /**
-   * @brief Get the top-level Google protobuf descriptor for the subscriber
-   *
-   * This is useful if you want to access the message schema for this particular message topic
-   *
-   * @return const google::protobuf::Descriptor* a pointer to the descriptor or nullptr if it has not yet been received
-   * from the monitoring layer
-   */
-  const google::protobuf::Descriptor* GetDescriptor() {
-    return (dynamic_message_prototype_ == nullptr) ? nullptr : dynamic_message_prototype_->GetDescriptor();
-  }
-
-  /**
-   * @brief Generate a file descriptor set from the underlying message schema
-   *
-   * @return google::protobuf::FileDescriptorSet the file descriptor set in protobuf form
-   */
-  google::protobuf::FileDescriptorSet GenerateFileDescriptorSet() {
-    const auto descriptor = GetDescriptor();
-    if (descriptor == nullptr) {
-      throw std::runtime_error("Attempt to generate file descriptor set without the descriptor available");
-    }
-    return trellis::utils::protobuf::GenerateFileDescriptorSetFromTopLevelDescriptor(descriptor);
-  }
-
- private:
-  static constexpr std::chrono::milliseconds kMonitorSettlingTime{
-      1000U};  // how long to wait for metadata on the monitoring layer
-  void CallbackWrapperLogic(const trellis::core::TimestampedMessage& msg, const RawCallback& callback) {
-    if (!did_receive_) {
-      first_receive_time_ = time::Now();
-      did_receive_ = true;
-    }
-
-    CacheMessageSchemaIfNecessary();
-    callback(time::Now(), msg);
-  }
-
-  void CacheMessageSchemaIfNecessary() {
-    // If we haven't cached the message prototype yet, let's go ahead and attempt to do that
-    if (dynamic_message_prototype_ == nullptr) {
-      std::unique_ptr<google::protobuf::Message> prototype{nullptr};
-      try {
-        prototype = monitor_.GetMessageFromTopic(proto_utils::GetRawTopicString(topic_));
-      } catch (const std::runtime_error& e) {
-        if (time::Now() - first_receive_time_ > kMonitorSettlingTime) {
-          // Only throw if enough time has passed since our first message was received
-          throw e;
+            std::weak_ptr<std::remove_reference_t<decltype(*this)>> weak_self = this->shared_from_this();
+            readers_.emplace(std::piecewise_construct, std::forward_as_tuple(topic_id),
+                             std::forward_as_tuple(
+                                 loop_, subscriber_id_, memory_file_list,
+                                 [weak_self](ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+                                   if (auto self = weak_self.lock()) {
+                                     self->ReceiveData(header, data, len);
+                                   }
+                                 }));
+          }
         }
-        return;  // Bail until we can get the message prototype from the topic
       }
-      dynamic_message_prototype_ = std::move(prototype);
+    } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
+      if (it != readers_.end()) {
+        readers_.erase(topic_id);
+      }
     }
   }
 
-  std::string topic_;
-  eCAL::protobuf::CSubscriber<trellis::core::TimestampedMessage> ecal_sub_;
+  /**
+   * @brief Called when a shared memory segment delivers new data.
+   *
+   * Handles throttling, parsing, and dispatching to user callbacks.
+   */
+  void ReceiveData(ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+    {
+      did_receive_ = true;
 
-  trellis::core::time::TimePoint last_sent_{};
-  trellis::core::MonitorInterface monitor_{};
+      auto& last_seq = sequence_numbers_[header.writer_id];
+      if (last_seq != 0 && (header.sequence != (last_seq + 1))) {
+        // TODO don't throw but instead collect metrics
+        throw std::runtime_error(
+            fmt::format("Received unexpected sequence number from writer_id {}. Current = {} last = {}",
+                        header.writer_id, header.sequence, last_seq));
+      }
+      last_seq = header.sequence;
+    }
 
-  // Used to know how long to wait for the monitor layer
-  time::TimePoint first_receive_time_{};
+    if (watchdog_timer_) watchdog_timer_->Reset();
+
+    const auto send_time = time::NanosecondsToTimePoint(header.clock);
+    const unsigned interval_ms = rate_throttle_interval_ms_.load();
+    if (interval_ms) {
+      const bool enough_time_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(send_time - last_callback_time_).count() > interval_ms;
+      if (enough_time_elapsed) {
+        last_callback_time_ = send_time;
+      } else {
+        return;
+      }
+    }
+
+    PointerType msg = GetMessagePointer();
+
+    if (callback_) {
+      if (!msg->ParseFromArray(data, len)) {
+        throw std::runtime_error(fmt::format("Failed to parse proto from shared memory from topic {} and writer_id {}",
+                                             topic_, header.writer_id));
+        return;
+      }
+    }
+
+    const auto receive_time = trellis::core::time::Now();
+
+    if (raw_callback_) {
+      raw_callback_(receive_time, static_cast<const uint8_t*>(data), len);
+    }
+
+    if (callback_) callback_(receive_time, send_time, std::move(msg));
+    if (update_sim_fn_) update_sim_fn_(send_time);
+  }
+
+  /// @brief Creates a new message instance for statically typed messages.
+  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  PointerType GetMessagePointer() {
+    return std::make_unique<MSG_T>();
+  }
+
+  /// @brief Retrieves a cached dynamic message for dynamically typed messages.
+  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  PointerType GetMessagePointer() {
+    return dynamic_message_cache_->Get();
+  }
+
+  trellis::core::EventLoop loop_;
+  const std::string topic_;
+  Callback callback_;
+  RawCallback raw_callback_;
+  Timer watchdog_timer_;
+  UpdateSimulatedClockFunction update_sim_fn_;
+  std::shared_ptr<discovery::Discovery> discovery_;
+  discovery::Discovery::RegistrationHandle discovery_handle_;
+  std::string subscriber_id_;
+  discovery::Discovery::CallbackHandle callback_handle_;
+  std::unordered_map<std::string, ipc::shm::ShmReader> readers_;
   bool did_receive_{false};
-  std::unique_ptr<google::protobuf::Message> dynamic_message_prototype_{nullptr};
+  std::unique_ptr<ipc::proto::DynamicMessageCache> dynamic_message_cache_{nullptr};
+  std::atomic<unsigned> rate_throttle_interval_ms_{0};
+  trellis::core::time::TimePoint last_callback_time_{};
+  std::unordered_map<uint64_t, uint64_t> sequence_numbers_;
 };
 
-template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
-using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T, MAX_MSGS>>;
+/// @brief Alias for consistency with other versions.
+template <typename MSG_T>
+using SubscriberImpl = SubscriberImpl<MSG_T>;
 
+/// @brief Alias for shared pointer to subscriber.
+template <typename MSG_T>
+using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
+
+/// @brief Dynamic message subscriber (protobuf::Message).
 using DynamicSubscriberImpl = SubscriberImpl<google::protobuf::Message>;
 using DynamicSubscriber = std::shared_ptr<DynamicSubscriberImpl>;
 
-using SubscriberRaw = std::shared_ptr<SubscriberRawImpl>;
+/// @brief Alias for raw subscriber (unparsed message handler).
+using SubscriberRawImpl = DynamicSubscriberImpl;
+using SubscriberRaw = DynamicSubscriber;
 
-}  // namespace core
-}  // namespace trellis
+}  // namespace trellis::core
 
-#endif  // TRELLIS_CORE_SUBSCRIBER_HPP_
+#endif  //  TRELLIS_CORE_SUBSCRIBER_V2_HPP_

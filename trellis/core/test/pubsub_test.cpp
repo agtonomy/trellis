@@ -54,6 +54,93 @@ TEST_F(TrellisFixture, BasicPubSub) {
   ASSERT_EQ(receive_count, 10U);
 }
 
+TEST_F(TrellisFixture, BasicPubSubBurst) {
+  static unsigned receive_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_topic");
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < 100U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_EQ(receive_count, 100U);
+}
+
+TEST_F(TrellisFixture, LargePublisher) {
+  static unsigned receive_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_topic");
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < 10U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg(std::string(226851, 'x'));
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_EQ(receive_count, 10U);
+}
+
+TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
+  static unsigned receive_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_topic");
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < 10U; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg(std::string(1000 * (i + 1), 'x'));
+    pub->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  ASSERT_EQ(receive_count, 10U);
+}
+
 TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
   static unsigned receive_count{0};
   static unsigned watchdog_count{0};
@@ -167,13 +254,14 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
   static unsigned receive_count{0};
 
   auto pub = node_.CreatePublisher<test::Test>("test_raw_sub_topic");
-  auto sub = node_.CreateRawSubscriber("test_raw_sub_topic",
-                                       [](const time::TimePoint& now, const trellis::core::TimestampedMessage& msg) {
-                                         test::Test proto;
-                                         proto.ParseFromString(msg.payload());
-                                         ASSERT_EQ(proto.id(), receive_count);
-                                         ++receive_count;
-                                       });
+  auto sub =
+      node_.CreateRawSubscriber("test_raw_sub_topic", [](const time::TimePoint& now, const uint8_t* data, size_t len) {
+        test::Test proto;
+        if (proto.ParseFromArray(data, len)) {
+          ASSERT_EQ(proto.id(), receive_count);
+          ++receive_count;
+        }
+      });
 
   StartRunnerThread();
   WaitForDiscovery();
@@ -191,7 +279,4 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
   }
 
   ASSERT_EQ(receive_count, 10U);
-
-  const std::string descriptor = sub->GenerateFileDescriptorSet().SerializeAsString();
-  ASSERT_TRUE(descriptor.size() > 0);
 }

@@ -28,18 +28,26 @@ namespace trellis {
 namespace core {
 namespace test {
 
+namespace {
+
+static constexpr std::string_view test_config = R"(
+    # Example configuration
+    trellis:
+      discovery:
+        interval: 250
+        sample_timeout: 500
+    )";
+}
+
 class TrellisFixture : public ::testing::Test {
  protected:
-  // Settling time chosen based on eCAL test source code, and the value is derived from REGISTRATION_REFRESH_CYCLE
-  static constexpr auto kDiscoverySettlingTime = std::chrono::milliseconds{2000};
+  static constexpr auto kDiscoverySettlingTime = std::chrono::milliseconds{500};
   // Arbitrary delay that seems to be sufficient.
   static constexpr auto kSendReceiveTime = std::chrono::milliseconds{100};
-  TrellisFixture() : node_{"test_fixture", {}} {
-    // allow pub/sub from same process, etc
-    eCAL::Util::EnableLoopback(true);
-  }
+  TrellisFixture() : node_{"test_fixture", trellis::core::Config(YAML::Load(std::string(test_config)))} {}
 
   ~TrellisFixture() {
+    time::DisableSimulatedClock();
     Stop();
     if (runner_thread_.joinable()) {
       runner_thread_.join();

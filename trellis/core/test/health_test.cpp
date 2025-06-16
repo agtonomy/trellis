@@ -31,8 +31,23 @@ trellis:
 )foo";
 static constexpr unsigned kTestHistorySize = 3U;  // matching config above
 
+trellis::core::EventLoop GetEventLoop() {
+  static trellis::core::EventLoop ev_loop_{};
+  return ev_loop_;
+}
+
+std::shared_ptr<trellis::core::discovery::Discovery> GetDiscovery() {
+  static std::shared_ptr<trellis::core::discovery::Discovery> discovery_{nullptr};
+  if (discovery_ == nullptr) {
+    discovery_ =
+        std::make_shared<trellis::core::discovery::Discovery>("health_test", GetEventLoop(), trellis::core::Config{});
+  }
+  return discovery_;
+}
+
 trellis::core::Publisher<trellis::core::HealthHistory> test_publisher =
-    std::make_shared<trellis::core::PublisherImpl<trellis::core::HealthHistory>>("/test/health/topic");
+    std::make_shared<trellis::core::PublisherImpl<trellis::core::HealthHistory>>(
+        GetEventLoop(), "/test/health/topic", GetDiscovery(), trellis::core::Config{});
 
 }  // namespace
 

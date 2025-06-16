@@ -26,32 +26,25 @@ Node::Node(std::string name, trellis::core::Config config)
     : name_{name},
       config_{config},
       ev_loop_{},
+      discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
       health_{name, config,
               [this](const std::string& topic) { return CreatePublisher<trellis::core::HealthHistory>(topic); },
               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
                 return CreateTimer(interval_ms, cb);
               }} {
-  // XXX(bsirang) eCAL can take argv/argc to parse options for overriding the config filepath and/or specific config
-  // options. We won't make use of that for now. We'll just call Initialize with default arguments.
-  // eCAL::Initialize();
-  eCAL::Initialize(0, nullptr, nullptr, eCAL::Init::All);
-
-  // Instead of passing the unit name as part of Initialize above, we'll set it here explicitly. This ensures the unit
-  // name gets set in cases where we may have called Initialize already, such as from logging APIs.
-  eCAL::SetUnitName(name_.c_str());
-
+  Log::SetLogLevel(config.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
   // Handle signals explicitly, allowing the user to supply their own handler
   signal_set_.async_wait([this](const trellis::core::error_code& error, int signal_number) {
     if (!error) {
+      ipc::NamedResourceRegistry::Get().UnlinkAll();
       if (user_handler_) user_handler_(signal_number);
-      Log::Debug("{} node stopping...", name_);
+      Log::Info("{} node stopping...", name_);
       Stop();
     }
   });
 
-  if (config["trellis"] && config["trellis"]["health"] && config["trellis"]["health"]["auto_report"] &&
-      config["trellis"]["health"]["auto_report"].as<bool>()) {
+  if (config.AsIfExists<bool>("trellis.health.auto_report", false)) {
     // Kick off health reporting for this node
     UpdateHealth(trellis::core::HealthState::HEALTH_STATE_NORMAL);
   }
@@ -61,26 +54,47 @@ Node::~Node() { Stop(); }
 
 int Node::Run() {
   Log::Debug("{} node running...", name_);
-  while (ShouldRun()) {
-    ev_loop_.RunFor(std::chrono::milliseconds(500));
-    if (ev_loop_.Stopped()) {
-      break;  // the event loop was explicitly stopped
+  try {
+    while (ShouldRun()) {
+      ev_loop_.RunFor(std::chrono::milliseconds(500));
+      if (ev_loop_.Stopped()) {
+        break;  // the event loop was explicitly stopped
+      }
     }
+  } catch (const std::exception& e) {
+    Log::Error("Unhandled std::exception: {}", e.what());
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return 1;
+  } catch (...) {
+    Log::Error("Unhandled unknown exception occurred.");
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return 1;
   }
+
   return 0;
 }
 
 bool Node::RunN(unsigned n) {
   unsigned count = 0;
-  // poll_one will return immediately (never block). If it returned 0 there's
-  // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
-  // polling so long as work is being done
-  while (ShouldRun() && ev_loop_.PollOne() && count++ < n);
-  return ShouldRun();
+  try {
+    // poll_one will return immediately (never block). If it returned 0 there's
+    // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
+    // polling so long as work is being done
+    while (ShouldRun() && ev_loop_.PollOne() && count++ < n);
+    return ShouldRun();
+  } catch (const std::exception& e) {
+    Log::Error("Unhandled std::exception: {}", e.what());
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return 1;
+  } catch (...) {
+    Log::Error("Unhandled unknown exception occurred.");
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return 1;
+  }
 }
 
 bool Node::ShouldRun() {
-  const bool should_run = (!ev_loop_.Stopped() || first_run_) && eCAL::Ok();
+  const bool should_run = (!ev_loop_.Stopped() || first_run_);
   first_run_ = false;
   return should_run;
 }
@@ -101,16 +115,13 @@ Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback ca
   return timer;
 }
 
+void Node::Stop() { ev_loop_.Stop(); }
+
 void Node::RemoveTimer(const Timer& timer) {
   // timers are shared_ptrs. if the caller still holds a reference to the timer, it will not be deleted
   if (timer) {
     timers_.erase(timer);
   }
-}
-
-void Node::Stop() {
-  ev_loop_.Stop();
-  eCAL::Finalize();
 }
 
 void Node::UpdateHealth(const trellis::core::HealthStatus& status, const bool compare_description) {

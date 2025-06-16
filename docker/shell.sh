@@ -26,4 +26,5 @@ docker run -it --rm \
   --pid host \
   -v "$WORKSPACE_ROOT:$HOME_DIR" \
   -v "$HOME/.cache:/root/.cache" \
+  -v "/tmp:/tmp" \
   $DOCKER_IMAGE_NAME $@

@@ -37,7 +37,8 @@ std::string StripTrailingIndex(const std::string& input) {
 std::string GenerateMutexName(const std::string& name) { return name + "_mtx"; }
 
 std::string GenerateEventSocketName(const std::vector<std::string>& names, const std::string& reader_id) {
-  const std::string socket_name = fmt::format("/tmp/{}_{}_evt.sock", StripTrailingIndex(names.at(0)), reader_id);
+  const std::string socket_name =
+      fmt::format("/tmp/trellis/{}_{}_evt.sock", StripTrailingIndex(names.at(0)), reader_id);
   return socket_name;
 }
 
@@ -72,7 +73,7 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
   const auto buffer_index = event.buffer_number;
   auto& lock = locks_.at(buffer_index);
   auto& file = files_.at(buffer_index);
-  if (lock.LockRead()) {
+  if (lock.TryLockRead()) {
     auto read_info = file.GetReadInfo();
     const auto header = file.FileHeader();
     // Extra sanity check to make sure we don't call back with old data

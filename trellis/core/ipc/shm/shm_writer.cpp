@@ -67,7 +67,7 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(size_t minimum_size) {
   while (!got_lock && retries < files_.size()) {
     auto& file = files_[buffer_index_];
     auto& lock = locks_.at(file.Handle());
-    got_lock = lock.LockWrite();
+    got_lock = lock.TryLockWrite();
     if (!got_lock) {
       if (++buffer_index_ >= files_.size()) {
         buffer_index_ = 0;
@@ -120,7 +120,7 @@ void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, si
 
 void ShmWriter::AddReader(const std::string& reader_id) {
   if (events_.find(reader_id) == events_.end()) {
-    const auto event_handle = fmt::format("/tmp/{}_{}_evt.sock", base_name_, reader_id);
+    const auto event_handle = fmt::format("/tmp/trellis/{}_{}_evt.sock", base_name_, reader_id);
     events_.emplace(std::piecewise_construct, std::forward_as_tuple(reader_id),
                     std::forward_as_tuple(loop_, /* reader = */ false, event_handle));
   }

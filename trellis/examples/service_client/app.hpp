@@ -13,7 +13,8 @@ class App {
   App(trellis::core::Node& node);
 
  private:
-  void HandleResponse(trellis::core::ServiceCallStatus status, const trellis::examples::proto::AdditionResponse* resp);
+  void HandleResponse(trellis::core::ipc::proto::rpc::ServiceCallStatus status,
+                      const trellis::examples::proto::AdditionResponse* resp);
   void Tick();
 
   trellis::core::ServiceClient<trellis::examples::proto::AdditionService> client_;

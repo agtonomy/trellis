@@ -27,6 +27,7 @@
 #include <condition_variable>
 #include <mutex>
 
+#include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/time.hpp"
 
 namespace trellis::core::ipc::shm {
@@ -49,6 +50,8 @@ ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle) {
     ::close(fd);
     throw std::system_error(errno, std::generic_category(), "CreateRwLock ftruncate failed");
   }
+
+  NamedResourceRegistry::Get().InsertShm(handle);
 
   pthread_rwlockattr_t attr;
   pthread_rwlockattr_init(&attr);

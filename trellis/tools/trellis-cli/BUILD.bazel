@@ -31,6 +31,8 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//trellis",
+        "//trellis/core:core_proto_utils",
+        "//trellis/core/discovery",
         "@cxxopts",
         "@json",
         "@variadic_table",

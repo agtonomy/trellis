@@ -34,9 +34,6 @@ namespace trellis::utils::mcap {
  * This class does not need to be aware of the message types at compile time. Instead, it will forward the message
  * payload directly to disk and inform MCAP of the message schema at runtime.
  *
- * Note that since there is an issue with ecal where recreating the same subscribers in the same process results in no
- * messages being received, this class should be used with caution. It is recommended to only create one instance of
- * this class per process.
  */
 class Writer {
  public:

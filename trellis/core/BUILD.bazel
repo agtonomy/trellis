@@ -13,13 +13,10 @@ cc_library(
         ":core_inbox",
         ":core_logging",
         ":core_message_consumer",
-        ":core_monitor_interface",
         ":core_node",
         ":core_proto",
         ":core_proto_utils",
         ":core_publisher",
-        ":core_service_client",
-        ":core_service_server",
         ":core_subscriber",
         ":core_time",
         ":core_transforms",
@@ -133,7 +130,6 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@ecal",
         "@fmt",
     ],
 )
@@ -154,25 +150,10 @@ cc_library(
         ":core_health",
         ":core_proto_utils",
         ":core_publisher",
-        ":core_service_client",
-        ":core_service_server",
         ":core_subscriber",
-        "@ecal",
-    ],
-)
-
-cc_library(
-    name = "core_monitor_interface",
-    srcs = [
-        "monitor_interface.cpp",
-    ],
-    hdrs = [
-        "monitor_interface.hpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":core_proto_utils",
-        "@ecal",
+        "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc/proto/rpc:client",
+        "//trellis/core/ipc/proto/rpc:server",
     ],
 )
 
@@ -221,7 +202,6 @@ cc_library(
     deps = [
         ":core_node",
         ":core_stamped_message",
-        ":core_subscriber",
         "//trellis/containers:dynamic_ring_buffer",
         "//trellis/containers:ring_buffer",
     ],
@@ -234,32 +214,9 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_proto_utils",
-        ":core_time",
-        "@ecal",
-    ],
-)
-
-cc_library(
-    name = "core_service_client",
-    hdrs = [
-        "service_client.hpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":core_timer",
-        "@ecal",
-    ],
-)
-
-cc_library(
-    name = "core_service_server",
-    hdrs = [
-        "service_server.hpp",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@ecal",
+        "//trellis/core/discovery",
+        "//trellis/core/discovery:utils",
+        "//trellis/core/ipc/shm:shm_writer",
     ],
 )
 
@@ -271,12 +228,14 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_logging",
-        ":core_monitor_interface",
         ":core_time",
         ":core_timer",
-        "//trellis/containers",
+        "//trellis/core/discovery",
+        "//trellis/core/discovery:utils",
+        "//trellis/core/ipc/proto:dynamic_message_cache",
+        "//trellis/core/ipc/shm:shm_reader",
         "//trellis/utils/protobuf:file_descriptor",
-        "@ecal",
+        "@fmt",
     ],
 )
 

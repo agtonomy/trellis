@@ -246,13 +246,12 @@ class Discovery {
   void UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle);
 
   /**
-   * @brief Get the unique identification string for the pub/sub registration
-   * Note: the given handle must be associated with a publisher or subscriber
+   * @brief Get the unique identification string for the registration
    *
    * @param handle registration handle
-   * @return unique identifier for the given publisher or subscriber
+   * @return unique identifier for the registration
    */
-  std::string GetPubSubId(RegistrationHandle handle) const;
+  std::string GetSampleId(RegistrationHandle handle) const;
 
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);

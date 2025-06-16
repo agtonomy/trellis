@@ -15,12 +15,12 @@ App::App(Node& node)
           node.GetConfig()["examples"]["service"]["initial_delay_ms"].as<unsigned>())},
       call_timeout_ms_{node.GetConfig()["examples"]["service"]["timeout_ms"].as<unsigned>()} {}
 
-void App::HandleResponse(ServiceCallStatus status, const AdditionResponse* resp) {
-  if (status == ServiceCallStatus::kFailure) {
+void App::HandleResponse(ipc::proto::rpc::ServiceCallStatus status, const AdditionResponse* resp) {
+  if (status == ipc::proto::rpc::ServiceCallStatus::kFailure) {
     Log::Error("Request responded with failure!");
-  } else if (status == ServiceCallStatus::kTimedOut) {
+  } else if (status == ipc::proto::rpc::ServiceCallStatus::kTimedOut) {
     Log::Error("Request timed out!");
-  } else if (status == core::ServiceCallStatus::kSuccess) {
+  } else if (status == ipc::proto::rpc::ServiceCallStatus::kSuccess) {
     Log::Info("Received response {}", resp->sum());
   }
 }
@@ -39,7 +39,8 @@ void App::Tick() {
   arg1 += 2;
   arg2 += 3;
   client_->CallAsync<AdditionRequest, AdditionResponse>(
-      "Add", req, [this](ServiceCallStatus status, const AdditionResponse* resp) { HandleResponse(status, resp); },
+      "Add", req,
+      [this](ipc::proto::rpc::ServiceCallStatus status, const AdditionResponse* resp) { HandleResponse(status, resp); },
       call_timeout_ms_);
 }
 

@@ -127,13 +127,13 @@ TEST(DiscoveryTests, UnregisterPublisher) {
   ASSERT_NE(unreg_count, 0);
 }
 
-TEST(DiscoveryTests, GetPubSubIdReturnsStableValue) {
+TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
   const auto handle = discovery.RegisterPublisher<test::Test>("/stable/id", {"mem1"});
 
-  const std::string id1 = discovery.GetPubSubId(handle);
-  const std::string id2 = discovery.GetPubSubId(handle);
+  const std::string id1 = discovery.GetSampleId(handle);
+  const std::string id2 = discovery.GetSampleId(handle);
 
   ASSERT_FALSE(id1.empty());
   ASSERT_EQ(id1, id2);  // ID must be stable

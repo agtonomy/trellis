@@ -68,7 +68,7 @@ constexpr std::string_view health_list_command_desc{"list application health sta
 constexpr std::string_view health_info_command_desc{"display info about an application's health"};
 
 // Delay to allow discovery / monitoring information to propogage
-// Delay chosen based on eCAL test source code, and the value is derived from REGISTRATION_REFRESH_CYCLE
+// Delay chosen based on default discovery broadcast interval
 constexpr unsigned monitor_delay_ms = 2000U;
 
 // health monitor parameters

@@ -36,3 +36,13 @@ transforms:
 trellis:
   health:
     auto_report: true # start reporting health upon start up
+  logging:
+    log_level: "debug"
+  publisher:
+    attributes:
+      num_buffers: 10
+    topic_specific_attributes:
+      hello_world:
+        num_buffers: 5
+      -trellis-app-health:
+        num_buffers: 2

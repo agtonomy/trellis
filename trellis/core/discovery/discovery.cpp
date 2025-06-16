@@ -188,10 +188,10 @@ namespace {
 void ProcessSamplesMap(Discovery::SamplesMap& map, trellis::core::time::TimePoint now, Discovery::EventType event,
                        Sample sample) {
   if (event == Discovery::EventType::kNewRegistration) {
-    const auto topic_id = sample.topic().tid();  // copy map key before moving sample
+    const auto topic_id = sample.id();  // copy map key before moving sample
     map[topic_id] = Discovery::TimestampedSample{.stamp = now, .sample = std::move(sample)};
   } else if (event == Discovery::EventType::kNewUnregistration) {
-    auto it = map.find(sample.topic().tid());
+    auto it = map.find(sample.id());
     if (it != map.end()) {
       map.erase(it);
     }
@@ -356,14 +356,14 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
   sample.mutable_topic()->set_dfreq(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
 }
 
-std::string Discovery::GetPubSubId(RegistrationHandle handle) const {
+std::string Discovery::GetSampleId(RegistrationHandle handle) const {
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
     throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
                                        static_cast<unsigned>(handle)));
   }
   auto& sample = it->second;
-  return sample.topic().tid();
+  return sample.id();
 }
 
 }  // namespace trellis::core::discovery

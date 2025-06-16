@@ -30,7 +30,9 @@ App::App(Node& node)
           node.GetConfig()["examples"]["publisher"]["interval_ms"].as<unsigned>(),
           [this](const trellis::core::time::TimePoint&) { Tick(); },
           node.GetConfig()["examples"]["publisher"]["initial_delay_ms"].as<unsigned>())},
-      repeated_field_len_{node.GetConfig()["examples"]["publisher"]["repeated_field_len"].as<unsigned>()} {}
+      repeated_field_len_{node.GetConfig()["examples"]["publisher"]["repeated_field_len"].as<unsigned>()} {
+  Log::Debug("Starting publisher example");
+}
 
 void App::Tick() {
   const unsigned msg_number = send_count_++;

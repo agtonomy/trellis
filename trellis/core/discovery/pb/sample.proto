@@ -45,8 +45,12 @@ enum SampleType  // command type
 
 message Sample {
   SampleType type = 1;  // sample command type
-  Process process = 2;  // process information
-  Service service = 3;  // service information
-  Client client = 4;    // client information
-  Topic topic = 5;      // topic information
+  string id = 2;        // unique id
+
+  oneof Entity {
+    Process process = 3;  // process information
+    Service service = 4;  // service information
+    Client client = 5;    // client information
+    Topic topic = 6;      // topic information
+  }
 }

@@ -144,14 +144,14 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
                                const std::string& message_name, bool publisher,
                                std::vector<std::string> memory_file_list) {
   Sample sample;
+  std::stringstream counter;
+  counter << std::chrono::steady_clock::now().time_since_epoch().count();
+  sample.set_id(counter.str());
   sample.set_type(publisher ? discovery::publisher_registration : discovery::subscriber_registration);
   sample.mutable_topic()->set_hname(GetHostname());
   sample.mutable_topic()->set_pid(::getpid());
   sample.mutable_topic()->set_pname(GetExecutablePath());
   sample.mutable_topic()->set_uname(GetBaseName(sample.topic().pname()));
-  std::stringstream counter;
-  counter << std::chrono::steady_clock::now().time_since_epoch().count();
-  sample.mutable_topic()->set_tid(counter.str());
   sample.mutable_topic()->set_tname(topic);
   sample.mutable_topic()->mutable_tdatatype()->set_name(message_name);
   sample.mutable_topic()->mutable_tdatatype()->set_encoding("proto");
@@ -172,16 +172,16 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
 
 Sample CreateServiceServerSample(uint16_t port, const std::string& service_name) {
   Sample sample;
+  std::stringstream counter;
+  counter << std::chrono::steady_clock::now().time_since_epoch().count();
+  sample.set_id(counter.str());
   sample.set_type(discovery::service_registration);
   sample.mutable_service()->set_hname(GetHostname());
   sample.mutable_service()->set_pname(GetExecutablePath());
   sample.mutable_service()->set_uname(GetBaseName(sample.service().pname()));
   sample.mutable_service()->set_pid(::getpid());
   sample.mutable_service()->set_sname(service_name);
-  std::stringstream counter;
-  counter << std::chrono::steady_clock::now().time_since_epoch().count();
-  sample.mutable_service()->set_sid(counter.str());
-  sample.mutable_topic()->set_tid(counter.str());  // TODO (bsirang) clean this up but for now piggy back off that field
+
   sample.mutable_service()->set_tcp_port(port);
   return sample;
 }

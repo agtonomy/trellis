@@ -18,8 +18,6 @@
 #ifndef TRELLIS_CORE_NODE_HPP_
 #define TRELLIS_CORE_NODE_HPP_
 
-#include <ecal/ecal.h>
-
 #include <asio.hpp>
 #include <functional>
 #include <list>
@@ -32,11 +30,12 @@
 #include "health.hpp"
 #include "logging.hpp"
 #include "publisher.hpp"
-#include "service_client.hpp"
-#include "service_server.hpp"
 #include "subscriber.hpp"
 #include "time.hpp"
 #include "timer.hpp"
+#include "trellis/core/ipc/named_resource_registry.hpp"
+#include "trellis/core/ipc/proto/rpc/client.hpp"
+#include "trellis/core/ipc/proto/rpc/server.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {
@@ -85,7 +84,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreatePublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<MSG_T>>(topic);
+    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_);
   }
 
   /**
@@ -100,7 +99,7 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<MSG_T>>(topic, true);
+    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_);
   }
 
   /**
@@ -119,25 +118,32 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T, size_t MAX_MSGS = containers::kDefaultSlotSize>
-  Subscriber<MSG_T, MAX_MSGS> CreateSubscriber(
-      std::string_view topic, typename trellis::core::SubscriberImpl<MSG_T, MAX_MSGS>::Callback callback,
-      std::optional<unsigned> watchdog_timeout_ms = {}, TimerImpl::Callback watchdog_callback = {},
-      std::optional<double> max_frequency = {}) {
+  template <typename MSG_T>
+  Subscriber<MSG_T> CreateSubscriber(std::string_view topic,
+                                     typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
+                                     std::optional<unsigned> watchdog_timeout_ms = {},
+                                     TimerImpl::Callback watchdog_callback = {},
+                                     std::optional<double> max_frequency = {}) {
     auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
-    const auto impl =
-        do_watchdog
-            ? SubscriberImpl<MSG_T, MAX_MSGS>::Create(
-                  GetEventLoop(), std::string{topic}, std::move(callback), std::move(update_sim_fn),
-                  std::move(watchdog_callback),
-                  [this, initial_delay_ms = watchdog_timeout_ms.value()](TimerImpl::Callback watchdog_callback) {
-                    return CreateOneShotTimer(initial_delay_ms, std::move(watchdog_callback));
-                  })
-            : SubscriberImpl<MSG_T, MAX_MSGS>::Create(GetEventLoop(), std::string{topic}, callback,
-                                                      std::move(update_sim_fn));
+    Timer watchdog_timer{};
+
+    using RawCallback = typename trellis::core::SubscriberImpl<MSG_T>::RawCallback;
+    const auto impl = std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), std::string{topic}, callback,
+                                                              RawCallback{}, update_sim_fn, GetDiscovery());
     if (max_frequency.has_value()) {
-      impl->SetMaxFrequencyThrottle(*max_frequency);
+      impl->SetMaxFrequencyThrottle(max_frequency.value());
+    }
+    if (do_watchdog) {
+      const auto initial_delay_ms = watchdog_timeout_ms.value();
+      auto watchdog_wrapper = [watchdog_callback = std::move(watchdog_callback), impl](const time::TimePoint& now) {
+        // Desired behavior is to have the watchdog fire only if messages were previously received
+        if (impl->DidReceive()) {
+          watchdog_callback(now);
+        }
+      };
+      auto timer = CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper));
+      impl->SetWatchdogTimer(std::move(timer));
     }
     return impl;
   }
@@ -153,7 +159,7 @@ class Node {
    * @return a publisher handle
    */
   DynamicPublisher CreateDynamicPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<google::protobuf::Message>>(topic);
+    return std::make_shared<PublisherImpl<google::protobuf::Message>>(GetEventLoop(), topic, GetDiscovery(), config_);
   }
 
   /**
@@ -187,7 +193,10 @@ class Node {
    * @return SubscriberRaw
    */
   SubscriberRaw CreateRawSubscriber(std::string topic, SubscriberRawImpl::RawCallback callback) {
-    return std::make_shared<SubscriberRawImpl>(std::move(topic), std::move(callback));
+    auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
+    return std::make_shared<SubscriberImpl<google::protobuf::Message>>(
+        GetEventLoop(), std::string{topic}, SubscriberRawImpl::Callback{}, std::move(callback),
+        std::move(update_sim_fn), GetDiscovery());
   }
 
   /**
@@ -199,7 +208,7 @@ class Node {
    */
   template <typename RPC_T>
   ServiceClient<RPC_T> CreateServiceClient() const {
-    return std::make_shared<ServiceClientImpl<RPC_T>>(GetEventLoop());
+    return std::make_shared<ipc::proto::rpc::Client<RPC_T>>(GetEventLoop(), GetDiscovery());
   }
 
   /**
@@ -213,7 +222,7 @@ class Node {
    */
   template <typename RPC_T>
   ServiceServer<RPC_T> CreateServiceServer(std::shared_ptr<RPC_T> rpc) const {
-    return std::make_shared<ServiceServerClass<RPC_T>>(rpc);
+    return std::make_shared<ipc::proto::rpc::Server<RPC_T>>(rpc, GetEventLoop(), GetDiscovery());
   }
 
   /**
@@ -311,11 +320,46 @@ class Node {
    *
    * @param n the number of times to invoke the underlying event loops
    *
+   * This method allows the application to execute the event loop for a limited number of events,
+   * which is useful for testing or special control flows where the main thread must regain control
+   * after a timeout.
+   *
    * Note: this method is not needed for typical applications
    *
    * @return false if the underlying facilities have stopped
    */
   bool RunN(unsigned n);
+
+  /**
+   * RunFor runs the underlying event loop for a specified duration
+   *
+   * This method allows the application to execute the event loop for a limited time duration,
+   * which is useful for testing or special control flows where the main thread must regain control
+   * after a timeout.
+   *
+   * @tparam Rep An arithmetic type representing the number of ticks.
+   * @tparam Period A std::ratio type representing the tick period.
+   * @param rel_time The duration to run the event loop for.
+   *
+   * @return false if the underlying facilities have stopped
+   *
+   * @see Run(), RunOnce(), RunN()
+   */
+  template <typename Rep, typename Period>
+  bool RunFor(const std::chrono::duration<Rep, Period>& rel_time) {
+    try {
+      ev_loop_.RunFor(rel_time);
+      return ShouldRun();
+    } catch (const std::exception& e) {
+      Log::Error("Unhandled std::exception: {}", e.what());
+      ipc::NamedResourceRegistry::Get().UnlinkAll();
+      return 1;
+    } catch (...) {
+      Log::Error("Unhandled unknown exception occurred.");
+      ipc::NamedResourceRegistry::Get().UnlinkAll();
+      return 1;
+    }
+  }
 
   /**
    * Stop stop the underlying threads
@@ -331,6 +375,11 @@ class Node {
    * @param a handle to the underlying asio::io_context instance
    */
   EventLoop GetEventLoop() const { return ev_loop_; }
+
+  /**
+   * GetDiscovery retrieve a handle to the discovery module
+   */
+  discovery::DiscoveryPtr GetDiscovery() const { return discovery_; }
 
   /**
    *  AddSignalHandler adds a handler for SIGINT or SIGTERM signals
@@ -372,6 +421,9 @@ class Node {
 
   // The event loop handle used for asynchronous operations
   EventLoop ev_loop_;
+
+  // The dynamic discovery layer for discovering other nodes
+  discovery::DiscoveryPtr discovery_;
 
   // Used to manage signal handlers
   asio::signal_set signal_set_;

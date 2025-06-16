@@ -35,7 +35,6 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 COPY scripts/* /usr/local/bin/
-COPY ecal.ini /etc/ecal/ecal.ini
 COPY entrypoint.sh /root/entrypoint.sh
 ENTRYPOINT ["/root/entrypoint.sh"]
 CMD ["/bin/bash"]

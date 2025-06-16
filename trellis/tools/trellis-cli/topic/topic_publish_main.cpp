@@ -20,8 +20,9 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "trellis/core/monitor_interface.hpp"
+#include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/node.hpp"
+#include "trellis/core/proto_utils.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
 namespace trellis {
@@ -53,16 +54,22 @@ int topic_publish_main(int argc, char* argv[]) {
   Node node(root_command.data(), {});
 
   // Delay to give time for discovery
-  std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+  trellis::core::EventLoop loop;
+  trellis::core::discovery::Discovery discovery("trellis-cli", loop, trellis::core::Config{});
+  loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
 
-  MonitorInterface monitor_interface;
+  const auto pubsub_samples = discovery.GetPubSubSamples();
+  auto it = std::find_if(pubsub_samples.begin(), pubsub_samples.end(),
+                         [&topic](const auto& sample) { return sample.topic().tname() == topic; });
 
-  auto message = monitor_interface.GetMessageFromTopic(proto_utils::GetRawTopicString(topic));
-
-  if (message == nullptr) {
-    std::cerr << "Could not get proto message from descriptor set." << std::endl;
+  if (it == pubsub_samples.end()) {
+    std::cerr << "Failed to discover topic " << topic << std::endl;
     return 1;
   }
+
+  ipc::proto::DynamicMessageCache cache(it->topic().tdatatype().desc());
+  auto message = cache.Create(it->topic().tdatatype().name());
+
   auto pub = node.CreateDynamicPublisher(topic);
 
   google::protobuf::util::JsonParseOptions json_options;

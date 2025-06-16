@@ -27,41 +27,116 @@ namespace trellis {
 namespace core {
 namespace Log {
 
-// use this for format strings that can't be constexpr and need to be evaluated at runtime
+/**
+ * @brief Mark a format string as requiring runtime evaluation.
+ *
+ * This is used for format strings that are not `constexpr`, such as dynamically constructed strings.
+ *
+ * @param s The runtime format string.
+ * @return A format string suitable for use with fmt::format.
+ */
 inline auto runtime(std::string_view s) { return fmt::runtime(s); }
 
-enum LogLevel { kInfo = 0, kWarn, kError, kFatal, kDebug };
+/**
+ * @brief Log levels used to categorize log messages.
+ */
+enum LogLevel {
+  kInfo = 0,  ///< Informational messages.
+  kWarn,      ///< Warnings that do not affect functionality.
+  kError,     ///< Recoverable errors.
+  kFatal,     ///< Non-recoverable errors; program will terminate.
+  kDebug      ///< Debug-level messages for development.
+};
 
+/**
+ * @brief Set the log level from a string name (e.g., "info", "error").
+ *
+ * Supported values (case-insensitive): `"info"`, `"warn"`, `"warning"`, `"error"`, `"fatal"`, `"debug"`.
+ * Unknown strings will fall back to the default log level (all but debug).
+ *
+ * @param log_level_string The log level as a string.
+ */
+void SetLogLevel(const std::string& log_level_string);
+
+/**
+ * @brief Set the current log level using the LogLevel enum.
+ *
+ * @param log_level The desired logging level.
+ */
+void SetLogLevel(LogLevel log_level);
+
+/**
+ * @brief Internal logging function used by log level wrappers.
+ *
+ * @param msg The message to log.
+ * @param prefix A string to prefix the log line (e.g., "[INFO]  ").
+ * @param level The level of the log message.
+ */
 void DoLog(const std::string& msg, const std::string& prefix, LogLevel level);
 
+/**
+ * @brief Log an informational message.
+ *
+ * @tparam Args Format arguments.
+ * @param fmt_msg A fmtlib-compatible format string.
+ * @param args Arguments to format into the message.
+ */
 template <typename... Args>
 inline void Info(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[INFO]  ", LogLevel::kInfo);
 }
 
+/**
+ * @brief Log a warning message.
+ *
+ * @tparam Args Format arguments.
+ * @param fmt_msg A fmtlib-compatible format string.
+ * @param args Arguments to format into the message.
+ */
 template <typename... Args>
 inline void Warn(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[WARN]  ", LogLevel::kWarn);
 }
 
+/**
+ * @brief Log an error message.
+ *
+ * @tparam Args Format arguments.
+ * @param fmt_msg A fmtlib-compatible format string.
+ * @param args Arguments to format into the message.
+ */
 template <typename... Args>
 inline void Error(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[ERROR] ", LogLevel::kError);
 }
 
+/**
+ * @brief Log a fatal error message and terminate the program.
+ *
+ * This function logs the message, delays briefly to allow logs to flush, and then calls `abort()`.
+ *
+ * @tparam Args Format arguments.
+ * @param fmt_msg A fmtlib-compatible format string.
+ * @param args Arguments to format into the message.
+ */
 template <typename... Args>
 inline void Fatal(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[FATAL] ", LogLevel::kFatal);
-  // Sleep briefly because DoLog is not necessarily synchronous, so without sleeping this could abort before the fatal
-  // log can be fully dispatched.
-  sleep(1);
+  sleep(1);  // Ensure logs flush before aborting
   abort();
 }
 
+/**
+ * @brief Log a debug-level message.
+ *
+ * @tparam Args Format arguments.
+ * @param fmt_msg A fmtlib-compatible format string.
+ * @param args Arguments to format into the message.
+ */
 template <typename... Args>
 inline void Debug(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
