@@ -249,15 +249,6 @@ class Node {
   Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
 
   /**
-   * RemoveTimer remove a timer pointer from the list of active timers
-   *
-   * If the caller still holds a reference to the timer, it will not be deleted.
-   *
-   * @param timer the timer to remove
-   */
-  void RemoveTimer(const Timer& timer);
-
-  /**
    * UpdateHealth update application health state
    *
    * An application can call this to update health information that is broadcast to the rest of the system
@@ -438,7 +429,7 @@ class Node {
   bool first_run_{true};
 
   // A list of the timers that have been created
-  std::set<Timer> timers_;
+  std::vector<std::weak_ptr<TimerImpl>> timers_;
 };
 
 }  // namespace core

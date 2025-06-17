@@ -103,7 +103,7 @@ Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsi
   auto timer =
       std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms, initial_delay_ms);
 
-  timers_.insert(timer);
+  timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
   return timer;
 }
 
@@ -111,18 +111,11 @@ Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback ca
   auto timer =
       std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kOneShot, std::move(callback), 0, initial_delay_ms);
 
-  timers_.insert(timer);
+  timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
   return timer;
 }
 
 void Node::Stop() { ev_loop_.Stop(); }
-
-void Node::RemoveTimer(const Timer& timer) {
-  // timers are shared_ptrs. if the caller still holds a reference to the timer, it will not be deleted
-  if (timer) {
-    timers_.erase(timer);
-  }
-}
 
 void Node::UpdateHealth(const trellis::core::HealthStatus& status, const bool compare_description) {
   UpdateHealth(status.health_state(), status.status_code(), status.status_description(), compare_description);
@@ -153,8 +146,10 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
 
             // First find all the non-cancelled timers that are expiring before our new_time
             for (auto& timer : timers_) {
-              if (!timer->IsCancelled() && new_time >= timer->GetExpiry()) {
-                expired_timers.push(timer);
+              if (auto shared_timer = timer.lock()) {
+                if (!shared_timer->IsCancelled() && new_time >= shared_timer->GetExpiry()) {
+                  expired_timers.push(shared_timer);
+                }
               }
             }
 
@@ -180,7 +175,9 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
         // If we need to reset timers, it needs to happen after the new time is updated
         if (reset_timers) {
           for (auto& timer : timers_) {
-            timer->Reset();
+            if (auto shared_timer = timer.lock()) {
+              shared_timer->Reset();
+            }
           }
         }
       } else {

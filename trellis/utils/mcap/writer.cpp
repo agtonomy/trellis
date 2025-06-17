@@ -136,9 +136,8 @@ Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const s
 
 Writer::~Writer() {
   if (flush_timer_) {
-    flush_timer_->Stop();             // Stop the timer held by the node
-    flush_timer_->Fire();             // Ensure the timer is fired to flush any remaining data
-    node_.RemoveTimer(flush_timer_);  // Remove timer ptr reference from node
+    flush_timer_->Stop();  // Stop the timer held by the node
+    flush_timer_->Fire();  // Ensure the timer is fired to flush any remaining data
   }
 
   // Clear subscribers explicitly

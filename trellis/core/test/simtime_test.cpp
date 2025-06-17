@@ -37,29 +37,32 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksTimers) {
   unsigned timer3_ticks{0};
   trellis::core::time::TimePoint last_now;
 
-  node.CreateTimer(timer1_interval, [&timer1_ticks, &last_now](const trellis::core::time::TimePoint& now) {
-    ++timer1_ticks;
-    ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer1_ticks * timer1_interval) + time_jump_ms);
-    ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
-                trellis::core::time::TimePointToMilliseconds(last_now));
-    last_now = now;
-  });
+  auto timer1 =
+      node.CreateTimer(timer1_interval, [&timer1_ticks, &last_now](const trellis::core::time::TimePoint& now) {
+        ++timer1_ticks;
+        ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer1_ticks * timer1_interval) + time_jump_ms);
+        ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
+                    trellis::core::time::TimePointToMilliseconds(last_now));
+        last_now = now;
+      });
 
-  node.CreateTimer(timer2_interval, [&timer2_ticks, &last_now](const trellis::core::time::TimePoint& now) {
-    ++timer2_ticks;
-    ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer2_ticks * timer2_interval) + time_jump_ms);
-    ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
-                trellis::core::time::TimePointToMilliseconds(last_now));
-    last_now = now;
-  });
+  auto timer2 =
+      node.CreateTimer(timer2_interval, [&timer2_ticks, &last_now](const trellis::core::time::TimePoint& now) {
+        ++timer2_ticks;
+        ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer2_ticks * timer2_interval) + time_jump_ms);
+        ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
+                    trellis::core::time::TimePointToMilliseconds(last_now));
+        last_now = now;
+      });
 
-  node.CreateTimer(timer3_interval, [&timer3_ticks, &last_now](const trellis::core::time::TimePoint& now) {
-    ++timer3_ticks;
-    ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer3_ticks * timer3_interval) + time_jump_ms);
-    ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
-                trellis::core::time::TimePointToMilliseconds(last_now));
-    last_now = now;
-  });
+  auto timer3 =
+      node.CreateTimer(timer3_interval, [&timer3_ticks, &last_now](const trellis::core::time::TimePoint& now) {
+        ++timer3_ticks;
+        ASSERT_EQ(trellis::core::time::TimePointToMilliseconds(now), (timer3_ticks * timer3_interval) + time_jump_ms);
+        ASSERT_TRUE(trellis::core::time::TimePointToMilliseconds(now) >
+                    trellis::core::time::TimePointToMilliseconds(last_now));
+        last_now = now;
+      });
 
   // The first time we update the time, we're essentially resetting all the timers
   trellis::core::time::TimePoint time{trellis::core::time::Now() + std::chrono::milliseconds(time_jump_ms)};
