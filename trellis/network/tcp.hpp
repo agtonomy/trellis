@@ -99,6 +99,64 @@ class TCP {
   }
 
   /**
+   * @brief Asynchronously send all data from the provided buffer.
+   *
+   * This function attempts to send the entire buffer over the socket, regardless of how many bytes
+   * each underlying AsyncSend call is able to transmit. It will continue sending until `size` bytes
+   * have been sent or an error occurs.
+   *
+   * @param data     Pointer to the data buffer to send.
+   * @param size     Total number of bytes to send from the buffer.
+   * @param callback Completion handler to call once all data has been sent or an error occurs.
+   * @param offset   (Internal) Number of bytes already sent; used for recursive continuation.
+   */
+  void AsyncSendAll(const void* data, size_t size, IOCompletionHandler callback, size_t offset = 0) {
+    if (offset >= size) {
+      callback({}, offset);  ///< All data has been sent; invoke callback with success.
+      return;
+    }
+    this->AsyncSend(static_cast<const uint8_t*>(data) + offset, size - offset,
+                    [this, data, size, offset, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                               size_t bytes_sent) {
+                      if (ec) {
+                        callback(ec, offset + bytes_sent);  ///< Error occurred; report progress.
+                        return;
+                      }
+                      this->AsyncSendAll(data, size, std::move(callback), offset + bytes_sent);  ///< Continue sending.
+                    });
+  }
+
+  /**
+   * @brief Asynchronously receive a fixed amount of data into the provided buffer.
+   *
+   * This function attempts to receive exactly `size` bytes into the buffer. If the underlying
+   * transport returns fewer bytes than expected, it will continue receiving until the requested
+   * number of bytes is obtained or an error occurs.
+   *
+   * @param data     Pointer to the buffer where received data will be stored.
+   * @param size     Total number of bytes to receive.
+   * @param callback Completion handler to call once all data has been received or an error occurs.
+   * @param offset   (Internal) Number of bytes already received; used for recursive continuation.
+   */
+  void AsyncReceiveAll(void* data, size_t size, IOCompletionHandler callback, size_t offset = 0) {
+    if (offset >= size) {
+      callback({}, offset);  ///< All data has been received; invoke callback with success.
+      return;
+    }
+
+    this->AsyncReceive(static_cast<uint8_t*>(data) + offset, size - offset,
+                       [this, data, size, offset, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                                  size_t bytes_received) {
+                         if (ec) {
+                           callback(ec, offset + bytes_received);  ///< Error occurred; report progress.
+                           return;
+                         }
+                         this->AsyncReceiveAll(data, size, std::move(callback),
+                                               offset + bytes_received);  ///< Continue receiving.
+                       });
+  }
+
+  /**
    * Send send data on the socket synchronously
    *
    * @param data a pointer to the buffer to send

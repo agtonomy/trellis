@@ -93,47 +93,85 @@ class Client {
       return;
     }
     call_pending_ = true;
+
+    // Populate request message and serialize it to generate our payload
     discovery::Request request_msg;
     request_msg.mutable_header()->set_mname(std::string(method));
     request.SerializeToString(request_msg.mutable_request());
     auto request_buffer = std::make_shared<std::string>();
     request_msg.SerializeToString(request_buffer.get());
-    if (request_buffer->size() > kMaxBufferSize) {
-      throw std::runtime_error("rpc::Client::CallAsync request message too large!");
-    }
-    tcp_client_.value().AsyncSend(
-        request_buffer->data(), request_buffer->size(),
-        [this, request_buffer, callback = std::move(callback)](const trellis::core::error_code& ec, size_t bytes_sent) {
+
+    // Generate our header payload which contains the size
+    const uint32_t size = request_buffer->size();
+    auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
+    memcpy(send_header_buf.get(), &size, sizeof(size));
+
+    // We chain together 4 events:
+    // 1. Send 4-byte request payload size
+    // 2. Send request payload
+    // 3. Receive 4-byte response payload size
+    // 4. Receive response payload
+    tcp_client_.value().AsyncSendAll(
+        send_header_buf->data(), send_header_buf->size(),
+        [this, send_header_buf, request_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                                size_t bytes_sent) {
           if (ec) {
             call_pending_ = false;
             RESP_T resp{};
             callback(kFailure, &resp);
             return;
           }
-          // Since performance is not critical, we'll dynamically allocate our receive buffer to avoid a large stack
-          // variable. We expect all request/response to fit in a single TCP packet, so we will simply use a buffer size
-          // that covers TCP. We use a shared pointer so we can copy the reference into the lambda while simultaneously
-          // accessing the data pointer when calling AsyncReceive
-          auto receive_buffer = std::make_shared<std::array<uint8_t, kMaxBufferSize>>();
-          tcp_client_.value().AsyncReceive(receive_buffer->data(), receive_buffer->size(),
-                                           [this, receive_buffer, callback = std::move(callback)](
-                                               const trellis::core::error_code& ec, size_t bytes_received) {
-                                             call_pending_ = false;
-                                             RESP_T rpc_response{};
-                                             if (ec) {
-                                               callback(kFailure, &rpc_response);
-                                             } else {
-                                               discovery::Response response;
-                                               response.ParseFromArray(receive_buffer->data(), bytes_received);
-                                               if (response.header().status() == discovery::ServiceHeader::failed) {
-                                                 // TODO (bsirang) return error string in future API versions
-                                                 callback(kFailure, &rpc_response);
-                                               } else {
-                                                 rpc_response.ParseFromString(response.response());
-                                                 callback(kSuccess, &rpc_response);
-                                               }
-                                             }
-                                           });
+          // We sent the 4-byte length to the server, now let's send the actual payload
+          tcp_client_.value().AsyncSendAll(
+              request_buffer->data(), request_buffer->size(),
+              [this, request_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                     size_t bytes_sent) {
+                if (ec) {
+                  call_pending_ = false;
+                  RESP_T resp{};
+                  callback(kFailure, &resp);
+                  return;
+                }
+                // We sent the payload to the server, now let's receive the 4-byte length from the server
+                auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
+                tcp_client_.value().AsyncReceiveAll(
+                    receive_header_buf->data(), receive_header_buf->size(),
+                    [this, receive_header_buf, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                               size_t /*bytes_received*/) {
+                      if (ec) {
+                        call_pending_ = false;
+                        RESP_T rpc_response{};
+                        callback(kFailure, &rpc_response);
+                        return;
+                      }
+
+                      // Since performance is not critical for RPCs, and because we don't know the receive payload size
+                      // ahead of time, we'll dynamically allocate the buffer size. The protocol does not enforce any
+                      // specific limit on payload size beyond the 32-bit length field.
+                      const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
+                      auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
+                      tcp_client_.value().AsyncReceiveAll(
+                          receive_buffer->data(), receive_buffer->size(),
+                          [this, receive_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
+                                                                                 size_t bytes_received) {
+                            call_pending_ = false;
+                            RESP_T rpc_response{};
+                            if (ec) {
+                              callback(kFailure, &rpc_response);
+                              return;
+                            }
+
+                            discovery::Response response;
+                            response.ParseFromArray(receive_buffer->data(), bytes_received);
+                            if (response.header().status() == discovery::ServiceHeader::failed) {
+                              callback(kFailure, &rpc_response);
+                            } else {
+                              rpc_response.ParseFromString(response.response());
+                              callback(kSuccess, &rpc_response);
+                            }
+                          });
+                    });
+              });
         });
   }
 

@@ -148,14 +148,27 @@ class Server {
    * @param client Shared pointer to the TCP client.
    */
   void ReceiveNextRequest(TCPClientPointer client) {
-    client->AsyncReceive(buffer_.data(), buffer_.size(),
-                         [this, client](const trellis::core::error_code& ec, size_t len) {
-                           if (ec) {
-                             return;  // nothing to do, this socket will get destructed
-                           }
-                           ProcessRequest(client, buffer_.data(), len);
-                           ReceiveNextRequest(client);
-                         });
+    // We chain together two receive attempts
+    // 1. Receive 4-byte request payload size
+    // 2. Receive request payload
+    auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
+    client->AsyncReceiveAll(receive_header_buf->data(), receive_header_buf->size(),
+                            [this, receive_header_buf, client](const trellis::core::error_code& ec, size_t len) {
+                              if (ec) {
+                                return;  // nothing to do, this socket will get destructed
+                              }
+                              const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
+                              auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
+                              client->AsyncReceiveAll(
+                                  receive_buffer->data(), receive_buffer->size(),
+                                  [this, receive_buffer, client](const trellis::core::error_code& ec, size_t len) {
+                                    if (ec) {
+                                      return;  // nothing to do, this socket will get destructed
+                                    }
+                                    ProcessRequest(client, receive_buffer->data(), len);
+                                    ReceiveNextRequest(client);
+                                  });
+                            });
   }
 
   /**
@@ -168,6 +181,8 @@ class Server {
   void ProcessRequest(TCPClientPointer client, void* data, size_t len) {
     discovery::Request req;
     req.ParseFromArray(data, len);
+
+    // After parsing the request, we perform the remaining work on the background thread
     asio::post(io_context_, [this, client, req = std::move(req)]() {
       const auto& method_name = req.header().mname();
       const google::protobuf::ServiceDescriptor* service_desc = prototype_->GetDescriptor();
@@ -191,18 +206,24 @@ class Server {
       // accessing the data pointer when calling AsyncSend
       auto send_buffer = std::make_shared<std::string>();
       response.SerializeToString(send_buffer.get());
-      if (send_buffer->size() > kMaxBufferSize) {
-        throw std::runtime_error("rpc::Server::ProcessRequest - response size too large!");
-      }
-      client->AsyncSend(send_buffer->data(), send_buffer->size(),
-                        [client, send_buffer](const trellis::core::error_code& ec, size_t bytes_sent) {});
+      uint32_t size = send_buffer->size();
+      auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
+      memcpy(send_header_buf.get(), &size, sizeof(size));
+
+      // We chain together two send attempts
+      // 1. Send 4-byte response payload size
+      // 2. Send response payload
+      client->AsyncSendAll(send_header_buf->data(), send_header_buf->size(),
+                           [send_header_buf, send_buffer, client](const trellis::core::error_code&, size_t) {
+                             client->AsyncSendAll(send_buffer->data(), send_buffer->size(),
+                                                  [client, send_buffer](const trellis::core::error_code&, size_t) {});
+                           });
     });
   }
 
   asio::io_context io_context_{};  ///< Background thread context for method execution
   asio::executor_work_guard<asio::io_context::executor_type> work_guard_;  ///< Keeps io_context alive
   std::thread rpc_thread_;                                        ///< Thread running the RPC handler event loop
-  std::array<uint8_t, 65535> buffer_{};                           ///< Receive buffer for incoming messages
   std::shared_ptr<PROTO_SERVICE_T> prototype_{};                  ///< Protobuf service instance
   discovery::DiscoveryPtr discovery_;                             ///< Discovery system for registering the service
   network::TCPServer tcp_server_;                                 ///< TCP server for incoming RPC connections

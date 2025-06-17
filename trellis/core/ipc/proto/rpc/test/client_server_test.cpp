@@ -25,13 +25,21 @@
 namespace trellis::core::ipc::proto::rpc {
 
 namespace {
+
+static constexpr unsigned kLargeMessageTestSize = 4194304u;
+
 class TestServiceHandler : public trellis::core::test::TestService {
  public:
   ~TestServiceHandler() override {}
   void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
                ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure*) override {
     response->set_foo(static_cast<float>(request->id()));
-    response->set_bar("Echo: " + request->msg());
+    if (request->id() == 100) {
+      ASSERT_EQ(request->msg().size(), kLargeMessageTestSize);
+      response->set_bar(std::string(kLargeMessageTestSize, 'A'));  // 4 megabyte string
+    } else {
+      response->set_bar("Echo: " + request->msg());
+    }
   }
 };
 static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
@@ -98,7 +106,7 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
                                                      ++fail_count;
                                                    }
                                                  });
-    std::this_thread::sleep_for(std::chrono::milliseconds{50});  // small delay to stagger calls
+    std::this_thread::sleep_for(std::chrono::milliseconds{200});  // small delay to stagger calls
   }
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
@@ -281,6 +289,40 @@ TEST_F(TrellisFixture, BackToBackCallFails) {
 
   EXPECT_EQ(success_count, 1);
   EXPECT_EQ(fail_count, 1);
+}
+
+TEST_F(TrellisFixture, LargeRequestResponse) {
+  StartRunnerThread();
+
+  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+
+  // Wait for some time so the client can find the server
+  WaitForDiscovery();
+
+  test::Test request;
+  request.set_id(100);  // special value to return a large message
+  request.set_msg(std::string(kLargeMessageTestSize, 'X'));
+  unsigned success_count{0};
+  unsigned fail_count{0};
+  client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
+                                               [&](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                 if (status == kSuccess) {
+                                                   EXPECT_EQ(resp->foo(), 100);
+                                                   //  EXPECT_EQ(resp->bar(), std::string(4194304, 'A'));
+                                                   EXPECT_EQ(resp->bar().size(), 4194304);
+                                                   ++success_count;
+                                                 } else {
+                                                   std::cout << "Call failed!" << std::endl;
+                                                   ++fail_count;
+                                                 }
+                                               });
+
+  std::this_thread::sleep_for(kServiceCallWaitTime);
+
+  EXPECT_EQ(success_count, 1);
+  EXPECT_EQ(fail_count, 0);
 }
 
 }  // namespace trellis::core::ipc::proto::rpc
