@@ -38,7 +38,7 @@ namespace trellis::utils::mcap {
 class Writer {
  public:
   /**
-   * @brief Construct a new writer
+   * @brief Construct a new writer using the given node's event loop thread and discovery interface
    *
    * @param node trellis node by which to create subscribers from
    * @param topics list of topics to subscribe to
@@ -49,12 +49,40 @@ class Writer {
   Writer(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
          const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
          std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+
+  /**
+   * @brief Construct a new writer using a self-managed thread running on the given event loop
+   *
+   * @param node trellis node by which to create subscribers from
+   * @param ev the self-managed event loop (must be separate from node.GetEventLoop())
+   * @param discovery the discovery interface to use to connect the underlying subscribers (must be separate from
+   * node.GetDiscovery())
+   * @param topics list of topics to subscribe to
+   * @param outfile the path of the output mcap file
+   * @param options mcap writer options (optional) the default has some compression
+   * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
+   */
+  Writer(core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
+         const std::vector<std::string>& topics, std::string_view outfile,
+         const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
+         std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+
   ~Writer();
 
+  // Forbid copy
+  Writer(const Writer&) = delete;
+  Writer& operator=(const Writer&) = delete;
+
+  Writer(Writer&&) = default;
+  Writer& operator=(Writer&&) = default;
+
  private:
+  void Initialize(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
+                  const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms);
+  trellis::core::EventLoop loop_;
+  core::discovery::DiscoveryPtr discovery_;
   std::vector<core::SubscriberRaw> subscribers_;
   core::Timer flush_timer_;
-  core::Node& node_;
 };
 
 }  // namespace trellis::utils::mcap

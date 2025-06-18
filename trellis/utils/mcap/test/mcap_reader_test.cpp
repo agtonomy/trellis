@@ -31,8 +31,8 @@ using namespace trellis::core::test;
 TEST_F(TrellisFixture, McapReaderBasic) {
   static constexpr unsigned kNumMessagesPerChannel = 100U;
 
-  auto pub1 = node_.CreatePublisher<test::Test>("mcap_topic");
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("mcap_topic2");
+  auto pub1 = node_.CreatePublisher<test::Test>("mcap_reader_test_topic");
+  auto pub2 = node_.CreatePublisher<test::TestTwo>("mcap_reader_test_topic2");
 
   StartRunnerThread();
 
@@ -40,7 +40,7 @@ TEST_F(TrellisFixture, McapReaderBasic) {
 
   // Write
   {
-    trellis::utils::mcap::Writer writer(node_, {"mcap_topic", "mcap_topic2"}, outfile);
+    trellis::utils::mcap::Writer writer(node_, {"mcap_reader_test_topic", "mcap_reader_test_topic2"}, outfile);
     WaitForDiscovery();
     for (unsigned i = 0; i < kNumMessagesPerChannel; ++i) {
       test::Test test_msg;
@@ -60,8 +60,8 @@ TEST_F(TrellisFixture, McapReaderBasic) {
   // Read
   {
     trellis::utils::mcap::Reader reader(outfile);
-    ASSERT_TRUE(reader.HasTopic("mcap_topic"));
-    ASSERT_TRUE(reader.HasTopic("mcap_topic2"));
+    ASSERT_TRUE(reader.HasTopic("mcap_reader_test_topic"));
+    ASSERT_TRUE(reader.HasTopic("mcap_reader_test_topic2"));
 
     // Statistics
     auto stats = *reader.Statistics();
@@ -70,8 +70,8 @@ TEST_F(TrellisFixture, McapReaderBasic) {
     ASSERT_EQ(stats.channelCount, 2);
     ASSERT_GT(stats.messageEndTime, stats.messageStartTime);
 
-    {  // scan through mcap_topic2 channel
-      auto view = reader.ReadMessagesFromTopic<test::TestTwo>("mcap_topic2");
+    {  // scan through mcap_reader_test_topic2 channel
+      auto view = reader.ReadMessagesFromTopic<test::TestTwo>("mcap_reader_test_topic2");
       unsigned read_count{0};
       trellis::core::time::TimePoint last_timestamp_{};
       for (auto it = view.begin(); it != view.end(); ++it) {
@@ -84,8 +84,8 @@ TEST_F(TrellisFixture, McapReaderBasic) {
       ASSERT_EQ(read_count, kNumMessagesPerChannel);
     }
 
-    {  // scan through mcap_topic channel
-      auto view = reader.ReadMessagesFromTopic<test::Test>("mcap_topic");
+    {  // scan through mcap_reader_test_topic channel
+      auto view = reader.ReadMessagesFromTopic<test::Test>("mcap_reader_test_topic");
       unsigned read_count{0};
       trellis::core::time::TimePoint last_timestamp_{};
       for (auto it = view.begin(); it != view.end(); ++it) {
@@ -102,7 +102,7 @@ TEST_F(TrellisFixture, McapReaderBasic) {
       // scan through both topics
       unsigned read_count{0};
       unsigned long long last_timestamp_{};
-      auto view = reader.ReadMessagesFromTopicSet({"mcap_topic2", "mcap_topic"});
+      auto view = reader.ReadMessagesFromTopicSet({"mcap_reader_test_topic2", "mcap_reader_test_topic"});
       for (auto it = view.begin(); it != view.end(); ++it) {
         ASSERT_GT(it->message.publishTime, last_timestamp_);
         last_timestamp_ = it->message.publishTime;

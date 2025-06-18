@@ -96,48 +96,64 @@ void WriteMessage(const core::time::TimePoint& stamp, const uint8_t* data, size_
   ++subscriber_data.sequence;
 }
 
-core::SubscriberRaw CreateSubscriber(core::Node& node, const std::string_view topic,
-                                     std::shared_ptr<FileWriter> file_writer) {
+void FlushWriter(FileWriter& file_writer) {
+  const auto lock = std::scoped_lock{file_writer.mutex};
+  file_writer.writer.closeLastChunk();
+}
+
+core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
+                                     const std::string_view topic, std::shared_ptr<FileWriter> file_writer) {
   // A bit of a chicken and egg problem, we need the callback to be able to access the subscriber to fill in the schema.
   // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
   // Hence we use a shared ptr to update the data after creating the subscriber, and we guard in the
   // InitalizeMcapChannel function against data with nullptr subscriber.
   const auto subscriber_data = std::make_shared<SubscriberData>(
       SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});
-  const auto ret = node.CreateRawSubscriber(
-      std::string{topic}, [subscriber_data](const core::time::TimePoint& stamp, const uint8_t* data, size_t len) {
+  const auto subscriber = std::make_shared<trellis::core::SubscriberImpl<google::protobuf::Message>>(
+      ev, std::string{topic}, core::SubscriberRawImpl::Callback{},
+      [subscriber_data](const core::time::TimePoint& stamp, const uint8_t* data, size_t len) {
         const auto lock = std::scoped_lock{subscriber_data->file_writer->mutex};
         if (!subscriber_data->initialized) TryInitializeMcapChannel(*subscriber_data);
         if (subscriber_data->initialized) WriteMessage(stamp, data, len, *subscriber_data);
-      });
-  subscriber_data->subscriber = ret;
-  return ret;
-}
+      },
+      [](const core::time::TimePoint&) {}, discovery);
 
-void FlushWriter(std::shared_ptr<FileWriter> file_writer) {
-  const auto lock = std::scoped_lock{file_writer->mutex};
-  file_writer->writer.closeLastChunk();
+  subscriber_data->subscriber = subscriber;
+
+  return subscriber;
 }
 
 }  // namespace
 
-Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
-               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms)
-    : node_{node} {
+void Writer::Initialize(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
+                        const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms) {
   const auto file_writer = MakeFileWriter(outfile, options);
-  for (const auto& topic : topics) subscribers_.push_back(CreateSubscriber(node, topic, file_writer));
+  for (const auto& topic : topics) subscribers_.emplace_back(CreateSubscriber(loop_, discovery_, topic, file_writer));
 
   // Set up periodic flush timer if interval is greater than 0
   if (flush_interval_ms.count() > 0) {
     flush_timer_ = node.CreateTimer(
-        flush_interval_ms.count(), [file_writer](const core::time::TimePoint&) { FlushWriter(file_writer); }, 0);
+        flush_interval_ms.count(), [file_writer](const core::time::TimePoint&) { FlushWriter(*file_writer); }, 0);
   }
+}
+
+Writer::Writer(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
+               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms)
+    : loop_{node.GetEventLoop()}, discovery_{node.GetDiscovery()} {
+  Initialize(node, topics, outfile, options, flush_interval_ms);
+}
+
+Writer::Writer(core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
+               const std::vector<std::string>& topics, const std::string_view outfile,
+               const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms)
+    : loop_{ev}, discovery_{discovery} {
+  Initialize(node, topics, outfile, options, flush_interval_ms);
 }
 
 Writer::~Writer() {
   if (flush_timer_) {
-    flush_timer_->Stop();  // Stop the timer held by the node
-    flush_timer_->Fire();  // Ensure the timer is fired to flush any remaining data
+    flush_timer_->Stop();
+    flush_timer_->Fire();
   }
 
   // Clear subscribers explicitly
