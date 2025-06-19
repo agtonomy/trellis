@@ -4,17 +4,6 @@ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 def trellis_deps():
     maybe(
         http_archive,
-        name = "ecal",
-        build_file = Label("//third_party:ecal.BUILD"),
-        sha256 = "e1abbc512fba94a504ca86ae33c6007259f2ec0adec06f4f55dacff7f0c0a35c",
-        strip_prefix = "ecal-5.12.5",
-        urls = [
-            "https://github.com/eclipse-ecal/ecal/archive/refs/tags/v5.12.5.tar.gz",
-        ],
-    )
-
-    maybe(
-        http_archive,
         name = "fmt",
         build_file = Label("//third_party:fmt.BUILD"),
         sha256 = "312151a2d13c8327f5c9c586ac6cf7cddc1658e8f53edae0ec56509c8fa516c9",
@@ -137,30 +126,6 @@ def trellis_deps():
         strip_prefix = "single_include",
         urls = [
             "https://github.com/nlohmann/json/releases/download/v3.10.2/include.zip",
-        ],
-    )
-
-    # New eCAL dependency as of v5.10.0
-    maybe(
-        http_archive,
-        name = "tcp_pubsub",
-        build_file = Label("//third_party:tcp_pubsub.BUILD"),
-        sha256 = "f03245e8878f215e9c852b35f30d90d111e250ddecea75ce0be2619583dbe052",
-        strip_prefix = "tcp_pubsub-1.0.3/tcp_pubsub",
-        urls = [
-            "https://github.com/eclipse-ecal/tcp_pubsub/archive/refs/tags/v1.0.3.tar.gz",
-        ],
-    )
-
-    # Submodule of tcp_pubsub
-    maybe(
-        http_archive,
-        name = "recycle",
-        build_file = Label("//third_party:recycle.BUILD"),
-        sha256 = "d1cf8a5256110c068f366b0e4e16ad39427b9def13876670aad9f167afd7aaee",
-        strip_prefix = "recycle-c5425709b2273ef6371647247d1a1d86aa75c2e6",
-        urls = [
-            "https://github.com/steinwurf/recycle/archive/c5425709b2273ef6371647247d1a1d86aa75c2e6.tar.gz",
         ],
     )
 
