@@ -42,10 +42,12 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
     socket_.open();
     socket_.non_blocking(true);
     const int previous_umask =
-        umask(000);  // set umask to nothing, so we can create files with all possible permission bits
+        ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
     socket_.bind(endpoint_);
-    umask(previous_umask);  // reset umask to previous permissions
-    ::chmod(endpoint_.path().c_str(), 0777);
+    (void)::umask(previous_umask);  // reset umask to previous permissions
+    if (::chmod(endpoint_.path().c_str(), 0777) < 0) {
+      throw std::system_error(errno, std::generic_category(), "SocketEvent::chmod failed");
+    }
     NamedResourceRegistry::Get().Insert(handle_);
   } else {
     endpoint_ = asio::local::datagram_protocol::endpoint(handle_);

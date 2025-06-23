@@ -81,7 +81,7 @@ class SocketEvent {
   SocketEvent(const SocketEvent&) = delete;
   SocketEvent& operator=(const SocketEvent&) = delete;
   SocketEvent(SocketEvent&&) = default;
-  SocketEvent& operator=(SocketEvent&&) = delete;
+  SocketEvent& operator=(SocketEvent&&) = default;
 
  private:
   /**

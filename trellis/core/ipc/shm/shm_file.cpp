@@ -38,10 +38,10 @@ int CreateOrOpen(std::string handle, bool owner) {
   const auto flags = owner ? (O_CREAT | O_RDWR | O_EXCL) : O_RDONLY;
   const auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
   const int previous_umask =
-      umask(000);  // set umask to nothing, so we can create files with all possible permission bits
+      ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
   const int rt = ::shm_open(posix_name.c_str(), flags, mode);
-  const auto err = errno;
-  umask(previous_umask);  // reset umask to previous permissions
+  const auto err = errno;   // capture before umask
+  ::umask(previous_umask);  // reset umask to previous permissions
   if (rt < 0) {
     throw std::system_error(err, std::generic_category(), "ShmFile::CreateOrOpen failed " + posix_name);
   }
@@ -64,8 +64,9 @@ ShmFile::MapInfo Remap(int& fd, std::string handle, bool owner, size_t requested
     const int prot = owner ? PROT_READ | PROT_WRITE : PROT_READ;
     if (owner) {
       if (::ftruncate(fd, map.size) == -1) {
+        int err = errno;  // capture before close
         ::close(fd);
-        throw std::system_error(errno, std::generic_category(), "ShmFile::Map ftruncate failed");
+        throw std::system_error(err, std::generic_category(), "ShmFile::Map ftruncate failed");
       }
     }
 
@@ -89,7 +90,7 @@ ShmFile::MapInfo Map(int fd, std::string handle, bool owner, size_t requested_si
   if (owner) {
     if (::ftruncate(fd, map.size) == -1) {
       ::close(fd);
-      throw std::system_error(errno, std::generic_category(), "ShmFile::Map ftråuncate failed");
+      throw std::system_error(errno, std::generic_category(), "ShmFile::Map ftruncate failed");
     }
   }
 
