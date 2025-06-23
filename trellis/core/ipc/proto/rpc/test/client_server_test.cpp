@@ -38,6 +38,10 @@ class TestServiceHandler : public trellis::core::test::TestService {
       ASSERT_EQ(request->msg().size(), kLargeMessageTestSize);
       response->set_bar(std::string(kLargeMessageTestSize, 'A'));  // 4 megabyte string
     } else {
+      if (request->id() == 2000) {
+        std::cout << "Long running call, sleeping" << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      }
       response->set_bar("Echo: " + request->msg());
     }
   }
@@ -323,6 +327,46 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
 
   EXPECT_EQ(success_count, 1);
   EXPECT_EQ(fail_count, 0);
+}
+
+TEST_F(TrellisFixture, LongRunningCallTimeout) {
+  StartRunnerThread();
+
+  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+
+  // Wait for some time so the client can find the server
+  WaitForDiscovery();
+
+  test::Test request;
+  request.set_id(2000);
+  request.set_msg("this is a test request");
+  unsigned callback_count{0};
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request,
+      [&](ServiceCallStatus status, const test::TestTwo* resp) {
+        EXPECT_EQ(status, kTimedOut);
+        ++callback_count;
+      },
+      /* timeout_ms = */ 100);
+
+  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_EQ(callback_count, 1);
+
+  WaitForDiscovery();
+  // Now do another call that should succeed
+  callback_count = 0;
+  request.set_id(10);  // Call again and see that we succeed
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request,
+      [&](ServiceCallStatus status, const test::TestTwo* resp) {
+        EXPECT_EQ(status, kSuccess);
+        ++callback_count;
+      },
+      /* timeout_ms = */ 100);
+  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_EQ(callback_count, 1);
 }
 
 }  // namespace trellis::core::ipc::proto::rpc

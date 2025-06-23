@@ -54,7 +54,8 @@ class Client {
    * @param discovery Shared pointer to the service discovery instance.
    */
   Client(trellis::core::EventLoop loop, discovery::DiscoveryPtr discovery)
-      : discovery_{discovery},
+      : loop_{loop},
+        discovery_{discovery},
         callback_handle_{discovery->AsyncReceiveServices(
             [this, loop](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               if (sample.service().sname() == PROTO_SERVICE_T::descriptor()->full_name()) {
@@ -86,13 +87,28 @@ class Client {
    */
   template <typename REQ_T, typename RESP_T>
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
-    // TODO (bsirang) implement timeout
     if (!tcp_client_.has_value() || call_pending_.load()) {
       RESP_T resp{};
       callback(kFailure, &resp);
       return;
     }
     call_pending_ = true;
+    if (timeout_ms > 0) {
+      timeout_timer_ = std::make_shared<TimerImpl>(
+          loop_, TimerImpl::Type::kOneShot,
+          [this, callback](const time::TimePoint&) {
+            if (call_pending_.load() && tcp_client_.has_value()) {
+              // Clear flag first so TCP callbacks see it
+              call_pending_ = false;
+              // Reset client to force a reconnection
+              tcp_client_.value().Cancel();
+              tcp_client_.reset();
+              RESP_T resp{};
+              callback(kTimedOut, &resp);
+            }
+          },
+          0, timeout_ms);
+    }
 
     // Populate request message and serialize it to generate our payload
     discovery::Request request_msg;
@@ -113,9 +129,10 @@ class Client {
     // 4. Receive response payload
     tcp_client_.value().AsyncSendAll(
         send_header_buf->data(), send_header_buf->size(),
-        [this, send_header_buf, request_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
-                                                                                size_t bytes_sent) {
-          if (ec) {
+        [this, send_header_buf, request_buffer, callback](const trellis::core::error_code& ec, size_t bytes_sent) {
+          if (ec == asio::error::operation_aborted || !call_pending_.load()) {
+            return;  // short circuit on timeout
+          } else if (ec) {
             call_pending_ = false;
             RESP_T resp{};
             callback(kFailure, &resp);
@@ -126,7 +143,9 @@ class Client {
               request_buffer->data(), request_buffer->size(),
               [this, request_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
                                                                      size_t bytes_sent) {
-                if (ec) {
+                if (ec == asio::error::operation_aborted || !call_pending_.load()) {
+                  return;  // short circuit on timeout
+                } else if (ec) {
                   call_pending_ = false;
                   RESP_T resp{};
                   callback(kFailure, &resp);
@@ -138,7 +157,9 @@ class Client {
                     receive_header_buf->data(), receive_header_buf->size(),
                     [this, receive_header_buf, callback = std::move(callback)](const trellis::core::error_code& ec,
                                                                                size_t /*bytes_received*/) {
-                      if (ec) {
+                      if (ec == asio::error::operation_aborted || !call_pending_.load()) {
+                        return;  // short circuit on timeout
+                      } else if (ec) {
                         call_pending_ = false;
                         RESP_T rpc_response{};
                         callback(kFailure, &rpc_response);
@@ -155,6 +176,7 @@ class Client {
                           [this, receive_buffer, callback = std::move(callback)](const trellis::core::error_code& ec,
                                                                                  size_t bytes_received) {
                             call_pending_ = false;
+                            if (timeout_timer_) timeout_timer_.reset();
                             RESP_T rpc_response{};
                             if (ec) {
                               callback(kFailure, &rpc_response);
@@ -181,10 +203,12 @@ class Client {
   ~Client() { discovery_->StopReceive(callback_handle_); }
 
  private:
+  trellis::core::EventLoop loop_;                         ///< Event loop to run the client on
   discovery::DiscoveryPtr discovery_;                     ///< Pointer to the discovery service
   discovery::Discovery::CallbackHandle callback_handle_;  ///< Handle for the discovery callback
   std::optional<network::TCP> tcp_client_;                ///< Active TCP client, if connected
   std::atomic<bool> call_pending_{false};                 ///< Indicates whether a call is currently in progress
+  core::Timer timeout_timer_;
 };
 
 }  // namespace trellis::core::ipc::proto::rpc
