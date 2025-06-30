@@ -25,6 +25,10 @@
 using namespace trellis::core;
 using namespace trellis::core::test;
 
+static constexpr std::chrono::milliseconds kProcessEventsWaitTime(500U);
+static constexpr std::chrono::milliseconds kProcessBurstWaitTime(2000U);
+static constexpr unsigned kWatchdogTimeoutMs{1000u};
+
 TEST_F(TrellisFixture, BasicPubSub) {
   static unsigned receive_count{0};
 
@@ -48,9 +52,10 @@ TEST_F(TrellisFixture, BasicPubSub) {
     test_msg.set_id(i);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
   ASSERT_EQ(receive_count, 10U);
 }
 
@@ -72,15 +77,17 @@ TEST_F(TrellisFixture, BasicPubSubBurst) {
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
 
-  for (unsigned i = 0; i < 100U; ++i) {
+  // Send a burst of messages equaling the numbef of buffers we have
+  for (unsigned i = 0; i < test::kNumPubBuffers; ++i) {
     test::Test test_msg;
     test_msg.set_id(i);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 
-  ASSERT_EQ(receive_count, 100U);
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessBurstWaitTime);
+  ASSERT_EQ(receive_count, test::kNumPubBuffers);
 }
 
 TEST_F(TrellisFixture, LargePublisher) {
@@ -106,9 +113,9 @@ TEST_F(TrellisFixture, LargePublisher) {
     test_msg.set_id(i);
     test_msg.set_msg(std::string(226851, 'x'));
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
   ASSERT_EQ(receive_count, 10U);
 }
 
@@ -135,9 +142,9 @@ TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
     test_msg.set_id(i);
     test_msg.set_msg(std::string(1000 * (i + 1), 'x'));
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
   ASSERT_EQ(receive_count, 10U);
 }
 
@@ -152,7 +159,7 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
       },
-      50, [](const trellis::core::time::TimePoint&) { ++watchdog_count; });
+      kWatchdogTimeoutMs, [](const trellis::core::time::TimePoint&) { ++watchdog_count; });
 
   StartRunnerThread();
   WaitForDiscovery();
@@ -168,14 +175,15 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
     test_msg.set_id(i);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
 
   // Expect two messages received
   ASSERT_EQ(receive_count, 2U);
   ASSERT_EQ(watchdog_count, 0U);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::this_thread::sleep_for(std::chrono::milliseconds(kWatchdogTimeoutMs * 2));
 
   // Expect watchdog fired
   ASSERT_EQ(receive_count, 2U);
@@ -186,14 +194,15 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
     test_msg.set_id(2);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
 
   // Expect third message received
   ASSERT_EQ(receive_count, 3U);
   ASSERT_EQ(watchdog_count, 1U);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::this_thread::sleep_for(std::chrono::milliseconds(kWatchdogTimeoutMs * 2));
 
   // Expect another watchdog fire
   ASSERT_EQ(receive_count, 3U);
@@ -222,10 +231,11 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
     test_msg.set_id(i);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
     ++sent_count;
   }
 
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
   ASSERT_TRUE(sent_count > 0);
 
   // We should have received some
@@ -275,8 +285,64 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
     test_msg.set_id(i);
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  // Give the event loop some time before checking the result
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
+  ASSERT_EQ(receive_count, 10U);
+}
+
+TEST_F(TrellisFixture, SubscriberRapidRecycle) {
+  static constexpr size_t kRecycleCount{10};
+  static constexpr size_t kMessagesPerCycle{10};
+  static unsigned receive_count{0};
+
+  auto pub = node_.CreatePublisher<test::Test>("test_topic");
+  StartRunnerThread();
+
+  for (size_t i = 0; i < kRecycleCount; ++i) {
+    auto sub = node_.CreateSubscriber<test::Test>(
+        "test_topic",
+        [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+          ASSERT_EQ(msg->id(), receive_count);
+          ++receive_count;
+        });
+    WaitForDiscovery();
+    for (unsigned j = 0; j < kMessagesPerCycle; ++j) {
+      test::Test test_msg;
+      test_msg.set_id(i * kMessagesPerCycle + j);
+      test_msg.set_msg("hello world");
+      pub->Send(test_msg);
+    }
+    std::this_thread::sleep_for(kProcessEventsWaitTime);
   }
 
-  ASSERT_EQ(receive_count, 10U);
+  ASSERT_EQ(receive_count, kMessagesPerCycle * kRecycleCount);
+}
+
+TEST_F(TrellisFixture, PublisherRapidRecycle) {
+  static constexpr size_t kRecycleCount{10};
+  static constexpr size_t kMessagesPerCycle{10};
+  static unsigned receive_count{0};
+
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+      });
+  StartRunnerThread();
+
+  for (size_t i = 0; i < kRecycleCount; ++i) {
+    auto pub = node_.CreatePublisher<test::Test>("test_topic");
+    WaitForDiscovery();
+    for (unsigned j = 0; j < kMessagesPerCycle; ++j) {
+      test::Test test_msg;
+      test_msg.set_id(i * kMessagesPerCycle + j);
+      test_msg.set_msg("hello world");
+      pub->Send(test_msg);
+    }
+    std::this_thread::sleep_for(kProcessEventsWaitTime);
+  }
+
+  ASSERT_EQ(receive_count, kMessagesPerCycle * kRecycleCount);
 }

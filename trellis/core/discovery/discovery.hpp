@@ -18,6 +18,7 @@
 #ifndef TRELLIS_CORE_DISCOVERY_DISCOVERY_HPP_
 #define TRELLIS_CORE_DISCOVERY_DISCOVERY_HPP_
 
+#include <optional>
 #include <queue>
 
 #include "trellis/core/config.hpp"
@@ -251,7 +252,7 @@ class Discovery {
    * @param handle registration handle
    * @return unique identifier for the registration
    */
-  std::string GetSampleId(RegistrationHandle handle) const;
+  std::string GetSampleId(RegistrationHandle handle);
 
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);
@@ -266,20 +267,26 @@ class Discovery {
   void PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                          const SampleCallbackMap& callback_map);
 
+  using UdpReceiver = trellis::network::UDPReceiver<65535>;
+  using OptUdpReceiver = std::optional<UdpReceiver>;
+  using OptUdpSender = std::optional<trellis::network::UDP>;
+
   const std::string node_name_;                        ///< This process's logical node name
   const std::string send_addr_;                        ///< The address to send discovery updates to
   const unsigned discovery_port_;                      ///< The port to send and receive discovery updates on
   const unsigned management_interval_;                 ///< The interval in milliseconds for the management timer
   const std::chrono::milliseconds sample_timeout_ms_;  ///< How long to wait before considering samples stale
-  trellis::network::UDPReceiver<65535> udp_receiver_;  ///< Receives discovery broadcasts
-  trellis::network::UDP udp_sender_;                   ///< Sends discovery broadcasts
+  const bool loopback_enabled_;                        ///< Whether or not to loopback broadcasts bypassing UDP
+  OptUdpReceiver udp_receiver_;                        ///< Receives discovery broadcasts
+  OptUdpSender udp_sender_;                            ///< Sends discovery broadcasts
   trellis::core::Timer management_timer_;              ///< Periodic timer for housekeeping
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples
-  RegistrationHandle next_handle_{0};                                    ///< Monotonically increasing handle generator
-  CallbackHandle next_callback_handle_{0};                               ///< Monotonically increasing callback ID
-  std::array<uint8_t, 65535> send_buf_{};                                ///< Reusable send buffer for UDP
+  std::mutex registered_samples_mutex_{};   ///< syncrhonize access to registered samples map
+  RegistrationHandle next_handle_{0};       ///< Monotonically increasing handle generator
+  CallbackHandle next_callback_handle_{0};  ///< Monotonically increasing callback ID
+  std::array<uint8_t, 65535> send_buf_{};   ///< Reusable send buffer for UDP
 
-  std::mutex callback_mutex_;                        ///< Protects access to callback maps
+  std::mutex callback_mutex_{};                      ///< Protects access to callback maps
   SampleCallbackMap process_sample_callbacks_{};     ///< Callbacks for process-level samples
   SampleCallbackMap publisher_sample_callbacks_{};   ///< Callbacks for publisher samples
   SampleCallbackMap subscriber_sample_callbacks_{};  ///< Callbacks for subscriber samples

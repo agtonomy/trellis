@@ -28,23 +28,35 @@ namespace trellis {
 namespace core {
 namespace test {
 
+static constexpr unsigned kNumPubBuffers = 200;
+static constexpr unsigned kTestDiscoveryInterval = 100;
+static constexpr unsigned kTestDiscoveryTimeout = 200;
+
 namespace {
 
-static constexpr std::string_view test_config = R"(
+std::string CreateConfig(unsigned num_pub_buffers, unsigned interval_value, unsigned timeout_value) {
+  return fmt::format(R"(
     # Example configuration
     trellis:
+      publisher:
+        attributes:
+          num_buffers: {}
       discovery:
-        interval: 250
-        sample_timeout: 500
-    )";
+        interval: {}
+        sample_timeout: {}
+        loopback_enabled: true
+    )",
+                     num_pub_buffers, interval_value, timeout_value);
 }
+}  // namespace
 
 class TrellisFixture : public ::testing::Test {
  protected:
-  static constexpr auto kDiscoverySettlingTime = std::chrono::milliseconds{500};
   // Arbitrary delay that seems to be sufficient.
   static constexpr auto kSendReceiveTime = std::chrono::milliseconds{100};
-  TrellisFixture() : node_{"test_fixture", trellis::core::Config(YAML::Load(std::string(test_config)))} {}
+  TrellisFixture()
+      : node_{"test_fixture", trellis::core::Config(YAML::Load(
+                                  CreateConfig(kNumPubBuffers, kTestDiscoveryInterval, kTestDiscoveryTimeout)))} {}
 
   ~TrellisFixture() {
     time::DisableSimulatedClock();
@@ -53,7 +65,7 @@ class TrellisFixture : public ::testing::Test {
       runner_thread_.join();
     }
   }
-  static void WaitForDiscovery() { std::this_thread::sleep_for(kDiscoverySettlingTime); }
+  static void WaitForDiscovery() { std::this_thread::sleep_for(std::chrono::milliseconds(kTestDiscoveryTimeout)); }
   static void WaitForSendReceive() { std::this_thread::sleep_for(kSendReceiveTime); }
   void Stop() { node_.Stop(); }
   void StartRunnerThread() {

@@ -72,6 +72,7 @@ static constexpr std::string_view kDefaultSendAddress = "127.255.255.255";
 static constexpr unsigned kDefaultDiscoveryPort = 1400u;
 static constexpr unsigned kDefaultDiscoveryInterval = 1000u;
 static constexpr unsigned kDefaultSampleTimeout = 2000u;
+static constexpr bool kDefaultLoopbackEnabled = false;
 
 }  // namespace
 
@@ -81,12 +82,17 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
       discovery_port_{config.AsIfExists<unsigned>("trellis.discovery.port", kDefaultDiscoveryPort)},
       management_interval_{config.AsIfExists<unsigned>("trellis.discovery.interval", kDefaultDiscoveryInterval)},
       sample_timeout_ms_{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
-      udp_receiver_(loop,
-                    static_cast<asio::ip::udp::socket::native_handle_type>(CreateNativeUDPSocket(discovery_port_)),
-                    [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
-                      ReceiveData(trellis::core::time::Now(), data, len);
-                    }),
-      udp_sender_(loop, CreateNativeUDPSocket(0)),
+      loopback_enabled_{config.AsIfExists<bool>("trellis.discovery.loopback_enabled", kDefaultLoopbackEnabled)},
+      udp_receiver_(loopback_enabled_ ? std::nullopt
+                                      : std::make_optional<UdpReceiver>(
+                                            loop,
+                                            static_cast<asio::ip::udp::socket::native_handle_type>(
+                                                CreateNativeUDPSocket(discovery_port_)),
+                                            [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
+                                              ReceiveData(trellis::core::time::Now(), data, len);
+                                            })),
+      udp_sender_(loopback_enabled_ ? std::nullopt
+                                    : std::make_optional<trellis::network::UDP>(loop, CreateNativeUDPSocket(0))),
       management_timer_{std::make_shared<TimerImpl>(
           loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); }, management_interval_,
           management_interval_)} {
@@ -229,6 +235,7 @@ void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventTy
 }
 
 Discovery::RegistrationHandle Discovery::Register(Sample sample) {
+  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
   registered_samples_.emplace(std::make_pair(next_handle_, sample));
   const auto handle = next_handle_++;
   return handle;
@@ -238,6 +245,7 @@ void Discovery::Unregister(RegistrationHandle handle) {
   if (handle == kInvalidRegistrationHandle) {
     return;
   }
+  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
   const auto it = registered_samples_.find(handle);
   if (it != registered_samples_.end()) {
     registered_samples_.erase(it);
@@ -245,6 +253,7 @@ void Discovery::Unregister(RegistrationHandle handle) {
 }
 
 void Discovery::BroadcastSamples() {
+  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
   for (const auto& sample : registered_samples_) {
     BroadcastSample(sample.second);
   }
@@ -269,8 +278,12 @@ void Discovery::BroadcastSample(const Sample& sample) {
 
   header->len = sizeof(name_length) + name_length + serialized.size();
 
-  udp_sender_.AsyncSendTo(send_addr_, discovery_port_, send_buf_.data(), header->len + sizeof(SampleHeader),
-                          [](const trellis::core::error_code&, size_t) {});
+  if (!loopback_enabled_) {
+    udp_sender_->AsyncSendTo(send_addr_, discovery_port_, send_buf_.data(), header->len + sizeof(SampleHeader),
+                             [](const trellis::core::error_code&, size_t) {});
+  } else {
+    ReceiveData(trellis::core::time::Now(), send_buf_.data(), header->len + sizeof(SampleHeader));
+  }
 }
 
 Sample Discovery::GetNodeProcessSample() {
@@ -346,6 +359,7 @@ std::vector<Sample> Discovery::GetProcessSamples() const {
 }
 
 void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) {
+  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
     throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
@@ -356,7 +370,8 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
   sample.mutable_topic()->set_dfreq(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
 }
 
-std::string Discovery::GetSampleId(RegistrationHandle handle) const {
+std::string Discovery::GetSampleId(RegistrationHandle handle) {
+  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
     throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",

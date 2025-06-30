@@ -47,6 +47,7 @@ class TestServiceHandler : public trellis::core::test::TestService {
   }
 };
 static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
+static constexpr auto kTimeoutReconnectTime = std::chrono::milliseconds{400};
 }  // namespace
 
 using namespace trellis::core::test;
@@ -354,7 +355,9 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
   std::this_thread::sleep_for(kServiceCallWaitTime);
   EXPECT_EQ(callback_count, 1);
 
-  WaitForDiscovery();
+  // Wait some additional time for the underlying socket to reconnect
+  std::this_thread::sleep_for(kTimeoutReconnectTime);
+
   // Now do another call that should succeed
   callback_count = 0;
   request.set_id(10);  // Call again and see that we succeed
