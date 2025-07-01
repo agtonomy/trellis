@@ -143,7 +143,7 @@ ShmFile::ShmFile(ShmFile&& other)
 }
 
 void ShmFile::Resize(size_t requested_size) {
-  std::scoped_lock<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   const auto total_size = kCombinedHeaderSize + requested_size;
   map_ = Remap(fd_, handle_, owner_, total_size, map_);
   if (map_.size != total_size) {
@@ -155,7 +155,7 @@ void ShmFile::Resize(size_t requested_size) {
 }
 
 ShmFile::ReadInfo ShmFile::GetReadInfo() {
-  std::scoped_lock<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   if (map_.addr == nullptr) {
     throw std::runtime_error("ShmFile::GetReadInfo map_.addr == nulllptr");
   }
@@ -182,7 +182,7 @@ ShmFile::ReadInfo ShmFile::GetReadInfo() {
 }
 
 ShmFile::WriteInfo ShmFile::GetWriteInfo() {
-  std::scoped_lock<std::mutex> lock(mutex_);
+  std::lock_guard lock(mutex_);
   // In the case of the writer, we need to return how much size is currently available and then the writer will populate
   // the header with the actual data_size for the reader to parse
   const auto data_size_available = map_.size > kCombinedHeaderSize ? map_.size - kCombinedHeaderSize : 0u;

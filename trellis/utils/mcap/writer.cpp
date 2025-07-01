@@ -97,7 +97,7 @@ void WriteMessage(const core::time::TimePoint& stamp, const uint8_t* data, size_
 }
 
 void FlushWriter(FileWriter& file_writer) {
-  const auto lock = std::scoped_lock{file_writer.mutex};
+  const auto lock = std::lock_guard{file_writer.mutex};
   file_writer.writer.closeLastChunk();
 }
 
@@ -112,7 +112,7 @@ core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::Discov
   const auto subscriber = std::make_shared<trellis::core::SubscriberImpl<google::protobuf::Message>>(
       ev, std::string{topic}, core::SubscriberRawImpl::Callback{},
       [subscriber_data](const core::time::TimePoint& stamp, const uint8_t* data, size_t len) {
-        const auto lock = std::scoped_lock{subscriber_data->file_writer->mutex};
+        const auto lock = std::lock_guard{subscriber_data->file_writer->mutex};
         if (!subscriber_data->initialized) TryInitializeMcapChannel(*subscriber_data);
         if (subscriber_data->initialized) WriteMessage(stamp, data, len, *subscriber_data);
       },

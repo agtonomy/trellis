@@ -138,33 +138,35 @@ class PublisherImpl {
    * @return The timestamp used.
    */
   trellis::core::time::TimePoint Send(const MSG_T& msg, const trellis::core::time::TimePoint& now) {
-    std::scoped_lock<std::mutex> scoped_lock(mutex_);
-
     bool success{false};
-    ipc::shm::ShmFile::WriteInfo write_info = writer_.GetWriteAccess(buffer_size_);
-    if (write_info.data == nullptr) {
-      throw std::runtime_error("PublisherImpl::Send Failed to obtain write access!");
-    }
-
-    // Try to serialize; double the buffer size if necessary
-    while (!(success = msg.SerializeToArray(write_info.data, write_info.size))) {
-      if (buffer_size_ == max_buffer_size_) {
-        throw std::runtime_error(fmt::format(
-            "PublisherImpl::Send Failed to serialize to the max specified buffer size {}", max_buffer_size_));
+    {  // Scope the mutex region to end before interacting with the discovery layer to avoid a potential deadlock
+       // condition
+      std::lock_guard guard(mutex_);
+      ipc::shm::ShmFile::WriteInfo write_info = writer_.GetWriteAccess(buffer_size_);
+      if (write_info.data == nullptr) {
+        throw std::runtime_error("PublisherImpl::Send Failed to obtain write access!");
       }
-      buffer_size_ = std::min((buffer_size_ * 2), max_buffer_size_);
-      writer_.ReleaseWriteAccess(now, /* bytes_written = */ 0, /* success = */ false);
-      write_info = writer_.GetWriteAccess(buffer_size_);
-      if (write_info.size != buffer_size_) {
-        throw std::logic_error(
-            fmt::format("PublisherImpl::Send Failed to increase buffer size. Requested = {} actual = {}", buffer_size_,
-                        write_info.size));
-      }
-    }
 
-    // Release the shared memory write lock after writing
-    size_t bytes_written = static_cast<size_t>(msg.ByteSizeLong());
-    writer_.ReleaseWriteAccess(now, bytes_written, success);
+      // Try to serialize; double the buffer size if necessary
+      while (!(success = msg.SerializeToArray(write_info.data, write_info.size))) {
+        if (buffer_size_ == max_buffer_size_) {
+          throw std::runtime_error(fmt::format(
+              "PublisherImpl::Send Failed to serialize to the max specified buffer size {}", max_buffer_size_));
+        }
+        buffer_size_ = std::min((buffer_size_ * 2), max_buffer_size_);
+        writer_.ReleaseWriteAccess(now, /* bytes_written = */ 0, /* success = */ false);
+        write_info = writer_.GetWriteAccess(buffer_size_);
+        if (write_info.size != buffer_size_) {
+          throw std::logic_error(
+              fmt::format("PublisherImpl::Send Failed to increase buffer size. Requested = {} actual = {}",
+                          buffer_size_, write_info.size));
+        }
+      }
+
+      // Release the shared memory write lock after writing
+      size_t bytes_written = static_cast<size_t>(msg.ByteSizeLong());
+      writer_.ReleaseWriteAccess(now, bytes_written, success);
+    }
 
     // Track message send statistics and update discovery
     if (success) {
@@ -197,7 +199,7 @@ class PublisherImpl {
    * @param sample The discovery sample for the subscriber.
    */
   void ReceiveSubscriber(discovery::Discovery::EventType event, const discovery::Sample& sample) {
-    std::scoped_lock<std::mutex> scoped_lock(mutex_);
+    std::lock_guard guard(mutex_);
     if (sample.topic().tname() != topic_) {
       return;
     }

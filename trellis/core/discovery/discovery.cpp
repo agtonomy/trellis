@@ -109,7 +109,7 @@ void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
 
 void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                                   const SampleCallbackMap& callback_map) {
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   for (auto it = map.begin(); it != map.end();) {
     if (now - it->second.stamp > sample_timeout_ms_) {
       for (const auto& callback : callback_map) {
@@ -212,7 +212,7 @@ void Discovery::ProcessProcessSample(trellis::core::time::TimePoint now, EventTy
 
 void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(subscriber_samples_, now, event, sample);
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   for (const auto& callback : subscriber_sample_callbacks_) {
     if (callback.second) callback.second(event, sample);
   }
@@ -220,7 +220,7 @@ void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, Even
 
 void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(publisher_samples_, now, event, sample);
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   for (const auto& callback : publisher_sample_callbacks_) {
     if (callback.second) callback.second(event, sample);
   }
@@ -228,14 +228,14 @@ void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, Event
 
 void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(service_samples_, now, event, sample);
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   for (const auto& callback : service_sample_callbacks_) {
     if (callback.second) callback.second(event, sample);
   }
 }
 
 Discovery::RegistrationHandle Discovery::Register(Sample sample) {
-  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
+  std::lock_guard lock(registered_samples_mutex_);
   registered_samples_.emplace(std::make_pair(next_handle_, sample));
   const auto handle = next_handle_++;
   return handle;
@@ -245,7 +245,7 @@ void Discovery::Unregister(RegistrationHandle handle) {
   if (handle == kInvalidRegistrationHandle) {
     return;
   }
-  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
+  std::lock_guard lock(registered_samples_mutex_);
   const auto it = registered_samples_.find(handle);
   if (it != registered_samples_.end()) {
     registered_samples_.erase(it);
@@ -253,7 +253,7 @@ void Discovery::Unregister(RegistrationHandle handle) {
 }
 
 void Discovery::BroadcastSamples() {
-  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
+  std::lock_guard lock(registered_samples_mutex_);
   for (const auto& sample : registered_samples_) {
     BroadcastSample(sample.second);
   }
@@ -298,21 +298,21 @@ Sample Discovery::GetNodeProcessSample() {
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   const unsigned handle = next_callback_handle_++;
   publisher_sample_callbacks_[handle] = std::move(callback);
   return handle;
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveSubscribers(SampleCallback callback) {
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   const unsigned handle = next_callback_handle_++;
   subscriber_sample_callbacks_[handle] = std::move(callback);
   return handle;
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveServices(SampleCallback callback) {
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   const unsigned handle = next_callback_handle_++;
   service_sample_callbacks_[handle] = std::move(callback);
   return handle;
@@ -322,7 +322,7 @@ void Discovery::StopReceive(Discovery::CallbackHandle handle) {
   if (handle == kInvalidCallbackHandle) {
     return;
   }
-  std::scoped_lock scoped_lock(callback_mutex_);
+  std::lock_guard guard(callback_mutex_);
   if (publisher_sample_callbacks_.find(handle) != publisher_sample_callbacks_.end()) {
     publisher_sample_callbacks_.erase(handle);
   }
@@ -359,7 +359,7 @@ std::vector<Sample> Discovery::GetProcessSamples() const {
 }
 
 void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) {
-  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
+  std::lock_guard lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
     throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
@@ -371,7 +371,7 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
 }
 
 std::string Discovery::GetSampleId(RegistrationHandle handle) {
-  std::lock_guard<std::mutex> lock(registered_samples_mutex_);
+  std::lock_guard lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
     throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",

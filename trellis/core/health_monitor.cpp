@@ -85,7 +85,7 @@ void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {
 
 void HealthMonitor::InsertIntoCache(const trellis::core::HealthHistory& status) {
   // Insert into our cache and reset the watchdog
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   const std::string& name = status.name();
 
   if (health_data_.find(name) != health_data_.end()) {
@@ -106,7 +106,7 @@ void HealthMonitor::WatchdogExpired(const std::string& name, const time::TimePoi
   // Add a new entry to signify that the health state was lost
   bool should_callback{false};
   {
-    std::lock_guard<std::mutex> guard{mutex_};
+    std::lock_guard guard{mutex_};
     if (health_data_.find(name) != health_data_.end()) {
       auto& history = health_data_.at(name).history_;
       trellis::core::HealthStatus* new_status = history.Add();
@@ -122,7 +122,7 @@ void HealthMonitor::WatchdogExpired(const std::string& name, const time::TimePoi
 }
 
 bool HealthMonitor::IsAllHealthy() {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   for (const auto& [name, data] : health_data_) {
     const trellis::core::HealthStatus& last_update =
         data.history_.at(data.history_.size() - 1);  // History list is guaranteed to be non-zero
@@ -134,7 +134,7 @@ bool HealthMonitor::IsAllHealthy() {
 }
 
 std::set<std::string> HealthMonitor::GetNodeNames() {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   std::set<std::string> result;
   std::transform(health_data_.begin(), health_data_.end(), std::inserter(result, result.end()),
                  [](const auto& pair) { return pair.first; });
@@ -142,12 +142,12 @@ std::set<std::string> HealthMonitor::GetNodeNames() {
 }
 
 bool HealthMonitor::HasHealthInfo(const std::string& name) {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   return health_data_.find(name) != health_data_.end();
 }
 
 const trellis::core::HealthStatus HealthMonitor::GetMostRecentNodeHealthFromCache(const std::string& name) {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   const auto& history = health_data_.at(name).history_;
   const auto size = history.size();
   if (size == 0) {
@@ -174,14 +174,14 @@ void HealthMonitor::CheckNameExists(const std::string& name) const {
 }
 
 const trellis::core::HealthStatus HealthMonitor::GetLastHealthUpdate(const std::string& name) {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   CheckNameExists(name);
   const auto& history = health_data_.at(name).history_;
   return history.at(history.size() - 1);  // History list is guaranteed to be non-zero
 }
 
 const HealthMonitor::HealthHistoryList HealthMonitor::GetHealthHistory(const std::string& name) {
-  std::lock_guard<std::mutex> guard{mutex_};
+  std::lock_guard guard{mutex_};
   CheckNameExists(name);
   return health_data_.at(name).history_;
 }
