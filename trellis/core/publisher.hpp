@@ -115,8 +115,8 @@ class PublisherImpl {
    * Unregisters from discovery and stops receiving subscriber events.
    */
   ~PublisherImpl() {
-    discovery_->Unregister(discovery_handle_);
     discovery_->StopReceive(callback_handle_);
+    discovery_->Unregister(discovery_handle_);
   }
 
   /**

@@ -88,8 +88,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
 
   /// @brief Destructor unregisters from discovery and stops callbacks.
   ~SubscriberImpl() {
-    discovery_->Unregister(discovery_handle_);
     discovery_->StopReceive(callback_handle_);
+    discovery_->Unregister(discovery_handle_);
   }
 
   SubscriberImpl(const SubscriberImpl&) = delete;
