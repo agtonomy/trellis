@@ -84,6 +84,7 @@ class SocketEvent {
   SocketEvent& operator=(SocketEvent&&) = default;
 
  private:
+  static constexpr size_t kMaxEventNumEvents = 1000;
   /**
    * @brief Begins waiting for an incoming datagram event.
    *

@@ -41,6 +41,9 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
     endpoint_ = asio::local::datagram_protocol::endpoint(handle_);
     socket_.open();
     socket_.non_blocking(true);
+    socket_.set_option(asio::socket_base::send_buffer_size(sizeof(Event) * kMaxEventNumEvents));
+    socket_.set_option(asio::socket_base::receive_buffer_size(sizeof(Event) * kMaxEventNumEvents));
+
     const int previous_umask =
         ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
     socket_.bind(endpoint_);
