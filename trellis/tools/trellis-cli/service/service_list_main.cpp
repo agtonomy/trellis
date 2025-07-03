@@ -26,6 +26,10 @@ namespace trellis {
 namespace tools {
 namespace cli {
 
+namespace {
+static constexpr size_t kMaxMethodsStringLen = 200;  // truncate long strings
+}
+
 int service_list_main(int argc, char* argv[]) {
   cxxopts::Options options(service_list_command.data(), service_list_command_desc.data());
   options.add_options()("h,help", "print usage");
@@ -43,9 +47,27 @@ int service_list_main(int argc, char* argv[]) {
 
   const auto service_samples = discovery.GetServiceSamples();
 
-  VariadicTable<std::string> vt({"Service Name"});
+  VariadicTable<std::string, std::string> vt({"Service Name", "Methods"});
+
   for (const auto& sample : service_samples) {
-    vt.addRow(sample.service().sname());
+    const auto& service = sample.service();
+
+    // Generate list of method names
+    std::stringstream methods_ss;
+    bool first{false};
+    for (const auto& method : service.methods()) {
+      if (!first) {
+        methods_ss << " ";
+      }
+      first = false;
+      methods_ss << method.mname() << "(" << method.req_type() << " -> " << method.resp_type() << ")";
+    }
+    std::string methods_str = methods_ss.str();
+    if (methods_str.size() > kMaxMethodsStringLen) {
+      methods_str = methods_str.substr(0, kMaxMethodsStringLen) + "...";
+    }
+    // Add the service to the table
+    vt.addRow(service.sname(), methods_str);
   }
   vt.print(std::cout);
 

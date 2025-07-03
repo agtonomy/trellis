@@ -42,12 +42,45 @@ int service_info_main(int argc, char* argv[]) {
   trellis::core::discovery::Discovery discovery("trellis-cli", loop, trellis::core::Config{});
   loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
 
-  // TODO (bsirang) implement
-  // const auto service_samples = discovery.GetServiceSamples();
-  // for (const auto& sample : service_samples) {
-  // }
+  const auto service_samples = discovery.GetServiceSamples();
+  for (const auto& sample : service_samples) {
+    const auto& service = sample.service();
+    if (service.sname() == service_name) {
+      // Display service header
+      std::cout << "┌─ RPC Service: " << service.sname() << " ─" << std::endl;
+      std::cout << "│" << std::endl;
 
-  return 0;
+      // Basic service info
+      std::cout << "│ Host:        " << service.hname() << std::endl;
+      std::cout << "│ Process:     " << service.uname() << " (PID: " << service.pid() << ")" << std::endl;
+      std::cout << "│ Executable:  " << service.pname() << std::endl;
+      std::cout << "│ TCP Port:    " << service.tcp_port() << std::endl;
+      std::cout << "│" << std::endl;
+
+      // Methods section
+      if (service.methods_size() > 0) {
+        std::cout << "│ Methods (" << service.methods_size() << "):" << std::endl;
+        std::cout << "│" << std::endl;
+
+        for (const auto& method : service.methods()) {
+          std::cout << "│   • " << method.mname() << std::endl;
+          std::cout << "│     Request:  " << method.req_type() << std::endl;
+          std::cout << "│     Response: " << method.resp_type() << std::endl;
+          // TODO (bsirang) display call count after it's implemented
+          std::cout << "│" << std::endl;
+        }
+      } else {
+        std::cout << "│ No methods registered" << std::endl;
+        std::cout << "│" << std::endl;
+      }
+
+      std::cout << "└─────────────────────────────────────────" << std::endl;
+      return 0;  // Exit early since we found the service
+    }
+  }
+
+  std::cout << "Service '" << service_name << "' not found" << std::endl;
+  return 1;
 }
 
 }  // namespace cli

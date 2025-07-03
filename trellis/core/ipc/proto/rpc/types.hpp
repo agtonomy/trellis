@@ -17,10 +17,27 @@
 #ifndef TRELLIS_CORE_IPC_PROTO_RPC_TYPES_HPP_
 #define TRELLIS_CORE_IPC_PROTO_RPC_TYPES_HPP_
 
+#include <google/protobuf/descriptor.h>
+
+#include <string>
+#include <unordered_map>
+
 namespace trellis::core::ipc::proto::rpc {
 
 enum ServiceCallStatus { kTimedOut = 0, kSuccess = 1, kFailure = 2 };
 static constexpr unsigned kMaxBufferSize{65535u};  // TCP max
+
+/**
+ * @brief Metadata for describing service methods.
+ */
+struct MethodMetadata {
+  const google::protobuf::MethodDescriptor* descriptor;  ///< Protobuf method descriptor
+  const std::string input_type_name;                     ///< Name of input message type
+  const std::string input_type_desc;                     ///< Description of input message structure
+  const std::string output_type_name;                    ///< Name of output message type
+  const std::string output_type_desc;                    ///< Description of output message structure
+};
+using MethodsMap = std::unordered_map<std::string, MethodMetadata>;
 
 }  // namespace trellis::core::ipc::proto::rpc
 

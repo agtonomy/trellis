@@ -27,6 +27,7 @@
 #include <string>
 
 #include "trellis/core/discovery/types.hpp"
+#include "trellis/core/ipc/proto/rpc/types.hpp"
 
 namespace trellis::core::discovery::utils {
 
@@ -49,9 +50,11 @@ discovery::Sample CreateProtoPubSubSample(const std::string& topic, const std::s
  *
  * @param port The TCP port the service is available on.
  * @param service_name The name of the service.
+ * @param methods the mapping of available methods to the associated metadata
  * @return discovery::Sample The constructed service discovery sample.
  */
-discovery::Sample CreateServiceServerSample(uint16_t port, const std::string& service_name);
+discovery::Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
+                                            const ipc::proto::rpc::MethodsMap& methods);
 
 /**
  * @brief Retrieve the current system's hostname.

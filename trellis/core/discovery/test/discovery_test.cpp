@@ -142,7 +142,7 @@ TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
 TEST(DiscoveryTests, RegisterServiceServer) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  discovery.RegisterServiceServer("test_service", 1337);
+  discovery.RegisterServiceServer("test_service", 1337, ipc::proto::rpc::MethodsMap{});
 
   unsigned receive_count{0};
   discovery.AsyncReceiveServices([&](Discovery::EventType event, const Sample& sample) {

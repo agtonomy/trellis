@@ -170,19 +170,32 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
   return sample;
 }
 
-Sample CreateServiceServerSample(uint16_t port, const std::string& service_name) {
+Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
+                                 const ipc::proto::rpc::MethodsMap& methods) {
   Sample sample;
   std::stringstream counter;
   counter << std::chrono::steady_clock::now().time_since_epoch().count();
   sample.set_id(counter.str());
   sample.set_type(discovery::service_registration);
-  sample.mutable_service()->set_hname(GetHostname());
-  sample.mutable_service()->set_pname(GetExecutablePath());
-  sample.mutable_service()->set_uname(GetBaseName(sample.service().pname()));
-  sample.mutable_service()->set_pid(::getpid());
-  sample.mutable_service()->set_sname(service_name);
 
-  sample.mutable_service()->set_tcp_port(port);
+  auto& service = *sample.mutable_service();
+  service.set_hname(GetHostname());
+  service.set_pname(GetExecutablePath());
+  service.set_uname(GetBaseName(sample.service().pname()));
+  service.set_pid(::getpid());
+  service.set_sname(service_name);
+  service.set_tcp_port(port);
+
+  // Iterate through the MethodsMap and populate the Service methods
+  for (const auto& [method_name, metadata] : methods) {
+    discovery::pb::Method* method = service.add_methods();
+    method->set_mname(method_name);
+    method->set_req_type(metadata.input_type_name);
+    method->set_req_desc(metadata.input_type_desc);
+    method->set_resp_type(metadata.output_type_name);
+    method->set_resp_desc(metadata.output_type_desc);
+    method->set_call_count(0);
+  }
   return sample;
 }
 

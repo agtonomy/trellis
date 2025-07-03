@@ -8,10 +8,10 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":utils",
         ":types",
-        "//trellis/core:core_event_loop",
+        ":utils",
         "//trellis/core:core_config",
+        "//trellis/core:core_event_loop",
         "//trellis/core:core_timer",
         "//trellis/network",
         "@fmt",
@@ -26,10 +26,11 @@ cc_library(
     hdrs = [
         "utils.hpp",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":types",
+        "//trellis/core/ipc/proto/rpc:types",
     ],
-    visibility = ["//visibility:public"],
 )
 
 cc_library(

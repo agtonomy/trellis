@@ -72,8 +72,8 @@ class Server {
                       clients_.emplace_back(client);
                       ReceiveNextRequest(client);
                     }},
-        discovery_handle_{
-            discovery_->RegisterServiceServer(PROTO_SERVICE_T::descriptor()->full_name(), tcp_server_.GetPort())} {}
+        discovery_handle_{discovery_->RegisterServiceServer(PROTO_SERVICE_T::descriptor()->full_name(),
+                                                            tcp_server_.GetPort(), methods_)} {}
 
   /**
    * @brief Destroy the Server instance and clean up clients and threads.
@@ -93,19 +93,6 @@ class Server {
   }
 
  private:
-  /**
-   * @brief Metadata for describing service methods.
-   */
-  struct MethodMetadata {
-    const google::protobuf::MethodDescriptor* descriptor;  ///< Protobuf method descriptor
-    const std::string input_type_name;                     ///< Name of input message type
-    const std::string input_type_desc;                     ///< Description of input message structure
-    const std::string output_type_name;                    ///< Name of output message type
-    const std::string output_type_desc;                    ///< Description of output message structure
-  };
-
-  using MethodsMap = std::unordered_map<std::string, MethodMetadata>;
-
   /**
    * @brief Extract method metadata from a protobuf service implementation.
    *

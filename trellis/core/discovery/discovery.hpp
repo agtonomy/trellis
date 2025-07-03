@@ -25,6 +25,7 @@
 #include "trellis/core/discovery/types.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/event_loop.hpp"
+#include "trellis/core/ipc/proto/rpc/types.hpp"
 #include "trellis/core/timer.hpp"
 #include "trellis/network/udp.hpp"
 
@@ -192,10 +193,12 @@ class Discovery {
    *
    * @param service_name the fully qualified name of the servce
    * @param port the TCP port that the service server is listening on
+   * @param methods the mapping of available methods to the associated metadata
    * @return Registration handle
    */
-  RegistrationHandle RegisterServiceServer(std::string service_name, uint16_t port) {
-    return Register(utils::CreateServiceServerSample(port, service_name));
+  RegistrationHandle RegisterServiceServer(std::string service_name, uint16_t port,
+                                           const ipc::proto::rpc::MethodsMap& methods) {
+    return Register(utils::CreateServiceServerSample(port, service_name, methods));
   }
 
   /**
