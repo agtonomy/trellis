@@ -59,8 +59,12 @@ int topic_publish_main(int argc, char* argv[]) {
   loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
 
   const auto pubsub_samples = discovery.GetPubSubSamples();
-  auto it = std::find_if(pubsub_samples.begin(), pubsub_samples.end(),
-                         [&topic](const auto& sample) { return sample.topic().tname() == topic; });
+  auto it = std::find_if(pubsub_samples.begin(), pubsub_samples.end(), [&topic](const auto& sample) {
+    // Find the first pub/sub sample that matches our topic of interest, but also has non-empty metadata.
+    // Dynamic subscribers will not have the `tdatatype` metadata populated, so we want to skip those samples
+    return sample.topic().tname() == topic && !sample.topic().tdatatype().name().empty() &&
+           !sample.topic().tdatatype().desc().empty();
+  });
 
   if (it == pubsub_samples.end()) {
     std::cerr << "Failed to discover topic " << topic << std::endl;
