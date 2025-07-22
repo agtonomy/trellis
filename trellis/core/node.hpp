@@ -136,9 +136,11 @@ class Node {
     }
     if (do_watchdog) {
       const auto initial_delay_ms = watchdog_timeout_ms.value();
-      auto watchdog_wrapper = [watchdog_callback = std::move(watchdog_callback), impl](const time::TimePoint& now) {
+      auto watchdog_wrapper = [watchdog_callback = std::move(watchdog_callback),
+                               weak_impl = std::weak_ptr<SubscriberImpl<MSG_T>>(impl)](const time::TimePoint& now) {
         // Desired behavior is to have the watchdog fire only if messages were previously received
-        if (impl->DidReceive()) {
+        auto impl = weak_impl.lock();
+        if (impl && impl->DidReceive()) {
           watchdog_callback(now);
         }
       };
