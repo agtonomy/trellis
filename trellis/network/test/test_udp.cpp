@@ -77,10 +77,8 @@ TEST(UDPTests, Receiver) {
       "127.0.0.1", receiver.GetPort(), msg.c_str(), msg.size(),
       [](const trellis::core::error_code&, size_t size) { std::cout << "Sent " << size << " bytes!" << std::endl; });
 
-  static constexpr unsigned expected_receive_count = 2;
-  for (unsigned i = 0; i < expected_receive_count * 2; ++i) {
-    loop.RunOne();  // call once per receive and send
-  }
+  constexpr unsigned expected_receive_count = 2;
+  loop.RunFor(std::chrono::milliseconds(5));
   ASSERT_EQ(receive_count, expected_receive_count);
   ASSERT_EQ(receive_bytes_count, 88);
 }

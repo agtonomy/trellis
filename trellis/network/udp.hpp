@@ -110,6 +110,13 @@ class UDP {
    */
   uint16_t GetPort() const { return socket_.local_endpoint().port(); }
 
+  /**
+   * GetSocket retrieve the underlying asio socket
+   *
+   * @return a reference to the asio socket
+   */
+  asio::ip::udp::socket& GetSocket() { return socket_; }
+
  private:
   void ReceiveHandler(const trellis::core::error_code& code, std::size_t bytes_transferred) {}
   trellis::core::EventLoop loop_;
@@ -164,8 +171,20 @@ class UDPReceiver {
 
  private:
   void DidReceive(const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, size_t size) {
-    // call to user
+    // call to user for the first packet
     callback_(buffer_.data(), size, ep);
+
+    // Drain the socket of any more packets before we go back to the event loop
+    auto& socket = udp_.GetSocket();
+    while (socket.available()) {
+      asio::ip::udp::endpoint sender_endpoint;
+      trellis::core::error_code ec;
+      size_t bytes_received = socket.receive_from(asio::buffer(buffer_.data(), buffer_.size()), sender_endpoint, 0, ec);
+      if (ec || bytes_received == 0) {
+        break;
+      }
+      callback_(buffer_.data(), bytes_received, sender_endpoint);
+    }
 
     // queue up next receive
     udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
