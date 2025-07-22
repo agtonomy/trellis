@@ -187,8 +187,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
       if (last_seq != 0 && (header.sequence != (last_seq + 1))) {
         // TODO don't throw but instead collect metrics
         throw std::runtime_error(
-            fmt::format("Received unexpected sequence number from writer_id {}. Current = {} last = {}",
-                        header.writer_id, header.sequence, last_seq));
+            fmt::format("Received unexpected sequence number on topic {} from writer_id {}. Current = {} last = {}",
+                        topic_, header.writer_id, header.sequence, last_seq));
       }
       last_seq = header.sequence;
     }

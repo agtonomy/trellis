@@ -25,6 +25,8 @@
 
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/ipc/shm/shm_writer.hpp"
+#include "trellis/core/logging.hpp"
+
 namespace trellis::core {
 
 namespace {
@@ -55,6 +57,7 @@ T GetConfigAttributeForTopic(const trellis::core::Config& config, const std::str
   const T general_config = config.AsIfExists<T>(general_attribute, default_val);
 
   if (topic_specific_config != default_val) {
+    Log::Info("Overriding topic-specific attribute {} with {} for topic {}", attribute, topic_specific_config, topic);
     return topic_specific_config;
   }
   return general_config;
