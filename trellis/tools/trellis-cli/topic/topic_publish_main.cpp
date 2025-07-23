@@ -36,7 +36,6 @@ int topic_publish_main(int argc, char* argv[]) {
   options.add_options()("t,topic", "topic name", cxxopts::value<std::string>())(
       "b,body", "message body in JSON", cxxopts::value<std::string>())("c,count", "message count",
                                                                        cxxopts::value<int>()->default_value("1"))(
-      "d,delay", "discovery delay milliseconds", cxxopts::value<int>()->default_value("1500"))(
       "r,rate", "publish rate hz", cxxopts::value<int>()->default_value("1"))("h,help", "print usage");
   auto result = options.parse(argc, argv);
   if (result.count("help") || !result.count("topic") || !result.count("body")) {
@@ -48,7 +47,6 @@ int topic_publish_main(int argc, char* argv[]) {
   const std::string body = result["body"].as<std::string>();
   const int count = result["count"].as<int>();
   const int rate = result["rate"].as<int>();
-  const int delay_ms = result["delay"].as<int>();
   const int interval_ms = 1000 / rate;
 
   Node node(root_command.data(), {});
@@ -86,10 +84,12 @@ int topic_publish_main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::cout << "Echoing " << count << " messages at " << rate << " hz to topic " << topic << std::endl;
+  std::cout << "Waiting for discovery layer to propagate metadata." << std::endl;
 
-  // Delay to give time for connection(s) to establish
-  std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+  // Allow for time for subscriber message schemas to propagate to our dynamic publisher
+  loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
+
+  std::cout << "Echoing " << count << " messages at " << rate << " hz to topic " << topic << std::endl;
 
   for (int i = 0; i < count && node.RunOnce(); ++i) {
     pub->Send(*message);

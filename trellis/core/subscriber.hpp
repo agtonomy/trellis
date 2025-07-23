@@ -137,8 +137,13 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
     }
 
     if (dynamic_message_cache_ == nullptr) {
-      dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(sample.topic().tdatatype().desc());
-      dynamic_message_cache_->Create(sample.topic().tdatatype().name());
+      // Dynamic publishers may not contain the appropriate metadata, so we must check for existence
+      const auto& desc = sample.topic().tdatatype().desc();
+      const auto& name = sample.topic().tdatatype().name();
+      if (!desc.empty() && !name.empty()) {
+        dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(sample.topic().tdatatype().desc());
+        dynamic_message_cache_->Create(sample.topic().tdatatype().name());
+      }
     }
 
     auto it = readers_.find(topic_id);
@@ -209,6 +214,11 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
 
     PointerType msg = GetMessagePointer();
 
+    if (msg == nullptr) {
+      // We may hit this case if we're a dynamic subscriber and we don't yet have the message schema
+      return;
+    }
+
     if (callback_) {
       if (!msg->ParseFromArray(data, len)) {
         throw std::runtime_error(fmt::format("Failed to parse proto from shared memory from topic {} and writer_id {}",
@@ -236,7 +246,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   /// @brief Retrieves a cached dynamic message for dynamically typed messages.
   template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
   PointerType GetMessagePointer() {
-    return dynamic_message_cache_->Get();
+    return (dynamic_message_cache_ != nullptr) ? dynamic_message_cache_->Get() : nullptr;
   }
 
   trellis::core::EventLoop loop_;
