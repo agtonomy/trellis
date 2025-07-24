@@ -67,6 +67,10 @@ constexpr std::string_view health_desc{"analyze application health"};
 constexpr std::string_view health_list_command_desc{"list application health status"};
 constexpr std::string_view health_info_command_desc{"display info about an application's health"};
 
+// Discovery
+constexpr std::string_view discovery_desc{"analyze discovery layer"};
+constexpr std::string_view discovery_dump_command_desc{"dump raw discovery samples"};
+
 // Delay to allow discovery / monitoring information to propogage
 // Delay chosen based on default discovery broadcast interval
 constexpr unsigned monitor_delay_ms = 2000U;

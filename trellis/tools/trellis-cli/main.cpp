@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
       {"node", {cli::node_desc.data(), [argc, argv]() { return cli::node_main(argc, argv); }}},
       {"service", {cli::service_desc.data(), [argc, argv]() { return cli::service_main(argc, argv); }}},
       {"health", {cli::health_desc.data(), [argc, argv]() { return cli::health_main(argc, argv); }}},
+      {"discovery", {cli::discovery_desc.data(), [argc, argv]() { return cli::discovery_main(argc, argv); }}},
   };
 
   if (command.empty()) {

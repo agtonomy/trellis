@@ -86,6 +86,10 @@ int health_main(int argc, char* argv[]);
 int health_list_main(int argc, char* argv[]);
 int health_info_main(int argc, char* argv[]);
 
+// discovery subcommand
+int discovery_main(int argc, char* argv[]);
+int discovery_dump_main(int argc, char* argv[]);
+
 }  // namespace cli
 }  // namespace tools
 }  // namespace trellis

@@ -13,6 +13,8 @@ cc_binary(
     srcs = [
         "command_handlers.hpp",
         "constants.hpp",
+        "discovery/discovery_dump_main.cpp",
+        "discovery/discovery_main.cpp",
         "health/health_info_main.cpp",
         "health/health_list_main.cpp",
         "health/health_main.cpp",
