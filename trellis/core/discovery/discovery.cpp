@@ -268,9 +268,14 @@ void Discovery::BroadcastSample(const Sample& sample) {
   header->version = 1;
 
   const std::string serialized = sample.SerializeAsString();
-
-  // TODO overrun checks
   const uint16_t name_length = sample.topic().tname().size() + 1;
+  const size_t total_length = sizeof(SampleHeader) + sizeof(name_length) + name_length + serialized.size();
+
+  if (total_length > send_buf_.size()) {
+    // Our samples must fit in a single UDP transmission so we can't broadcast any samples larger than this buffer.
+    // TODO (bsirang) Implement chunking on both the send and receive side to handle arbitrarily large samples.
+    return;
+  }
   ::memcpy(send_buf_.data() + sizeof(SampleHeader), &name_length, sizeof(name_length));
   ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length), sample.topic().tname().data(), name_length);
   ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length) + name_length, serialized.data(),
