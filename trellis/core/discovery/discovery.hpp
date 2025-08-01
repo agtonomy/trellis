@@ -266,11 +266,12 @@ class Discovery {
   void Evaluate(const trellis::core::time::TimePoint& now);
   void BroadcastSamples();
   void BroadcastSample(const Sample& sample);
-  Sample GetNodeProcessSample();
   void PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                          const SampleCallbackMap& callback_map);
+  void PurgeStalePartialBuffers(const trellis::core::time::TimePoint& now);
 
-  using UdpReceiver = trellis::network::UDPReceiver<65535>;
+  static constexpr size_t kUdpPayloadSizeMax = 65507;  // practical UDP limit of 2^16 minus protocol overhead
+  using UdpReceiver = trellis::network::UDPReceiver<kUdpPayloadSizeMax>;
   using OptUdpReceiver = std::optional<UdpReceiver>;
   using OptUdpSender = std::optional<trellis::network::UDP>;
 
@@ -284,10 +285,10 @@ class Discovery {
   OptUdpSender udp_sender_;                            ///< Sends discovery broadcasts
   trellis::core::Timer management_timer_;              ///< Periodic timer for housekeeping
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples
-  std::mutex registered_samples_mutex_{};   ///< syncrhonize access to registered samples map
-  RegistrationHandle next_handle_{0};       ///< Monotonically increasing handle generator
-  CallbackHandle next_callback_handle_{0};  ///< Monotonically increasing callback ID
-  std::array<uint8_t, 65535> send_buf_{};   ///< Reusable send buffer for UDP
+  std::mutex registered_samples_mutex_{};               ///< syncrhonize access to registered samples map
+  RegistrationHandle next_handle_{0};                   ///< Monotonically increasing handle generator
+  CallbackHandle next_callback_handle_{0};              ///< Monotonically increasing callback ID
+  std::array<uint8_t, kUdpPayloadSizeMax> send_buf_{};  ///< Reusable send buffer for UDP
 
   std::mutex callback_mutex_{};                      ///< Protects access to callback maps
   SampleCallbackMap process_sample_callbacks_{};     ///< Callbacks for process-level samples
@@ -299,6 +300,16 @@ class Discovery {
   SamplesMap publisher_samples_{};   ///< Remote publisher samples by topic
   SamplesMap subscriber_samples_{};  ///< Remote subscriber samples by topic
   SamplesMap service_samples_{};     ///< Remote service server samples
+
+  // Multi-packet reassembly data structure
+  struct PartialSample {
+    uint32_t total_packets;                      ///< Expected total number of packets
+    uint32_t next_packet_index;                  ///< Next expected packet index (0, 1, 2...)
+    std::string payload_buffer;                  ///< Buffer to accumulate payload chunks
+    trellis::core::time::TimePoint last_update;  ///< Time of most recent packet for cleanup
+  };
+
+  std::unordered_map<std::string, PartialSample> partial_samples_;  ///< Track partial samples by ID
 };
 
 /// @brief Shared pointer alias for Discovery

@@ -42,7 +42,9 @@ class UDP {
    *
    * @param loop the event loop thread handle to use for IO
    */
-  explicit UDP(trellis::core::EventLoop loop) : loop_{loop}, socket_{*loop, asio::ip::udp::v4()} {}
+  explicit UDP(trellis::core::EventLoop loop) : loop_{loop}, socket_{*loop, asio::ip::udp::v4()} {
+    socket_.non_blocking(true);  // for non-blocking synchronous operations
+  }
 
   /**
    * UDP opens a UDP socket bound to a given port on all interfaces
@@ -51,7 +53,9 @@ class UDP {
    * @param ipv4_port The UDP port to bind to
    */
   explicit UDP(trellis::core::EventLoop loop, uint16_t ipv4_port)
-      : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::udp::v4(), ipv4_port)} {}
+      : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::udp::v4(), ipv4_port)} {
+    socket_.non_blocking(true);  // for non-blocking synchronous operations
+  }
 
   /**
    * UDP creates a UDP socket assigned to the given file descriptor
@@ -60,7 +64,9 @@ class UDP {
    * @param socket_fd The socket file descriptor to assign to this socket
    */
   explicit UDP(trellis::core::EventLoop loop, asio::ip::udp::socket::native_handle_type socket_fd)
-      : loop_{loop}, socket_(*loop, asio::ip::udp::v4(), socket_fd) {}
+      : loop_{loop}, socket_(*loop, asio::ip::udp::v4(), socket_fd) {
+    socket_.non_blocking(true);  // for non-blocking synchronous operations
+  }
 
   /**
    * UDP opens a UDP socket bound to a given port on the interface given by address
@@ -70,7 +76,9 @@ class UDP {
    * @param ipv4_port The UDP port to bind to
    */
   explicit UDP(trellis::core::EventLoop loop, std::string ipv4_address, uint16_t ipv4_port)
-      : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::make_address(ipv4_address), ipv4_port)} {}
+      : loop_{loop}, socket_{*loop, asio::ip::udp::endpoint(asio::ip::make_address(ipv4_address), ipv4_port)} {
+    socket_.non_blocking(true);  // for non-blocking synchronous operations
+  }
 
   void AsyncSendTo(std::string ipv4_address, uint16_t ipv4_port, const void* data, size_t length,
                    CompletionHandler callback) {
@@ -82,6 +90,27 @@ class UDP {
                             }
                             callback(code, size);
                           });
+  }
+
+  /**
+   * SendTo synchronously send data to a specific address and port
+   *
+   * This function performs a non-blocking synchronous send. If the send cannot be completed immediately,
+   * it will return an error rather than blocking.
+   *
+   * @param ipv4_address the IPv4 address to send to in dotted decimal notation (e.g. xxx.xxx.xxx.xxx)
+   * @param ipv4_port the UDP port to send to
+   * @param data a pointer to the data to send
+   * @param length the length of the data to send
+   * @param bytes_sent output parameter that will contain the number of bytes sent on success
+   * @return error_code indicating success or the specific error that occurred
+   */
+  trellis::core::error_code SendTo(std::string ipv4_address, uint16_t ipv4_port, const void* data, size_t length,
+                                   size_t& bytes_sent) {
+    asio::ip::udp::endpoint destination(asio::ip::make_address(ipv4_address), ipv4_port);
+    trellis::core::error_code ec;
+    bytes_sent = socket_.send_to(asio::buffer(data, length), destination, 0, ec);
+    return ec;
   }
 
   /**

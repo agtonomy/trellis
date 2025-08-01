@@ -57,6 +57,13 @@ discovery::Sample CreateServiceServerSample(uint16_t port, const std::string& se
                                             const ipc::proto::rpc::MethodsMap& methods);
 
 /**
+ * @brief Get a discovery sample for a node
+ * @param node_name The name of the node
+ * @return discovery::Sample The constructed service discovery sample.
+ */
+discovery::Sample GetNodeProcessSample(const std::string& node_name);
+
+/**
  * @brief Retrieve the current system's hostname.
  *
  * @return std::string The hostname.

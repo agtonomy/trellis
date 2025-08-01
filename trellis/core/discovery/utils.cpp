@@ -91,6 +91,17 @@ void GetFileDescriptorRecursive(const google::protobuf::Descriptor* desc, google
   }
 }
 
+/**
+ * @brief Generate a new identifier string for a sample
+ *
+ * @return New identifier string based on the steady clock
+ */
+std::string CalculateSampleId() {
+  std::stringstream counter;
+  counter << std::chrono::steady_clock::now().time_since_epoch().count();
+  return counter.str();
+}
+
 }  // namespace
 
 std::string GetHostname() {
@@ -144,9 +155,7 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
                                const std::string& message_name, bool publisher,
                                std::vector<std::string> memory_file_list) {
   Sample sample;
-  std::stringstream counter;
-  counter << std::chrono::steady_clock::now().time_since_epoch().count();
-  sample.set_id(counter.str());
+  sample.set_id(CalculateSampleId());
   sample.set_type(publisher ? discovery::publisher_registration : discovery::subscriber_registration);
   sample.mutable_topic()->set_hname(GetHostname());
   sample.mutable_topic()->set_pid(::getpid());
@@ -173,11 +182,8 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
 Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
                                  const ipc::proto::rpc::MethodsMap& methods) {
   Sample sample;
-  std::stringstream counter;
-  counter << std::chrono::steady_clock::now().time_since_epoch().count();
-  sample.set_id(counter.str());
+  sample.set_id(CalculateSampleId());
   sample.set_type(discovery::service_registration);
-
   auto& service = *sample.mutable_service();
   service.set_hname(GetHostname());
   service.set_pname(GetExecutablePath());
@@ -196,6 +202,18 @@ Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
     method->set_resp_desc(metadata.output_type_desc);
     method->set_call_count(0);
   }
+  return sample;
+}
+
+Sample GetNodeProcessSample(const std::string& node_name) {
+  Sample sample;
+  sample.set_id(CalculateSampleId());
+  sample.set_type(discovery::process_registration);
+  sample.mutable_process()->set_hname(GetHostname());
+  sample.mutable_process()->set_pid(::getpid());
+  sample.mutable_process()->set_pname(GetExecutablePath());
+  sample.mutable_process()->set_uname(node_name);
+  sample.mutable_process()->set_pparam(GetArgv0());
   return sample;
 }
 

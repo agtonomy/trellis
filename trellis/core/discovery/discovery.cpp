@@ -19,6 +19,8 @@
 
 #include <fmt/core.h>
 
+#include "trellis/core/logging.hpp"
+
 namespace trellis::core::discovery {
 
 namespace {
@@ -65,8 +67,33 @@ int CreateNativeUDPSocket(uint16_t port) {
 struct SampleHeader {
   char head[4];  //-V112
   int32_t version;
-  int32_t len;  // header: complete size of message, data: current size of that part
+  int32_t len;                 // header: complete size of message, data: current size of that part
+  uint32_t packet_index;       // 0-based index of this packet in the sequence
+  uint32_t total_packets;      // total number of packets for this sample
+  uint32_t total_sample_size;  // total size of the complete sample payload
 };
+
+std::string GeneratePreamble(const std::string& id) {
+  SampleHeader header;
+  header.head[0] = 'T';
+  header.head[1] = 'R';
+  header.head[2] = 'L';
+  header.head[3] = 'S';
+  header.version = 1;
+
+  const uint16_t sample_id_string_length = id.size() + 1;
+  const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
+
+  std::string preamble_bytes(preamble_length, '\0');
+  char* const data = preamble_bytes.data();
+
+  // Here we write the fixed-size header, the 2-byte length field for the variable length ID, and then the ID itself
+  ::memcpy(data, &header, sizeof(SampleHeader));
+  ::memcpy(data + sizeof(SampleHeader), &sample_id_string_length, sizeof(sample_id_string_length));
+  ::memcpy(data + sizeof(SampleHeader) + sizeof(sample_id_string_length), id.data(), sample_id_string_length);
+
+  return preamble_bytes;
+}
 
 static constexpr std::string_view kDefaultSendAddress = "127.255.255.255";
 static constexpr unsigned kDefaultDiscoveryPort = 1400u;
@@ -96,7 +123,7 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
       management_timer_{std::make_shared<TimerImpl>(
           loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); }, management_interval_,
           management_interval_)} {
-  Register(GetNodeProcessSample());
+  Register(utils::GetNodeProcessSample(node_name_));
 }
 
 void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
@@ -104,6 +131,7 @@ void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
   PurgeStaleSamples(now, publisher_samples_, publisher_sample_callbacks_);
   PurgeStaleSamples(now, subscriber_samples_, subscriber_sample_callbacks_);
   PurgeStaleSamples(now, service_samples_, service_sample_callbacks_);
+  PurgeStalePartialBuffers(now);
   BroadcastSamples();
 }
 
@@ -116,6 +144,16 @@ void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, Sam
         if (callback.second) callback.second(EventType::kNewUnregistration, std::move(it->second.sample));
       }
       it = map.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void Discovery::PurgeStalePartialBuffers(const trellis::core::time::TimePoint& now) {
+  for (auto it = partial_samples_.begin(); it != partial_samples_.end();) {
+    if (now - it->second.last_update > sample_timeout_ms_) {
+      it = partial_samples_.erase(it);
     } else {
       ++it;
     }
@@ -138,21 +176,67 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
   }
 
   // Do we have enough data to cover the sample name string?
-  const uint16_t sample_name_len = (buf[kHeaderSize + 1] << 8) + buf[kHeaderSize];
-  if (len < kHeaderSize + sizeof(uint16_t) + sample_name_len) {
+  const uint16_t sample_id_string_length = (buf[kHeaderSize + 1] << 8) + buf[kHeaderSize];
+  if (len < kHeaderSize + sizeof(uint16_t) + sample_id_string_length) {
     return;
   }
 
-  // Note now that we calculated the sample name length, we now skip over the sample name string since it's redundant
-  // and we have no use for it here.
+  const size_t payload_size = header->len - sizeof(sample_id_string_length) - sample_id_string_length;
+  const unsigned sample_start_offset = kHeaderSize + sizeof(sample_id_string_length) + sample_id_string_length;
 
-  // Let's parse and process the sample
+  // Assume our buffer contains the entire sample payload. This is true in the case of header->total_packets == 1.
+  // If this is a multi packet sample, we'll buffer the data below and update the pointer and size
+  const char* sample_buffer = buf + sample_start_offset;
+  size_t sample_buffer_size = payload_size;
+  const std::string sample_id(buf + kHeaderSize + sizeof(sample_id_string_length), sample_id_string_length);
+
+  if (header->total_packets > 1) {
+    // For multi-packet samples, we'll buffer the data until we received all of the packets
+    auto it = partial_samples_.find(sample_id);
+    if (it == partial_samples_.end()) {
+      if (header->packet_index != 0) {
+        return;  // Drop non-zero packets if we haven't seen packet 0
+      }
+      // Initialize partial sample for packet 0
+      auto [new_it, inserted] = partial_samples_.try_emplace(sample_id);
+      it = new_it;  // Update iterator
+      auto& partial_sample = it->second;
+      partial_sample.total_packets = header->total_packets;
+      partial_sample.next_packet_index = 0;
+      partial_sample.payload_buffer.clear();
+      partial_sample.payload_buffer.reserve(header->total_sample_size);
+    }
+
+    auto& partial_sample = it->second;
+
+    // Verify this is the expected packet in sequence
+    if (header->packet_index != partial_sample.next_packet_index) {
+      // Out of order packet - reset and wait for sequence to restart
+      partial_samples_.erase(sample_id);
+      return;
+    }
+    partial_sample.payload_buffer.append(buf + sample_start_offset, payload_size);
+    partial_sample.next_packet_index++;
+    partial_sample.last_update = now;
+
+    if (partial_sample.next_packet_index < partial_sample.total_packets) {
+      return;  // We're done for now since we're waiting for more packets
+    }
+
+    sample_buffer = partial_sample.payload_buffer.data();
+    sample_buffer_size = partial_sample.payload_buffer.size();
+  }
+
+  // All packets received - parse the complete sample
   Sample sample;
-  const unsigned sample_start_offset = kHeaderSize + sizeof(sample_name_len) + sample_name_len;
-  if (!sample.ParseFromArray(buf + sample_start_offset, header->len - sizeof(sample_name_len) - sample_name_len)) {
+  const bool parse_success = sample.ParseFromArray(sample_buffer, sample_buffer_size);
+  partial_samples_.erase(sample_id);
+
+  if (!parse_success) {
     return;
   }
-  // At this point we have successfully decoded a sample. Let's pass it on based on type
+
+  // Process the complete sample
   switch (sample.type()) {
     case discovery::unknown:
       break;
@@ -260,46 +344,50 @@ void Discovery::BroadcastSamples() {
 }
 
 void Discovery::BroadcastSample(const Sample& sample) {
-  SampleHeader* header = reinterpret_cast<SampleHeader*>(send_buf_.data());
-  header->head[0] = 'T';
-  header->head[1] = 'R';
-  header->head[2] = 'L';
-  header->head[3] = 'S';
-  header->version = 1;
+  const uint16_t sample_id_string_length = sample.id().size() + 1;
+  const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
 
-  const std::string serialized = sample.SerializeAsString();
-  const uint16_t name_length = sample.topic().tname().size() + 1;
-  const size_t total_length = sizeof(SampleHeader) + sizeof(name_length) + name_length + serialized.size();
+  // Capture the preamble and the payload in separate buffers because in the case of multiple packet transmissions, the
+  // preamble is included in each packet.
+  const std::string preamble_bytes = GeneratePreamble(sample.id());
+  const std::string payload_bytes = sample.SerializeAsString();
 
-  if (total_length > send_buf_.size()) {
-    // Our samples must fit in a single UDP transmission so we can't broadcast any samples larger than this buffer.
-    // TODO (bsirang) Implement chunking on both the send and receive side to handle arbitrarily large samples.
-    return;
+  const size_t max_payload_per_packet = kUdpPayloadSizeMax - preamble_length;
+  const size_t total_payload_size = payload_bytes.size();
+  const uint32_t total_packets =
+      static_cast<uint32_t>((total_payload_size + max_payload_per_packet - 1) / max_payload_per_packet);
+
+  size_t payload_offset = 0;
+  uint32_t packet_index = 0;
+  while (payload_offset < total_payload_size) {
+    const size_t chunk_size = std::min(max_payload_per_packet, total_payload_size - payload_offset);
+    const size_t packet_size = preamble_length + chunk_size;
+
+    // Copy both preamble and payload to the send buffer
+    ::memcpy(send_buf_.data(), preamble_bytes.data(), preamble_length);
+    ::memcpy(send_buf_.data() + preamble_length, payload_bytes.data() + payload_offset, chunk_size);
+
+    // Update header with packet sequencing information
+    SampleHeader* const header = reinterpret_cast<SampleHeader*>(send_buf_.data());
+    header->len = sizeof(sample_id_string_length) + sample_id_string_length + chunk_size;
+    header->packet_index = packet_index;
+    header->total_packets = total_packets;
+    header->total_sample_size = static_cast<uint32_t>(total_payload_size);
+
+    if (!loopback_enabled_) {
+      size_t bytes_sent = 0;
+      auto error = udp_sender_->SendTo(send_addr_, discovery_port_, send_buf_.data(), packet_size, bytes_sent);
+      if (error) {
+        trellis::core::Log::Warn("Failed to send discovery packet: {}", error.message());
+        break;
+      }
+    } else {
+      ReceiveData(trellis::core::time::Now(), send_buf_.data(), packet_size);
+    }
+
+    payload_offset += chunk_size;
+    ++packet_index;
   }
-  ::memcpy(send_buf_.data() + sizeof(SampleHeader), &name_length, sizeof(name_length));
-  ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length), sample.topic().tname().data(), name_length);
-  ::memcpy(send_buf_.data() + sizeof(SampleHeader) + sizeof(name_length) + name_length, serialized.data(),
-           serialized.size());
-
-  header->len = sizeof(name_length) + name_length + serialized.size();
-
-  if (!loopback_enabled_) {
-    udp_sender_->AsyncSendTo(send_addr_, discovery_port_, send_buf_.data(), header->len + sizeof(SampleHeader),
-                             [](const trellis::core::error_code&, size_t) {});
-  } else {
-    ReceiveData(trellis::core::time::Now(), send_buf_.data(), header->len + sizeof(SampleHeader));
-  }
-}
-
-Sample Discovery::GetNodeProcessSample() {
-  Sample process;
-  process.set_type(discovery::process_registration);
-  process.mutable_process()->set_hname(utils::GetHostname());
-  process.mutable_process()->set_pid(::getpid());
-  process.mutable_process()->set_pname(utils::GetExecutablePath());
-  process.mutable_process()->set_uname(node_name_);
-  process.mutable_process()->set_pparam(utils::GetArgv0());
-  return process;
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {

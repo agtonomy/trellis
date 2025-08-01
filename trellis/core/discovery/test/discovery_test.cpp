@@ -161,4 +161,43 @@ TEST(DiscoveryTests, RegisterServiceServer) {
   ASSERT_NE(receive_count, 0);
 }
 
+TEST(DiscoveryTests, RegisterPublisherWithLargeTopicName) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+
+  // Create a very large topic name to force multi-packet transmission
+  // UDP buffer is 65535 bytes, so create topic name > 80KB to ensure multi-packet
+  const std::string large_topic_name = "/very/large/topic/name/" + std::string(80000, 'x');
+
+  discovery.RegisterPublisher<test::Test>(large_topic_name, std::vector<std::string>{"memfile1", "memfile2"});
+
+  unsigned receive_count{0};
+  std::string received_topic_name;
+  discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
+    ++receive_count;
+    ASSERT_EQ(event, Discovery::EventType::kNewRegistration);
+    received_topic_name = sample.topic().tname();
+  });
+
+  ev.RunFor(std::chrono::milliseconds(200));
+
+  {
+    auto samples = discovery.GetPubSubSamples();
+    ASSERT_EQ(samples.size(), 1);
+    ASSERT_EQ(samples[0].topic().tname(), large_topic_name);
+  }
+  {
+    auto samples = discovery.GetServiceSamples();
+    ASSERT_TRUE(samples.empty());
+  }
+  {  // we should see our own process sample
+    auto samples = discovery.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 1);
+    ASSERT_EQ(samples[0].process().uname(), "test_node");
+  }
+
+  ASSERT_NE(receive_count, 0);                       // exact count dependent on timing
+  ASSERT_EQ(received_topic_name, large_topic_name);  // verify large topic name was received correctly
+}
+
 }  // namespace trellis::core::discovery
