@@ -24,6 +24,7 @@
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
 #include "trellis/core/ipc/shm/shm_reader.hpp"
+#include "trellis/core/logging.hpp"
 
 namespace trellis::core {
 
@@ -190,10 +191,10 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
 
       auto& last_seq = sequence_numbers_[header.writer_id];
       if (last_seq != 0 && (header.sequence != (last_seq + 1))) {
-        // TODO don't throw but instead collect metrics
-        throw std::runtime_error(
-            fmt::format("Received unexpected sequence number on topic {} from writer_id {}. Current = {} last = {}",
-                        topic_, header.writer_id, header.sequence, last_seq));
+        // TODO (bsirang) implement a counter to collect metrics on this case
+        trellis::core::Log::Warn(
+            "Sequence number jump on topic {} from writer_id {}. Current = {} last = {} delta = {}", topic_,
+            header.writer_id, header.sequence, last_seq, header.sequence - last_seq);
       }
       last_seq = header.sequence;
     }
