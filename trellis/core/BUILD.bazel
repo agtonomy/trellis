@@ -1,4 +1,4 @@
-load("@com_google_protobuf//:protobuf.bzl", "py_proto_library")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
 
 cc_library(
     name = "core",
@@ -298,14 +298,8 @@ cc_proto_library(
 
 py_proto_library(
     name = "python_core_proto_lib",
-    srcs = [
-        "health_history.proto",
-        "health_status.proto",
-        "quaternion.proto",
-        "rigid_transform.proto",
-        "timestamped_message.proto",
-        "vector3.proto",
-    ],
     visibility = ["//visibility:public"],
-    deps = ["@com_google_protobuf//:protobuf_python"],
+    deps = [
+        ":core_proto_lib",
+    ],
 )

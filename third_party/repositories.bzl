@@ -78,10 +78,22 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "com_google_protobuf",
-        sha256 = "3bd7828aa5af4b13b99c191e8b1e884ebfa9ad371b0ce264605d347f135d2568",
-        strip_prefix = "protobuf-3.19.4",
+        sha256 = "1add10f9bd92775b91f326da259f243881e904dd509367d5031d4c782ba82810",
+        strip_prefix = "protobuf-3.21.9",
         urls = [
-            "https://github.com/protocolbuffers/protobuf/archive/v3.19.4.tar.gz",
+                "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.tar.gz",
+        ],
+    )
+
+    maybe(
+        http_archive,
+        # Remove once we switch from the grpc py_proto_library to the rules_python py_proto_library
+        name = "com_github_grpc_grpc",
+        sha256 = "8c05641b9f91cbc92f51cc4a5b3a226788d7a63f20af4ca7aaca50d92cc94a0d",
+        strip_prefix = "grpc-1.44.0",
+        urls = [
+            "https://github.com/grpc/grpc/archive/v1.44.0.tar.gz",
+            "http://dependency-mirror.s3.amazonaws.com/haystack/grpc-v1.44.0.tar.gz",
         ],
     )
 
