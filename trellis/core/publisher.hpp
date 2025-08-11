@@ -184,8 +184,10 @@ class PublisherImpl {
         const auto duration_s = std::chrono::duration_cast<std::chrono::duration<double>>(time_delta).count();
         measured_frequency_hz = static_cast<double>(count_delta) / duration_s;
         last_frequency_measurement_send_count_ = send_count_;
-        discovery_->UpdatePubSubStats(
-            {.send_receive_count = send_count_, .measured_frequency_hz = measured_frequency_hz}, discovery_handle_);
+        if (discovery_handle_ != discovery::Discovery::kInvalidRegistrationHandle) {
+          discovery_->UpdatePubSubStats(
+              {.send_receive_count = send_count_, .measured_frequency_hz = measured_frequency_hz}, discovery_handle_);
+        }
       }
     }
 
