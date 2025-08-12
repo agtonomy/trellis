@@ -53,10 +53,12 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   /**
    * @brief Callback type for raw, unparsed messages.
    * @param now The time the message was received.
+   * @param msgtime The time the message was sent (embedded in header).
    * @param data Pointer to raw message bytes.
    * @param size Length of the message.
    */
-  using RawCallback = std::function<void(const time::TimePoint& now, const uint8_t*, size_t)>;
+  using RawCallback =
+      std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t*, size_t)>;
 
   /// @brief Optional function to update a simulated clock when a message is received.
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
@@ -231,7 +233,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
     const auto receive_time = trellis::core::time::Now();
 
     if (raw_callback_) {
-      raw_callback_(receive_time, static_cast<const uint8_t*>(data), len);
+      raw_callback_(receive_time, send_time, static_cast<const uint8_t*>(data), len);
     }
 
     if (callback_) callback_(receive_time, send_time, std::move(msg));

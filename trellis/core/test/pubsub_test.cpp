@@ -282,8 +282,9 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
   static unsigned receive_count{0};
 
   auto pub = node_.CreatePublisher<test::Test>("test_raw_sub_topic");
-  auto sub =
-      node_.CreateRawSubscriber("test_raw_sub_topic", [](const time::TimePoint& now, const uint8_t* data, size_t len) {
+  auto sub = node_.CreateRawSubscriber(
+      "test_raw_sub_topic",
+      [](const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t* data, size_t len) {
         test::Test proto;
         if (proto.ParseFromArray(data, len)) {
           ASSERT_EQ(proto.id(), receive_count);

@@ -111,7 +111,8 @@ core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::Discov
       SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});
   const auto subscriber = std::make_shared<trellis::core::SubscriberImpl<google::protobuf::Message>>(
       ev, std::string{topic}, core::SubscriberRawImpl::Callback{},
-      [subscriber_data](const core::time::TimePoint& stamp, const uint8_t* data, size_t len) {
+      [subscriber_data](const core::time::TimePoint&, const core::time::TimePoint& stamp, const uint8_t* data,
+                        size_t len) {
         const auto lock = std::lock_guard{subscriber_data->file_writer->mutex};
         if (!subscriber_data->initialized) TryInitializeMcapChannel(*subscriber_data);
         if (subscriber_data->initialized) WriteMessage(stamp, data, len, *subscriber_data);
