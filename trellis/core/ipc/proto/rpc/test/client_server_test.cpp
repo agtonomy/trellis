@@ -39,7 +39,6 @@ class TestServiceHandler : public trellis::core::test::TestService {
       response->set_bar(std::string(kLargeMessageTestSize, 'A'));  // 4 megabyte string
     } else {
       if (request->id() == 2000) {
-        std::cout << "Long running call, sleeping" << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
       response->set_bar("Echo: " + request->msg());
@@ -251,7 +250,7 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
   EXPECT_EQ(fail_count, 1);
 }
 
-TEST_F(TrellisFixture, BackToBackCallFails) {
+TEST_F(TrellisFixture, BackToBackCallSucceeds) {
   StartRunnerThread();
 
   auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
@@ -277,7 +276,7 @@ TEST_F(TrellisFixture, BackToBackCallFails) {
                                                    ++fail_count;
                                                  }
                                                });
-  // Call again immediately... should fail
+  // Call again immediately... should be enqueued
   client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                  if (status == kSuccess) {
@@ -292,8 +291,8 @@ TEST_F(TrellisFixture, BackToBackCallFails) {
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
 
-  EXPECT_EQ(success_count, 1);
-  EXPECT_EQ(fail_count, 1);
+  EXPECT_EQ(success_count, 2);
+  EXPECT_EQ(fail_count, 0);
 }
 
 TEST_F(TrellisFixture, LargeRequestResponse) {
@@ -370,6 +369,48 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
       /* timeout_ms = */ 100);
   std::this_thread::sleep_for(kServiceCallWaitTime);
   EXPECT_EQ(callback_count, 1);
+}
+
+TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
+  StartRunnerThread();
+
+  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+
+  WaitForDiscovery();
+
+  unsigned success_count{0};
+  unsigned timeout_count{0};
+  unsigned fail_count{0};
+
+  // Make multiple calls rapidly with varying response times and timeouts. they should all succeed, even though the
+  // first one takes longer
+  for (int i = 0; i < 3; ++i) {
+    test::Test request;
+    request.set_id(i == 0 ? 2000 : i);  // First request triggers 500ms delay
+    request.set_msg("queued_call_" + std::to_string(i));
+
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request,
+        [&, i](ServiceCallStatus status, const test::TestTwo* resp) {
+          if (status == kSuccess) {
+            ++success_count;
+          } else if (status == kTimedOut) {
+            ++timeout_count;
+          } else {
+            ++fail_count;
+          }
+        },
+        i == 1 ? 100 : 0);  // second request times out after 100ms, others have no timeout
+  }
+
+  // Wait longer to account for the 500ms delay plus processing time
+  std::this_thread::sleep_for(std::chrono::milliseconds{800});
+
+  EXPECT_EQ(success_count, 3);  // all three calls should succeed
+  EXPECT_EQ(timeout_count, 0);
+  EXPECT_EQ(fail_count, 0);
 }
 
 }  // namespace trellis::core::ipc::proto::rpc
