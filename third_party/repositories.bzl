@@ -87,18 +87,6 @@ def trellis_deps():
 
     maybe(
         http_archive,
-        # Remove once we switch from the grpc py_proto_library to the rules_python py_proto_library
-        name = "com_github_grpc_grpc",
-        sha256 = "8c05641b9f91cbc92f51cc4a5b3a226788d7a63f20af4ca7aaca50d92cc94a0d",
-        strip_prefix = "grpc-1.44.0",
-        urls = [
-            "https://github.com/grpc/grpc/archive/v1.44.0.tar.gz",
-            "http://dependency-mirror.s3.amazonaws.com/haystack/grpc-v1.44.0.tar.gz",
-        ],
-    )
-
-    maybe(
-        http_archive,
         name = "hdf5",
         build_file = Label("//third_party:hdf5.BUILD"),
         sha256 = "7a1a0a54371275ce2dfc5cd093775bb025c365846512961e7e5ceaecb437ef15",

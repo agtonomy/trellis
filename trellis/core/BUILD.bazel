@@ -1,5 +1,3 @@
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
-
 cc_library(
     name = "core",
     visibility = ["//visibility:public"],
@@ -294,12 +292,4 @@ cc_proto_library(
     name = "core_proto",
     visibility = ["//visibility:public"],
     deps = [":core_proto_lib"],
-)
-
-py_proto_library(
-    name = "python_core_proto_lib",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":core_proto_lib",
-    ],
 )
