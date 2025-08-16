@@ -422,6 +422,9 @@ void Discovery::StopReceive(Discovery::CallbackHandle handle) {
   if (subscriber_sample_callbacks_.find(handle) != subscriber_sample_callbacks_.end()) {
     subscriber_sample_callbacks_.erase(handle);
   }
+  if (service_sample_callbacks_.find(handle) != service_sample_callbacks_.end()) {
+    service_sample_callbacks_.erase(handle);
+  }
 }
 
 std::vector<Sample> Discovery::GetPubSubSamples() const {
