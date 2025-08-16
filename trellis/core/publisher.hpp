@@ -30,14 +30,9 @@
 namespace trellis::core {
 
 namespace {
-template <class MSG_T, std::enable_if_t<!std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
+template <typename MSG_T>
 constexpr bool IsDynamicPublisher() {
-  return false;
-}
-
-template <class MSG_T, std::enable_if_t<std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
-constexpr bool IsDynamicPublisher() {
-  return true;
+  return std::is_same_v<MSG_T, google::protobuf::Message>;
 }
 
 std::string SanitizeTopicString(const std::string& topic) {
@@ -141,6 +136,53 @@ class PublisherImpl {
    * @return The timestamp used.
    */
   trellis::core::time::TimePoint Send(const MSG_T& msg, const trellis::core::time::TimePoint& now) {
+    return SendInternal(now, [this, &msg](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
+      bool success = msg.SerializeToArray(write_info.data, write_info.size);
+      size_t bytes_written = success ? msg.ByteSizeLong() : 0;
+      return {success, bytes_written};
+    });
+  }
+
+  /**
+   * @brief Send raw bytes directly without protobuf serialization.
+   *
+   * @note Intended use case is for log replay, where the publishers don't need to know the message type and rely on
+   * subscribers to properly deserialize the data.
+   *
+   * @param data Pointer to the raw bytes
+   * @param size Size of the data in bytes
+   * @param now The timestamp to associate with the message
+   * @return The timestamp used
+   */
+  trellis::core::time::TimePoint SendBytes(const void* data, size_t size, const trellis::core::time::TimePoint& now) {
+    return SendInternal(now, [this, data, size](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
+      if (write_info.size < size) {
+        return {false, 0};  // Not enough space in the buffer
+      }
+      std::memcpy(write_info.data, data, size);  // Copy raw bytes into the shared memory buffer
+      return {true, size};
+    });
+  }
+
+  /**
+   * @brief Send raw bytes directly using current time.
+   */
+  trellis::core::time::TimePoint SendBytes(const void* data, size_t size) {
+    return SendBytes(data, size, trellis::core::time::Now());
+  }
+
+ private:
+  /**
+   * @brief Internal send function
+   *
+   * Tries to write to the underlying memory buffer. If it fails, the memory will be resized to accommodate the message
+   *
+   * @param now The timestamp to associate with the message.
+   * @param write_fn Function that performs the actual write operation.
+   * @return The timestamp used.
+   */
+  using WriteFunc = std::function<std::pair<bool, size_t>(ipc::shm::ShmFile::WriteInfo&)>;
+  trellis::core::time::TimePoint SendInternal(const trellis::core::time::TimePoint& now, WriteFunc write_fn) {
     bool success{false};
     {  // Scope the mutex region to end before interacting with the discovery layer to avoid a potential deadlock
        // condition
@@ -150,8 +192,14 @@ class PublisherImpl {
         throw std::runtime_error("PublisherImpl::Send Failed to obtain write access!");
       }
 
-      // Try to serialize; double the buffer size if necessary
-      while (!(success = msg.SerializeToArray(write_info.data, write_info.size))) {
+      // Try to write; double the buffer size if necessary
+      size_t size_written = 0;
+      while (true) {
+        std::tie(success, size_written) = write_fn(write_info);
+        if (success) {
+          break;
+        }
+
         if (buffer_size_ == max_buffer_size_) {
           throw std::runtime_error(fmt::format(
               "PublisherImpl::Send Failed to serialize to the max specified buffer size {}", max_buffer_size_));
@@ -167,34 +215,18 @@ class PublisherImpl {
       }
 
       // Release the shared memory write lock after writing
-      size_t bytes_written = static_cast<size_t>(msg.ByteSizeLong());
+      size_t bytes_written = size_written;
       writer_.ReleaseWriteAccess(now, bytes_written, success);
     }
 
     // Track message send statistics and update discovery
     if (success) {
-      ++send_count_;
-      if (!last_frequency_measurement_time_.has_value()) {
-        last_frequency_measurement_time_ = now;
-        last_frequency_measurement_send_count_ = send_count_;
-      } else if (auto time_delta = now - last_frequency_measurement_time_.value();
-                 time_delta >= std::chrono::milliseconds(statistics_update_interval_ms_)) {
-        last_frequency_measurement_time_ = now;
-        unsigned count_delta = send_count_ - last_frequency_measurement_send_count_;
-        const auto duration_s = std::chrono::duration_cast<std::chrono::duration<double>>(time_delta).count();
-        measured_frequency_hz = static_cast<double>(count_delta) / duration_s;
-        last_frequency_measurement_send_count_ = send_count_;
-        if (discovery_handle_ != discovery::Discovery::kInvalidRegistrationHandle) {
-          discovery_->UpdatePubSubStats(
-              {.send_receive_count = send_count_, .measured_frequency_hz = measured_frequency_hz}, discovery_handle_);
-        }
-      }
+      UpdateStatistics(now);
     }
 
     return now;
   }
 
- private:
   /**
    * @brief Handle notifications from discovery about new or removed subscribers.
    *
@@ -218,6 +250,24 @@ class PublisherImpl {
       writer_.AddReader(sample.id());
     } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
       writer_.RemoveReader(sample.id());
+    }
+  }
+  void UpdateStatistics(const trellis::core::time::TimePoint& now) {
+    ++send_count_;
+    if (!last_frequency_measurement_time_.has_value()) {
+      last_frequency_measurement_time_ = now;
+      last_frequency_measurement_send_count_ = send_count_;
+    } else if (auto time_delta = now - last_frequency_measurement_time_.value();
+               time_delta >= std::chrono::milliseconds(statistics_update_interval_ms_)) {
+      last_frequency_measurement_time_ = now;
+      unsigned count_delta = send_count_ - last_frequency_measurement_send_count_;
+      const auto duration_s = std::chrono::duration_cast<std::chrono::duration<double>>(time_delta).count();
+      measured_frequency_hz = static_cast<double>(count_delta) / duration_s;
+      last_frequency_measurement_send_count_ = send_count_;
+      if (discovery_handle_ != discovery::Discovery::kInvalidRegistrationHandle) {
+        discovery_->UpdatePubSubStats(
+            {.send_receive_count = send_count_, .measured_frequency_hz = measured_frequency_hz}, discovery_handle_);
+      }
     }
   }
   const std::string topic_;                                    ///< Topic name
