@@ -164,14 +164,13 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
             }
 
             std::weak_ptr<std::remove_reference_t<decltype(*this)>> weak_self = this->shared_from_this();
-            readers_.emplace(std::piecewise_construct, std::forward_as_tuple(topic_id),
-                             std::forward_as_tuple(
-                                 loop_, subscriber_id_, memory_file_list,
-                                 [weak_self](ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
-                                   if (auto self = weak_self.lock()) {
-                                     self->ReceiveData(header, data, len);
-                                   }
-                                 }));
+            readers_.emplace(topic_id, ipc::shm::ShmReader::Create(loop_, subscriber_id_, memory_file_list,
+                                                                   [weak_self](ipc::shm::ShmFile::SMemFileHeader header,
+                                                                               const void* data, size_t len) {
+                                                                     if (auto self = weak_self.lock()) {
+                                                                       self->ReceiveData(header, data, len);
+                                                                     }
+                                                                   }));
           }
         }
       }
@@ -262,7 +261,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   discovery::Discovery::RegistrationHandle discovery_handle_;
   std::string subscriber_id_;
   discovery::Discovery::CallbackHandle callback_handle_;
-  std::unordered_map<std::string, ipc::shm::ShmReader> readers_;
+  std::unordered_map<std::string, std::shared_ptr<ipc::shm::ShmReader>> readers_;
   bool did_receive_{false};
   std::unique_ptr<ipc::proto::DynamicMessageCache> dynamic_message_cache_{nullptr};
   std::atomic<unsigned> rate_throttle_interval_ms_{0};

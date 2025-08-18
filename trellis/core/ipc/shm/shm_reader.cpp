@@ -60,13 +60,20 @@ std::vector<ShmFile> CreateShmFiles(const std::vector<std::string>& names) {
 
 }  // namespace
 
-ShmReader::ShmReader(trellis::core::EventLoop loop, const std::string& reader_id, const std::vector<std::string>& names,
-                     Callback receive_callback)
+ShmReader::ShmReader(PrivateToken, trellis::core::EventLoop loop, const std::string& reader_id,
+                     const std::vector<std::string>& names, Callback receive_callback)
     : files_(CreateShmFiles(names)),
       locks_(CreateReaderWriterLocks(names)),
       evt_(unix::SocketEvent(loop, /* reader = */ true, GenerateEventSocketName(names, reader_id))),
-      receive_callback_{std::move(receive_callback)} {
-  evt_.AsyncReceive([this](unix::SocketEvent::Event event) { ProcessEvent(event); });
+      receive_callback_{std::move(receive_callback)} {}
+
+void ShmReader::Initialize() {
+  auto weak_self = std::weak_ptr<ShmReader>(shared_from_this());
+  evt_.AsyncReceive([weak_self](unix::SocketEvent::Event event) {
+    if (auto self = weak_self.lock()) {
+      self->ProcessEvent(event);
+    }
+  });
 }
 
 void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
