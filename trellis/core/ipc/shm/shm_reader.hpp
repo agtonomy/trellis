@@ -37,7 +37,11 @@ namespace trellis::core::ipc::shm {
  * a shared reader-writer lock to synchronize access with the writer. On data receipt, a user-defined
  * callback is invoked with a pointer to the data and its metadata.
  */
-class ShmReader {
+class ShmReader : public std::enable_shared_from_this<ShmReader> {
+ private:
+  // Private token to ensure only Create() can construct the object
+  struct PrivateToken {};
+
  public:
   /**
    * @brief Callback function type invoked when new data is received.
@@ -49,15 +53,32 @@ class ShmReader {
   using Callback = std::function<void(ShmFile::SMemFileHeader, const void*, size_t)>;
 
   /**
-   * @brief Constructs a ShmReader instance.
+   * @brief Factory method to create a new ShmReader instance.
    *
+   * @note This needs a factory function because we need to pass a weak ptr to the event handler from
+   * shared_from_this(), but that requires the object to be fully constructed first. we create the object then
+   * initialize the event handler.
+   *
+   * @note See constructor for parameter details. PrivateToken used to prevent direct instantiation.
+   */
+  template <typename... Args>
+  static std::shared_ptr<ShmReader> Create(Args&&... args) {
+    auto reader = std::make_shared<ShmReader>(PrivateToken{}, std::forward<Args>(args)...);
+    reader->Initialize();
+    return reader;
+  }
+
+  /**
+   * @brief Constructs a ShmReader instance. Do not call directly, use Create() instead.
+   *
+   * @param token Private token to allow construction only through Create().
    * @param loop The event loop to integrate with for async socket notifications.
    * @param reader_id The unique ID of this reader, used for identifying socket events.
    * @param names A list of shared memory segment names to attach to.
    * @param receive_callback A user-defined callback invoked when new data is available.
    */
-  ShmReader(trellis::core::EventLoop loop, const std::string& reader_id, const std::vector<std::string>& names,
-            Callback receive_callback);
+  ShmReader(PrivateToken, trellis::core::EventLoop loop, const std::string& reader_id,
+            const std::vector<std::string>& names, Callback receive_callback);
 
   ShmReader(const ShmReader&) = delete;
   ShmReader& operator=(const ShmReader&) = delete;
@@ -65,6 +86,10 @@ class ShmReader {
   ShmReader& operator=(ShmReader&&) = delete;
 
  private:
+  /**
+   * @brief Initializes the ShmReader by attaching to shared memory segments and setting up event handlers.
+   */
+  void Initialize();
   /**
    * @brief Internal handler for socket events signaling that shared memory has been updated.
    *
