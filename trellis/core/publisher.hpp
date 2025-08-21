@@ -35,29 +35,6 @@ constexpr bool IsDynamicPublisher() {
   return std::is_same_v<MSG_T, google::protobuf::Message>;
 }
 
-std::string SanitizeTopicString(const std::string& topic) {
-  std::string result = topic;
-  std::replace(result.begin(), result.end(), '/', '-');
-  return result;
-}
-
-template <typename T>
-T GetConfigAttributeForTopic(const trellis::core::Config& config, const std::string& topic,
-                             const std::string& attribute, T default_val) {
-  const std::string topic_specific_attribute =
-      fmt::format("trellis.publisher.topic_specific_attributes.{}.{}", SanitizeTopicString(topic), attribute);
-  const std::string general_attribute = fmt::format("trellis.publisher.attributes.{}", attribute);
-
-  const T topic_specific_config = config.AsIfExists<T>(topic_specific_attribute, default_val);
-  const T general_config = config.AsIfExists<T>(general_attribute, default_val);
-
-  if (topic_specific_config != default_val) {
-    Log::Info("Overriding topic-specific attribute {} with {} for topic {}", attribute, topic_specific_config, topic);
-    return topic_specific_config;
-  }
-  return general_config;
-}
-
 }  // namespace
 
 /**
@@ -91,12 +68,14 @@ class PublisherImpl {
   PublisherImpl(trellis::core::EventLoop loop, const std::string& topic,
                 std::shared_ptr<discovery::Discovery> discovery, const trellis::core::Config& config)
       : topic_{topic},
-        num_write_buffers_{GetConfigAttributeForTopic<size_t>(config, topic, "num_buffers", kDefaultNumWriterBuffers)},
-        initial_buffer_size_{
-            GetConfigAttributeForTopic<size_t>(config, topic, "initial_buffer_size", kDefaultInitialBufferSize)},
-        max_buffer_size_{GetConfigAttributeForTopic<size_t>(config, topic, "max_buffer_size", kDefaultMaxBufferSize)},
-        statistics_update_interval_ms_{GetConfigAttributeForTopic<unsigned>(
-            config, topic, "statistics_update_interval_ms", kDefaultStatisticsUpdateIntervalMs)},
+        num_write_buffers_{config.GetConfigAttributeForTopic<size_t>(topic, "num_buffers", /* is_publisher = */ true,
+                                                                     kDefaultNumWriterBuffers)},
+        initial_buffer_size_{config.GetConfigAttributeForTopic<size_t>(
+            topic, "initial_buffer_size", /* is_publisher = */ true, kDefaultInitialBufferSize)},
+        max_buffer_size_{config.GetConfigAttributeForTopic<size_t>(topic, "max_buffer_size", /* is_publisher = */ true,
+                                                                   kDefaultMaxBufferSize)},
+        statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
+            topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
         writer_(loop, ::getpid(), num_write_buffers_, 0),
         discovery_{discovery},
         discovery_handle_{IsDynamicPublisher<MSG_T>()

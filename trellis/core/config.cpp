@@ -19,8 +19,6 @@
 
 #include <fstream>
 
-#include "logging.hpp"
-
 namespace trellis {
 namespace core {
 

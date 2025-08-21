@@ -18,6 +18,12 @@
 #ifndef TRELLIS_CORE_CONFIG_HPP
 #define TRELLIS_CORE_CONFIG_HPP
 
+#include <fmt/core.h>
+
+#include <algorithm>
+#include <string>
+
+#include "trellis/core/logging.hpp"
 #include "yaml-cpp/yaml.h"
 
 namespace trellis {
@@ -57,6 +63,12 @@ T AsIfExistsRecursive(const YAML::Node& current, const std::string& path, const 
 
   const std::string rest = TrimFirstPathSegment(path, dot_idx);
   return AsIfExistsRecursive<T>(current[key], rest, default_value);
+}
+
+std::string SanitizeTopicString(const std::string& topic) {
+  std::string result = topic;
+  std::replace(result.begin(), result.end(), '/', '-');
+  return result;
 }
 
 }  // namespace
@@ -152,6 +164,40 @@ class Config {
   template <typename T>
   T AsIfExists(const std::string& path, const T& default_value) const {
     return AsIfExistsRecursive(root_, path, default_value);
+  }
+
+  /**
+   * @brief Gets a configuration attribute for a topic, supporting both publishers and subscribers.
+   *
+   * This method looks up configuration values using two paths:
+   * 1. Topic-specific: trellis.{publisher|subscriber}.topic_specific_attributes.{topic}.{attribute}
+   * 2. General: trellis.{publisher|subscriber}.attributes.{attribute}
+   *
+   * Topic-specific configurations override general configurations.
+   *
+   * @tparam T The type of the configuration value.
+   * @param topic The name of the topic.
+   * @param attribute The attribute name to look up.
+   * @param is_publisher True for publisher config namespace, false for subscriber.
+   * @param default_val The default value to return if the attribute is not found.
+   * @return The configuration value or the default value if not found.
+   */
+  template <typename T>
+  T GetConfigAttributeForTopic(const std::string& topic, const std::string& attribute, bool is_publisher,
+                               T default_val) const {
+    const std::string pub_or_sub = is_publisher ? "publisher" : "subscriber";
+    const std::string topic_specific_attribute =
+        fmt::format("trellis.{}.topic_specific_attributes.{}.{}", pub_or_sub, SanitizeTopicString(topic), attribute);
+    const std::string general_attribute = fmt::format("trellis.{}.attributes.{}", pub_or_sub, attribute);
+
+    const T topic_specific_config = AsIfExists<T>(topic_specific_attribute, default_val);
+    const T general_config = AsIfExists<T>(general_attribute, default_val);
+
+    if (topic_specific_config != default_val) {
+      Log::Info("Overriding topic-specific attribute {} with {} for topic {}", attribute, topic_specific_config, topic);
+      return topic_specific_config;
+    }
+    return general_config;
   }
 
  private:

@@ -91,6 +91,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_logging",
+        "@fmt",
         "@yaml-cpp",
     ],
 )
