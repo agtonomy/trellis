@@ -462,8 +462,8 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
                                        static_cast<unsigned>(handle)));
   }
   auto& sample = it->second;
-  sample.mutable_topic()->set_dclock(stats.send_receive_count);
-  sample.mutable_topic()->set_dfreq(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
+  sample.mutable_topic()->set_data_count(stats.send_receive_count);
+  sample.mutable_topic()->set_data_frequency(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
 }
 
 std::string Discovery::GetSampleId(RegistrationHandle handle) {

@@ -45,7 +45,6 @@ message Topic {
   int32 connections_loc = 8;  // number of local connected entities
   int32 message_drops = 9;   // dropped messages
 
-  int64 did = 10;     // data send id (publisher setid)
-  int64 dclock = 11;  // data clock (send / receive action)
-  int32 dfreq = 12;   // data frequency (send / receive samples per second) [mHz]
+  int64 data_count = 10;  // data count (send or receive)
+  int32 data_frequency = 11;  // data frequency (send / receive samples per second) [mHz]
 }

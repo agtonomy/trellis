@@ -78,8 +78,8 @@ int topic_list_main(int argc, char* argv[]) {
     if (is_publisher) {
       ++topic_info.publisher_count;
       topic_info.hostnames.insert(topic.hname());
-      topic_info.pub_count = topic.dclock();
-      topic_info.pub_freq = topic.dfreq() / 1000.0;
+      topic_info.pub_count = topic.data_count();
+      topic_info.pub_freq = topic.data_frequency() / 1000.0;
       topic_info.types.insert(topic.tdatatype().name());
     } else {
       ++topic_info.subscriber_count;
