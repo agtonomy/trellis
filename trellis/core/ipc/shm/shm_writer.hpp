@@ -104,13 +104,20 @@ class ShmWriter {
   void RemoveReader(const std::string& reader_id);
 
   /**
-   * @brief Returns a list of the shared memory file names used by this writer.
+   * @brief Returns the memory file prefix used by this writer.
    *
-   * This can be used by readers to attach to the correct memory regions.
+   * This is the base name used for all shared memory files (without buffer index suffix).
    *
-   * @return A vector of shared memory file names.
+   * @return The memory file prefix string.
    */
-  std::vector<std::string> GetMemoryFileList() const;
+  const std::string& GetMemoryFilePrefix() const;
+
+  /**
+   * @brief Returns the number of buffers used by this writer.
+   *
+   * @return The buffer count.
+   */
+  uint32_t GetBufferCount() const;
 
  private:
   /**

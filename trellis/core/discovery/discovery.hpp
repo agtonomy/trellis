@@ -151,8 +151,7 @@ class Discovery {
   RegistrationHandle RegisterSubscriber(const std::string& topic) {
     MSG_T msg;
     const std::string tdesc = discovery::utils::GetProtoMessageDescription(msg);
-    return Register(utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), false,
-                                                   std::vector<std::string>{}));
+    return Register(utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), false, "", 0));
   }
 
   /**
@@ -164,7 +163,7 @@ class Discovery {
    */
   template <class MSG_T, std::enable_if_t<std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
   RegistrationHandle RegisterSubscriber(const std::string& topic) {
-    return Register(utils::CreateProtoPubSubSample(topic, "", "", false, std::vector<std::string>{}));
+    return Register(utils::CreateProtoPubSubSample(topic, "", "", false, "", 0));
   }
 
   /**
@@ -172,20 +171,23 @@ class Discovery {
    *
    * @tparam MSG_T Protobuf message type
    * @param topic The topic being published
-   * @param memory_file_list The list of shared memory file names backing the publisher
+   * @param memory_file_prefix The prefix for shared memory file names
+   * @param buffer_count The number of buffers
    * @return Registration handle
    */
   template <class MSG_T, std::enable_if_t<!std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
-  RegistrationHandle RegisterPublisher(const std::string& topic, std::vector<std::string> memory_file_list) {
+  RegistrationHandle RegisterPublisher(const std::string& topic, const std::string& memory_file_prefix,
+                                       uint32_t buffer_count) {
     MSG_T msg;
     const std::string tdesc = discovery::utils::GetProtoMessageDescription(msg);
-    return Register(
-        utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), true, memory_file_list));
+    return Register(utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), true,
+                                                   memory_file_prefix, buffer_count));
   }
 
-  RegistrationHandle RegisterDynamicPublisher(const std::string& topic, std::vector<std::string> memory_file_list,
-                                              const std::string& tdesc, const std::string& full_name) {
-    return Register(utils::CreateProtoPubSubSample(topic, tdesc, full_name, true, memory_file_list));
+  RegistrationHandle RegisterDynamicPublisher(const std::string& topic, const std::string& memory_file_prefix,
+                                              uint32_t buffer_count, const std::string& tdesc,
+                                              const std::string& full_name) {
+    return Register(utils::CreateProtoPubSubSample(topic, tdesc, full_name, true, memory_file_prefix, buffer_count));
   }
 
   /**
@@ -206,12 +208,14 @@ class Discovery {
    *
    * @tparam MSG_T Must be google::protobuf::Message
    * @param topic The topic being published
-   * @param memory_file_list The list of shared memory file names backing the topic
+   * @param memory_file_prefix The prefix for shared memory file names
+   * @param buffer_count The number of buffers
    * @return Registration handle
    */
   template <class MSG_T, std::enable_if_t<std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
-  RegistrationHandle RegisterPublisher(const std::string& topic, std::vector<std::string> memory_file_list) {
-    return Register(utils::CreateProtoPubSubSample(topic, "", "", true, memory_file_list));
+  RegistrationHandle RegisterPublisher(const std::string& topic, const std::string& memory_file_prefix,
+                                       uint32_t buffer_count) {
+    return Register(utils::CreateProtoPubSubSample(topic, "", "", true, memory_file_prefix, buffer_count));
   }
 
   /**

@@ -142,12 +142,8 @@ void ShmWriter::SignalWriteEvent(unsigned buffer_index) {
   }
 }
 
-std::vector<std::string> ShmWriter::GetMemoryFileList() const {
-  std::vector<std::string> list;
-  for (const auto& file : files_) {
-    list.push_back(file.Handle());
-  }
-  return list;
-}
+const std::string& ShmWriter::GetMemoryFilePrefix() const { return base_name_; }
+
+uint32_t ShmWriter::GetBufferCount() const { return static_cast<uint32_t>(files_.size()); }
 
 }  // namespace trellis::core::ipc::shm

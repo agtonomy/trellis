@@ -155,12 +155,17 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
       if (it == readers_.end()) {
         for (const auto& layer : sample.topic().tlayer()) {
           if (layer.type() == discovery::tl_shm) {
-            const std::vector<std::string> memory_file_list(
-                layer.par_layer().layer_par_shm().memory_file_list().begin(),
-                layer.par_layer().layer_par_shm().memory_file_list().end());
+            const std::string& memory_file_prefix = layer.par_layer().layer_par_shm().memory_file_prefix();
+            const uint32_t buffer_count = layer.par_layer().layer_par_shm().buffer_count();
 
-            if (memory_file_list.empty()) {
+            if (buffer_count == 0) {
               return;
+            }
+
+            // Generate memory file list from prefix and count
+            std::vector<std::string> memory_file_list;
+            for (uint32_t i = 0; i < buffer_count; ++i) {
+              memory_file_list.push_back(fmt::format("{}_{:03}", memory_file_prefix, i));
             }
 
             std::weak_ptr<std::remove_reference_t<decltype(*this)>> weak_self = this->shared_from_this();

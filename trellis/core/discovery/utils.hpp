@@ -38,12 +38,13 @@ namespace trellis::core::discovery::utils {
  * @param message_desc The serialized message description (FileDescriptorSet).
  * @param message_name The name of the protobuf message type.
  * @param publisher True if creating for a publisher, false for subscriber.
- * @param memory_file_list List of shared memory files used (publisher only).
+ * @param memory_file_prefix Prefix for shared memory file names (publisher only).
+ * @param buffer_count Number of buffers for shared memory (publisher only).
  * @return discovery::Sample The constructed discovery sample.
  */
 discovery::Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc,
                                           const std::string& message_name, bool publisher,
-                                          std::vector<std::string> memory_file_list);
+                                          const std::string& memory_file_prefix, uint32_t buffer_count);
 
 /**
  * @brief Create a discovery sample for a service server.

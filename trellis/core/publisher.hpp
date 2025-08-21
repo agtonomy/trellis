@@ -78,9 +78,10 @@ class PublisherImpl {
             topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
         writer_(loop, ::getpid(), num_write_buffers_, 0),
         discovery_{discovery},
-        discovery_handle_{IsDynamicPublisher<MSG_T>()
-                              ? discovery::Discovery::kInvalidRegistrationHandle
-                              : discovery_->RegisterPublisher<MSG_T>(topic, writer_.GetMemoryFileList())},
+        discovery_handle_{
+            IsDynamicPublisher<MSG_T>()
+                ? discovery::Discovery::kInvalidRegistrationHandle
+                : discovery_->RegisterPublisher<MSG_T>(topic, writer_.GetMemoryFilePrefix(), writer_.GetBufferCount())},
         callback_handle_{discovery->AsyncReceiveSubscribers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceiveSubscriber(event, sample);
@@ -223,8 +224,9 @@ class PublisherImpl {
       // In the case of dynamic publishers, we have to learn our metadata from subscribers,
       // so we delay registration until we receive this data
       if (discovery_handle_ == discovery::Discovery::kInvalidRegistrationHandle) {
-        discovery_handle_ = discovery_->RegisterDynamicPublisher(
-            topic_, writer_.GetMemoryFileList(), sample.topic().tdatatype().desc(), sample.topic().tdatatype().name());
+        discovery_handle_ =
+            discovery_->RegisterDynamicPublisher(topic_, writer_.GetMemoryFilePrefix(), writer_.GetBufferCount(),
+                                                 sample.topic().tdatatype().desc(), sample.topic().tdatatype().name());
       }
       writer_.AddReader(sample.id());
     } else if (event == discovery::Discovery::EventType::kNewUnregistration) {

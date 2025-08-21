@@ -152,8 +152,8 @@ std::string GetArgv0() {
 }
 
 Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc,
-                               const std::string& message_name, bool publisher,
-                               std::vector<std::string> memory_file_list) {
+                               const std::string& message_name, bool publisher, const std::string& memory_file_prefix,
+                               uint32_t buffer_count) {
   Sample sample;
   sample.set_id(CalculateSampleId());
   sample.set_type(publisher ? discovery::publisher_registration : discovery::subscriber_registration);
@@ -170,9 +170,9 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
     auto* layer = sample.mutable_topic()->add_tlayer();
     layer->set_type(discovery::tl_shm);
     layer->set_version(1);
-    if (memory_file_list.size() > 0) {
-      layer->mutable_par_layer()->mutable_layer_par_shm()->mutable_memory_file_list()->Assign(memory_file_list.begin(),
-                                                                                              memory_file_list.end());
+    if (buffer_count > 0) {
+      layer->mutable_par_layer()->mutable_layer_par_shm()->set_memory_file_prefix(memory_file_prefix);
+      layer->mutable_par_layer()->mutable_layer_par_shm()->set_buffer_count(buffer_count);
     }
   }
 

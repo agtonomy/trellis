@@ -55,7 +55,7 @@ TEST(DiscoveryTests, IniitalConditions) {
 TEST(DiscoveryTests, RegisterPublisher) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  discovery.RegisterPublisher<test::Test>("/dummy/publisher", std::vector<std::string>{"memfile1", "memfile2"});
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
   unsigned receive_count{0};
   discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
     ++receive_count;
@@ -116,7 +116,7 @@ TEST(DiscoveryTests, UnregisterPublisher) {
     ASSERT_EQ(sample.topic().tname(), "/to_be_removed");
   });
 
-  auto handle = discovery.RegisterPublisher<test::Test>("/to_be_removed", {"mem1"});
+  auto handle = discovery.RegisterPublisher<test::Test>("/to_be_removed", "mem", 1u);
   ev.RunFor(std::chrono::milliseconds(50));
   discovery.Unregister(handle);
 
@@ -130,7 +130,7 @@ TEST(DiscoveryTests, UnregisterPublisher) {
 TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  const auto handle = discovery.RegisterPublisher<test::Test>("/stable/id", {"mem1"});
+  const auto handle = discovery.RegisterPublisher<test::Test>("/stable/id", "mem", 1u);
 
   const std::string id1 = discovery.GetSampleId(handle);
   const std::string id2 = discovery.GetSampleId(handle);
@@ -169,7 +169,7 @@ TEST(DiscoveryTests, RegisterPublisherWithLargeTopicName) {
   // UDP buffer is 65535 bytes, so create topic name > 80KB to ensure multi-packet
   const std::string large_topic_name = "/very/large/topic/name/" + std::string(80000, 'x');
 
-  discovery.RegisterPublisher<test::Test>(large_topic_name, std::vector<std::string>{"memfile1", "memfile2"});
+  discovery.RegisterPublisher<test::Test>(large_topic_name, "memfile", 2u);
 
   unsigned receive_count{0};
   std::string received_topic_name;

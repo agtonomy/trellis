@@ -24,7 +24,8 @@ syntax = "proto3";
 package trellis.core.discovery.pb;
 
 message LayerParShm {
-  repeated string memory_file_list = 1;  // list of memory file names
+  string memory_file_prefix = 1;  // prefix for memory file names
+  uint32 buffer_count = 2;        // number of buffers
 }
 
 message TransportConfig  // connection parameter for reader / writer
@@ -39,7 +40,7 @@ enum TransportLayerType  // transport layer
 }
 
 message TransportLayer {
-  TransportLayerType type = 1;  // transport layer type
-  int32 version = 2;            // transport layer version
+  TransportLayerType type = 1;    // transport layer type
+  int32 version = 2;              // transport layer version
   TransportConfig par_layer = 3;  // transport layer parameter
 }
