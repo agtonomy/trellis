@@ -53,6 +53,13 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
   using Callback = std::function<void(ShmFile::SMemFileHeader, const void*, size_t)>;
 
   /**
+   * @brief Metrics struct that aggregates metrics from the underlying SocketEvent.
+   */
+  struct Metrics {
+    unix::SocketEvent::Metrics socket_event;  ///< Metrics from the underlying socket event handler.
+  };
+
+  /**
    * @brief Factory method to create a new ShmReader instance.
    *
    * @note This needs a factory function because we need to pass a weak ptr to the event handler from
@@ -79,6 +86,13 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
    */
   ShmReader(PrivateToken, trellis::core::EventLoop loop, const std::string& reader_id,
             const std::vector<std::string>& names, Callback receive_callback);
+
+  /**
+   * @brief Get the current metrics for this ShmReader instance.
+   *
+   * @return Metrics struct containing nested metrics from the underlying SocketEvent.
+   */
+  Metrics GetMetrics() const { return {evt_.GetMetrics()}; }
 
   ShmReader(const ShmReader&) = delete;
   ShmReader& operator=(const ShmReader&) = delete;

@@ -57,6 +57,8 @@ class Discovery {
   struct PubSubStats {
     unsigned send_receive_count;   ///< Number of messages sent or received
     double measured_frequency_hz;  ///< Observed message frequency in Hz
+    unsigned max_burst_size;       ///< Maximum number of messages processed in a single burst
+    unsigned message_drops;        ///< Number of dropped messages detected
   };
 
   using SamplesMap = std::unordered_map<std::string, TimestampedSample>;

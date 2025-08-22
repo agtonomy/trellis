@@ -107,6 +107,11 @@ void SocketEvent::StartReceive() {
       }
     } while (!read_ec);  // exit on first error (e.g., EAGAIN / EWOULDBLOCK)
 
+    // Update max burst size metric
+    if (packets_received > metrics_.max_burst_size) {
+      metrics_.max_burst_size = packets_received;
+    }
+
     // Re-arm the wait for the next datagram
     StartReceive();
   });

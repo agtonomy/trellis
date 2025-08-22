@@ -101,8 +101,9 @@ void FlushWriter(FileWriter& file_writer) {
   file_writer.writer.closeLastChunk();
 }
 
-core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
-                                     const std::string_view topic, std::shared_ptr<FileWriter> file_writer) {
+core::SubscriberRaw CreateSubscriber(const core::Config& config, core::EventLoop ev,
+                                     core::discovery::DiscoveryPtr discovery, const std::string_view topic,
+                                     std::shared_ptr<FileWriter> file_writer) {
   // A bit of a chicken and egg problem, we need the callback to be able to access the subscriber to fill in the schema.
   // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
   // Hence we use a shared ptr to update the data after creating the subscriber, and we guard in the
@@ -117,7 +118,7 @@ core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::Discov
         if (!subscriber_data->initialized) TryInitializeMcapChannel(*subscriber_data);
         if (subscriber_data->initialized) WriteMessage(stamp, data, len, *subscriber_data);
       },
-      [](const core::time::TimePoint&) {}, discovery);
+      [](const core::time::TimePoint&) {}, discovery, config);
 
   subscriber_data->subscriber = subscriber;
 
@@ -129,7 +130,8 @@ core::SubscriberRaw CreateSubscriber(core::EventLoop ev, core::discovery::Discov
 void Writer::Initialize(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
                         const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms) {
   const auto file_writer = MakeFileWriter(outfile, options);
-  for (const auto& topic : topics) subscribers_.emplace_back(CreateSubscriber(loop_, discovery_, topic, file_writer));
+  for (const auto& topic : topics)
+    subscribers_.emplace_back(CreateSubscriber(node.GetConfig(), loop_, discovery_, topic, file_writer));
 
   // Set up periodic flush timer if interval is greater than 0
   if (flush_interval_ms.count() > 0) {

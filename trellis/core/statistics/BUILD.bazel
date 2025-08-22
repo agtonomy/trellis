@@ -1,0 +1,10 @@
+cc_library(
+    name = "frequency_calculator",
+    hdrs = [
+        "frequency_calculator.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_time",
+    ],
+)

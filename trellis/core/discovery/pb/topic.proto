@@ -43,8 +43,9 @@ message Topic {
   repeated TransportLayer tlayer = 7;  // active topic transport layers and it's specific parameter
 
   int32 connections_loc = 8;  // number of local connected entities
-  int32 message_drops = 9;   // dropped messages
+  int32 message_drops = 9;    // dropped messages
 
-  int64 data_count = 10;  // data count (send or receive)
-  int32 data_frequency = 11;  // data frequency (send / receive samples per second) [mHz]
+  int64 data_count = 10;        // data count (send or receive)
+  int32 data_frequency = 11;    // data frequency (send / receive samples per second) [mHz]
+  uint32 max_burst_count = 12;  // maximum number of messages processed in a single burst
 }

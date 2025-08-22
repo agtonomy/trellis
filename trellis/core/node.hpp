@@ -130,7 +130,7 @@ class Node {
 
     using RawCallback = typename trellis::core::SubscriberImpl<MSG_T>::RawCallback;
     const auto impl = std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), std::string{topic}, callback,
-                                                              RawCallback{}, update_sim_fn, GetDiscovery());
+                                                              RawCallback{}, update_sim_fn, GetDiscovery(), config_);
     if (max_frequency.has_value()) {
       impl->SetMaxFrequencyThrottle(max_frequency.value());
     }
@@ -198,7 +198,7 @@ class Node {
     auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     return std::make_shared<SubscriberImpl<google::protobuf::Message>>(
         GetEventLoop(), std::string{topic}, SubscriberRawImpl::Callback{}, std::move(callback),
-        std::move(update_sim_fn), GetDiscovery());
+        std::move(update_sim_fn), GetDiscovery(), config_);
   }
 
   /**

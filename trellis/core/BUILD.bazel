@@ -216,6 +216,7 @@ cc_library(
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc/shm:shm_writer",
+        "//trellis/core/statistics:frequency_calculator",
     ],
 )
 
@@ -233,6 +234,7 @@ cc_library(
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc/proto:dynamic_message_cache",
         "//trellis/core/ipc/shm:shm_reader",
+        "//trellis/core/statistics:frequency_calculator",
         "//trellis/utils/protobuf:file_descriptor",
         "@fmt",
     ],

@@ -25,6 +25,8 @@
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
 #include "trellis/core/ipc/shm/shm_reader.hpp"
 #include "trellis/core/logging.hpp"
+#include "trellis/core/statistics/frequency_calculator.hpp"
+#include "trellis/core/timer.hpp"
 
 namespace trellis::core {
 
@@ -39,6 +41,8 @@ namespace trellis::core {
 template <typename MSG_T>
 class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>> {
  public:
+  static constexpr unsigned kDefaultStatisticsUpdateIntervalMs = 1000u;
+
   /// @brief The type passed to the callback. A unique_ptr to the message.
   using PointerType = std::unique_ptr<MSG_T>;
 
@@ -72,22 +76,30 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
    * @param raw_callback Callback invoked on receiving raw bytes (can be nullptr).
    * @param update_sim_fn Function to update a simulation clock (can be nullptr).
    * @param discovery Pointer to the discovery service.
+   * @param config The configuration tree to optionally pull values from.
    */
   SubscriberImpl(trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
-                 UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery)
+                 UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery,
+                 const trellis::core::Config& config)
       : loop_{loop},
         topic_{topic},
         callback_{std::move(callback)},
         raw_callback_{std::move(raw_callback)},
         watchdog_timer_{},
         update_sim_fn_{std::move(update_sim_fn)},
+        statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
+            topic, "statistics_update_interval_ms", /* is_publisher = */ false, kDefaultStatisticsUpdateIntervalMs)},
         discovery_{discovery},
         discovery_handle_{discovery_->RegisterSubscriber<MSG_T>(topic)},
         subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
         callback_handle_{discovery->AsyncReceivePublishers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceivePublisher(event, sample);
-            })} {}
+            })},
+        statistics_timer_{std::make_shared<TimerImpl>(
+            loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { UpdateStatistics(now); },
+            statistics_update_interval_ms_, 0)},
+        frequency_calculator_{statistics_update_interval_ms_} {}
 
   /// @brief Destructor unregisters from discovery and stops callbacks.
   ~SubscriberImpl() {
@@ -197,10 +209,12 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
 
       auto& last_seq = sequence_numbers_[header.writer_id];
       if (last_seq != 0 && (header.sequence != (last_seq + 1))) {
-        // TODO (bsirang) implement a counter to collect metrics on this case
+        // Track dropped messages based on sequence number gaps
+        const auto dropped = header.sequence - last_seq - 1;
+        dropped_message_count_ += dropped;
         trellis::core::Log::Warn(
-            "Sequence number jump on topic {} from writer_id {}. Current = {} last = {} delta = {}", topic_,
-            header.writer_id, header.sequence, last_seq, header.sequence - last_seq);
+            "Sequence number jump on topic {} from writer_id {}. Current = {} last = {} delta = {} dropped = {}",
+            topic_, header.writer_id, header.sequence, last_seq, header.sequence - last_seq, dropped);
       }
       last_seq = header.sequence;
     }
@@ -236,6 +250,9 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
 
     const auto receive_time = trellis::core::time::Now();
 
+    // Track message receive statistics
+    frequency_calculator_.IncrementCount();
+
     if (raw_callback_) {
       raw_callback_(receive_time, send_time, static_cast<const uint8_t*>(data), len);
     }
@@ -256,12 +273,41 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
     return (dynamic_message_cache_ != nullptr) ? dynamic_message_cache_->Get() : nullptr;
   }
 
+  /**
+   * @brief Updates statistics for message reception frequency and burst size.
+   *
+   * Called periodically by the statistics timer to calculate frequency and update discovery.
+   *
+   * @param now Current timestamp for frequency calculation.
+   */
+  void UpdateStatistics(const trellis::core::time::TimePoint& now) {
+    if (frequency_calculator_.UpdateFrequency(now)) {
+      // Collect max burst size from all readers
+      unsigned max_burst_size = 0;
+      for (const auto& reader_pair : readers_) {
+        if (reader_pair.second) {
+          const auto& metrics = reader_pair.second->GetMetrics();
+          max_burst_size = std::max(max_burst_size, metrics.socket_event.max_burst_size);
+        }
+      }
+
+      if (discovery_handle_ != discovery::Discovery::kInvalidRegistrationHandle) {
+        discovery_->UpdatePubSubStats({.send_receive_count = frequency_calculator_.GetTotalCount(),
+                                       .measured_frequency_hz = frequency_calculator_.GetFrequencyHz(),
+                                       .max_burst_size = max_burst_size,
+                                       .message_drops = dropped_message_count_},
+                                      discovery_handle_);
+      }
+    }
+  }
+
   trellis::core::EventLoop loop_;
   const std::string topic_;
   Callback callback_;
   RawCallback raw_callback_;
   Timer watchdog_timer_;
   UpdateSimulatedClockFunction update_sim_fn_;
+  const unsigned statistics_update_interval_ms_;  ///< Interval for statistics calculations
   std::shared_ptr<discovery::Discovery> discovery_;
   discovery::Discovery::RegistrationHandle discovery_handle_;
   std::string subscriber_id_;
@@ -272,6 +318,9 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
   trellis::core::time::TimePoint last_callback_time_{};
   std::unordered_map<uint64_t, uint64_t> sequence_numbers_;
+  Timer statistics_timer_;                                ///< Timer for periodic statistics updates
+  statistics::FrequencyCalculator frequency_calculator_;  ///< Frequency calculation utility
+  unsigned dropped_message_count_{0};                     ///< Total number of dropped messages detected
 };
 
 /// @brief Alias for consistency with other versions.

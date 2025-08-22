@@ -38,6 +38,8 @@ struct TopicInfo {
   double pub_freq{0.0};
   unsigned pub_count{0};
   std::set<std::string> transports{};
+  unsigned max_burst_size{0};
+  unsigned total_dropped_messages{0};
 };
 
 std::string StringifySet(const std::set<std::string>& set) {
@@ -83,14 +85,18 @@ int topic_list_main(int argc, char* argv[]) {
       topic_info.types.insert(topic.tdatatype().name());
     } else {
       ++topic_info.subscriber_count;
+      // Track the maximum burst size across all subscribers for this topic
+      topic_info.max_burst_size = std::max(topic_info.max_burst_size, topic.max_burst_count());
+      // Accumulate dropped messages across all subscribers for this topic
+      topic_info.total_dropped_messages += topic.message_drops();
     }
   }
 
-  VariadicTable<std::string, int, int, double, int, std::string> vt(
-      {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Type"});
+  VariadicTable<std::string, int, int, double, int, int, int, std::string> vt(
+      {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Max Burst", "Dropped", "Type"});
   for (const auto& [topic, info] : topic_map) {
-    vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count,
-              StringifySet(info.types));
+    vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count, info.max_burst_size,
+              info.total_dropped_messages, StringifySet(info.types));
   }
   vt.print(std::cout);
 

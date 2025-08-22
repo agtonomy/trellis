@@ -46,6 +46,10 @@ class SocketEvent {
     unsigned buffer_number;  ///< Identifier for the buffer associated with the event.
   };
 
+  struct Metrics {
+    unsigned max_burst_size{0};
+  };
+
   /// Callback type used to deliver received events asynchronously.
   using ReceiveCallback = std::function<void(Event)>;
 
@@ -78,6 +82,13 @@ class SocketEvent {
    */
   void AsyncReceive(ReceiveCallback callback);
 
+  /**
+   * @brief Get the current metrics for this socket event instance.
+   *
+   * @return const reference to the current metrics
+   */
+  const Metrics& GetMetrics() const { return metrics_; }
+
   SocketEvent(const SocketEvent&) = delete;
   SocketEvent& operator=(const SocketEvent&) = delete;
   SocketEvent(SocketEvent&&) = default;
@@ -100,6 +111,7 @@ class SocketEvent {
   asio::local::datagram_protocol::endpoint endpoint_;  ///< Socket address.
 
   ReceiveCallback callback_;  ///< User-provided callback for incoming events.
+  Metrics metrics_;           ///< Metrics tracking for this socket event instance.
 };
 
 }  // namespace trellis::core::ipc::unix

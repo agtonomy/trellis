@@ -26,6 +26,7 @@
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 #include "trellis/core/logging.hpp"
+#include "trellis/core/statistics/frequency_calculator.hpp"
 
 namespace trellis::core {
 
@@ -85,7 +86,8 @@ class PublisherImpl {
         callback_handle_{discovery->AsyncReceiveSubscribers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceiveSubscriber(event, sample);
-            })} {}
+            })},
+        frequency_calculator_{statistics_update_interval_ms_} {}
 
   /**
    * @brief Destructor.
@@ -234,20 +236,14 @@ class PublisherImpl {
     }
   }
   void UpdateStatistics(const trellis::core::time::TimePoint& now) {
-    ++send_count_;
-    if (!last_frequency_measurement_time_.has_value()) {
-      last_frequency_measurement_time_ = now;
-      last_frequency_measurement_send_count_ = send_count_;
-    } else if (auto time_delta = now - last_frequency_measurement_time_.value();
-               time_delta >= std::chrono::milliseconds(statistics_update_interval_ms_)) {
-      last_frequency_measurement_time_ = now;
-      unsigned count_delta = send_count_ - last_frequency_measurement_send_count_;
-      const auto duration_s = std::chrono::duration_cast<std::chrono::duration<double>>(time_delta).count();
-      measured_frequency_hz = static_cast<double>(count_delta) / duration_s;
-      last_frequency_measurement_send_count_ = send_count_;
+    frequency_calculator_.IncrementCount();
+    if (frequency_calculator_.UpdateFrequency(now)) {
       if (discovery_handle_ != discovery::Discovery::kInvalidRegistrationHandle) {
-        discovery_->UpdatePubSubStats(
-            {.send_receive_count = send_count_, .measured_frequency_hz = measured_frequency_hz}, discovery_handle_);
+        discovery_->UpdatePubSubStats({.send_receive_count = frequency_calculator_.GetTotalCount(),
+                                       .measured_frequency_hz = frequency_calculator_.GetFrequencyHz(),
+                                       .max_burst_size = 0,
+                                       .message_drops = 0},
+                                      discovery_handle_);
       }
     }
   }
@@ -262,13 +258,7 @@ class PublisherImpl {
   discovery::Discovery::CallbackHandle callback_handle_;       ///< Subscriber callback handle
   size_t buffer_size_{initial_buffer_size_};                   ///< Buffer size for message serialization
   std::mutex mutex_;                                           ///< Mutex for thread safety
-
-  // Statistics
-  unsigned send_count_{0};          ///< Total messages sent
-  double measured_frequency_hz{0};  ///< Frequency of messages sent
-  std::optional<trellis::core::time::TimePoint>
-      last_frequency_measurement_time_{};              ///< Last time frequency was measured
-  unsigned last_frequency_measurement_send_count_{0};  ///< Send count at last frequency measurement
+  statistics::FrequencyCalculator frequency_calculator_;       ///< Frequency calculation utility
 };
 
 // Type aliases for shared ownership and dynamic use
