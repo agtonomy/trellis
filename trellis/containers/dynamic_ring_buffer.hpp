@@ -112,9 +112,21 @@ class DynamicRingBuffer {
       return *this;
     }
 
+    Iterator operator++(int) {
+      Iterator temp = *this;
+      ++index_;
+      return temp;
+    }
+
     Iterator& operator--() {
       --index_;
       return *this;
+    }
+
+    Iterator operator--(int) {
+      Iterator temp = *this;
+      --index_;
+      return temp;
     }
 
     // Arithmetic
@@ -142,6 +154,18 @@ class DynamicRingBuffer {
     // Comparison operators
     friend bool operator==(const Iterator&, const Iterator&) = default;
     friend bool operator!=(const Iterator&, const Iterator&) = default;
+    friend bool operator<(const Iterator& left, const Iterator& right) {
+      return left.Mask(left.index_) < right.Mask(right.index_);
+    }
+    friend bool operator<=(const Iterator& left, const Iterator& right) {
+      return left.Mask(left.index_) <= right.Mask(right.index_);
+    }
+    friend bool operator>(const Iterator& left, const Iterator& right) {
+      return left.Mask(left.index_) > right.Mask(right.index_);
+    }
+    friend bool operator>=(const Iterator& left, const Iterator& right) {
+      return left.Mask(left.index_) >= right.Mask(right.index_);
+    }
 
     // Go from unmasked index to masked index (can be used to access data).
     size_t Mask(const size_t index) const { return index & (capacity_ - 1); }
