@@ -18,6 +18,8 @@
 #ifndef TRELLIS_NETWORK_TCP_HPP
 #define TRELLIS_NETWORK_TCP_HPP
 
+#include <optional>
+
 #include "trellis/core/error_code.hpp"
 #include "trellis/core/event_loop.hpp"
 

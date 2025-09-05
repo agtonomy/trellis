@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include <string>
+#include <string_view>
 
 namespace trellis {
 namespace core {
@@ -72,7 +73,7 @@ void SetLogLevel(LogLevel log_level);
  * @param prefix A string to prefix the log line (e.g., "[INFO]  ").
  * @param level The level of the log message.
  */
-void DoLog(const std::string& msg, const std::string& prefix, LogLevel level);
+void DoLog(std::string_view msg, std::string_view prefix, LogLevel level);
 
 /**
  * @brief Log an informational message.
@@ -86,6 +87,7 @@ inline void Info(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[INFO]  ", LogLevel::kInfo);
 }
+inline void Info(std::string_view msg) { DoLog(msg, "[INFO]  ", LogLevel::kInfo); }
 
 /**
  * @brief Log a warning message.
@@ -99,6 +101,7 @@ inline void Warn(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[WARN]  ", LogLevel::kWarn);
 }
+inline void Warn(std::string_view msg) { DoLog(msg, "[WARN]  ", LogLevel::kWarn); }
 
 /**
  * @brief Log an error message.
@@ -112,6 +115,7 @@ inline void Error(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[ERROR] ", LogLevel::kError);
 }
+inline void Error(std::string_view msg) { DoLog(msg, "[ERROR] ", LogLevel::kError); }
 
 /**
  * @brief Log a fatal error message and terminate the program.
@@ -126,7 +130,12 @@ template <typename... Args>
 inline void Fatal(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[FATAL] ", LogLevel::kFatal);
-  sleep(1);  // Ensure logs flush before aborting
+  sleep(1);
+  abort();
+}
+inline void Fatal(std::string_view msg) {
+  DoLog(msg, "[FATAL] ", LogLevel::kFatal);
+  sleep(1);
   abort();
 }
 
@@ -142,6 +151,7 @@ inline void Debug(fmt::format_string<Args...> fmt_msg, Args&&... args) {
   std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
   DoLog(msg, "[DEBUG] ", LogLevel::kDebug);
 }
+inline void Debug(std::string_view msg) { DoLog(msg, "[DEBUG] ", LogLevel::kDebug); }
 
 }  // namespace Log
 }  // namespace core

@@ -45,7 +45,7 @@ void SetLogLevel(const std::string& log_level_string) {
 
 void SetLogLevel(LogLevel log_level) { g_log_level = log_level; }
 
-void DoLog(const std::string& msg, const std::string& prefix, LogLevel level) {
+void DoLog(std::string_view msg, std::string_view prefix, LogLevel level) {
   std::lock_guard lock(g_log_mutex);
   if (level <= g_log_level) {
     std::cout << prefix << msg << std::endl;
