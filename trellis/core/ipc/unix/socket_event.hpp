@@ -43,11 +43,14 @@ class SocketEvent {
    * Contains a buffer index or other identifier sent from the writer to the reader.
    */
   struct Event {
-    unsigned buffer_number;  ///< Identifier for the buffer associated with the event.
+    unsigned buffer_number;    ///< Identifier for the buffer associated with the event.
+    uint64_t sequence_number;  ///< Monotonically increasing sequence number for drop detection.
   };
 
   struct Metrics {
     unsigned max_burst_size{0};
+    uint64_t dropped_packets{0};  ///< Number of detected dropped packets based on sequence gaps.
+    uint64_t total_received{0};   ///< Total number of packets received.
   };
 
   /// Callback type used to deliver received events asynchronously.
@@ -112,6 +115,11 @@ class SocketEvent {
 
   ReceiveCallback callback_;  ///< User-provided callback for incoming events.
   Metrics metrics_;           ///< Metrics tracking for this socket event instance.
+
+  // Sequence tracking for drop detection
+  uint64_t send_sequence_{0};          ///< Next sequence number to send (for senders).
+  uint64_t expected_sequence_{0};      ///< Next expected sequence number (for receivers).
+  bool first_packet_received_{false};  ///< Flag to handle the first packet specially.
 };
 
 }  // namespace trellis::core::ipc::unix

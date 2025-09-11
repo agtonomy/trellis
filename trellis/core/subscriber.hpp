@@ -193,6 +193,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
       }
     } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
       if (it != readers_.end()) {
+        Log::Info("Trellis::SubscriberImpl::ReceivePublisher - Removing reader for topic {} with id {}", topic_,
+                  topic_id);
         readers_.erase(topic_id);
       }
     }
@@ -246,6 +248,11 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
                                              topic_, header.writer_id));
         return;
       }
+      Log::Info(
+          "Trellis::SubscriberImpl::ReceiveData got message with data {} len {}, parsed message from topic {} with "
+          "size "
+          "{}, debug string {}",
+          (void*)data, len, topic_, msg->ByteSizeLong(), msg->DebugString());
     }
 
     const auto receive_time = trellis::core::time::Now();

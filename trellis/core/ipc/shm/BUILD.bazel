@@ -41,6 +41,7 @@ cc_library(
         ":shm_file",
         ":shm_read_write_lock",
         "//trellis/core/ipc/unix:socket_event",
+        "//trellis/core:core_logging",
         "@fmt",
     ],
 )

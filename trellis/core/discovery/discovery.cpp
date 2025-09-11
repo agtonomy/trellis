@@ -140,6 +140,10 @@ void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, Sam
   std::lock_guard guard(callback_mutex_);
   for (auto it = map.begin(); it != map.end();) {
     if (now - it->second.stamp > sample_timeout_ms_) {
+      if (it->second.sample.has_topic()) {
+        Log::Warn("Purging stale topic sample for id {}, uname: {}, tname: {}", it->first,
+                  it->second.sample.topic().uname(), it->second.sample.topic().tname());
+      }
       for (const auto& callback : callback_map) {
         if (callback.second) callback.second(EventType::kNewUnregistration, std::move(it->second.sample));
       }

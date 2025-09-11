@@ -39,7 +39,7 @@ Node::Node(std::string name, trellis::core::Config config)
     if (!error) {
       ipc::NamedResourceRegistry::Get().UnlinkAll();
       if (user_handler_) user_handler_(signal_number);
-      Log::Info("{} node stopping...", name_);
+      Log::Info("Trellis: Got signal {}, error {}, {} node stopping...", signal_number, error.message(), name_);
       Stop();
     }
   });

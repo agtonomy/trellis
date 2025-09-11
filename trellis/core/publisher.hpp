@@ -232,6 +232,8 @@ class PublisherImpl {
       }
       writer_.AddReader(sample.id());
     } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
+      Log::Info("Trellis::PublisherImpl::ReceiveSubscriber - Removing reader for topic {} with id {}", topic_,
+                sample.id());
       writer_.RemoveReader(sample.id());
     }
   }

@@ -60,6 +60,7 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
 }
 
 SocketEvent::~SocketEvent() {
+  Log::Info("Trellis::SocketEvent destructor called for handle {}, reader={}", handle_, reader_);
   if (socket_.is_open()) {
     socket_.close();
   }
@@ -69,11 +70,56 @@ SocketEvent::~SocketEvent() {
 }
 
 bool SocketEvent::Send(Event event) {
-  try {
-    socket_.send_to(asio::buffer(&event, sizeof(Event)), endpoint_);
-  } catch (std::system_error& e) {
-    Log::Debug("SocketEvent::Send - {}", e.what());
-    return false;
+  // Assign sequence number for drop detection
+  event.sequence_number = send_sequence_++;
+
+  asio::error_code ec;
+  socket_.send_to(asio::buffer(&event, sizeof(Event)), endpoint_, 0, ec);
+
+  /*
+   * Error Handling Strategy for SocketEvent::Send
+   *
+   * Temporary Errors (don't remove reader):
+   * - EAGAIN/EWOULDBLOCK: Socket buffer full - common under high load
+   * - Other transient system errors
+   *
+   * Permanent Errors (remove reader):
+   * - ENOENT: Socket file doesn't exist - reader process died
+   * - ECONNREFUSED: Connection refused - reader socket closed
+   * - ENOTCONN: Not connected - reader disconnected
+   * - EMSGSIZE: Message too large - programming error
+   *
+   * This prevents sequence number jumps caused by temporary socket buffer
+   * congestion while still cleaning up dead readers.
+   */
+
+  if (ec) {
+    // Handle different error cases appropriately
+    if (ec == asio::error::would_block || ec == asio::error::try_again) {
+      // Temporary condition - socket buffer is full
+      // This is expected under high load and should not cause reader removal
+      // Log::Warn("Trellis::SocketEvent::Send - Socket buffer full, dropping notification for sequence {}",
+      // event.sequence_number);
+      return true;                            // Return true to prevent reader removal
+    } else if (ec.value() == ENOENT ||        // No such file or directory
+               ec.value() == ECONNREFUSED ||  // Connection refused
+               ec.value() == ENOTCONN ||      // Transport endpoint is not connected
+               ec.value() == ENOTSOCK) {      // Socket operation on non-socket
+      // Permanent errors - reader socket doesn't exist
+      // These indicate the reader process is gone - maybe?
+      // we exclusively get "No such file or directory (error: 2)" if ec != 0
+      // this causes
+      Log::Warn("Trellis::SocketEvent::Send - error: {} (error: {})", ec.message(), ec.value());
+      return false;  // Return false to remove this reader
+    } else if (ec == asio::error::message_size) {
+      // Programming error - message too large
+      // Log::Warn("Trellis::SocketEvent::Send - message too large: {} (error: {})", ec.message(), ec.value());
+      return false;
+    } else {
+      // Unexpected errors - log but don't remove reader immediately
+      // Log::Warn("Trellis::SocketEvent::Send - Unexpected error: {} (error: {})", ec.message(), ec.value());
+      return true;  // Give benefit of doubt, don't remove reader
+    }
   }
   return true;
 }
@@ -101,6 +147,33 @@ void SocketEvent::StartReceive() {
         Event event;
         std::memcpy(&event, buf.data(), sizeof(Event));
         ++packets_received;
+
+        // Update total received count
+        ++metrics_.total_received;
+
+        // Check for sequence number gaps (dropped packets)
+        if (!first_packet_received_) {
+          // First packet - initialize expected sequence
+          expected_sequence_ = event.sequence_number + 1;
+          first_packet_received_ = true;
+        } else {
+          // Check for sequence gaps
+          if (event.sequence_number != expected_sequence_) {
+            if (event.sequence_number > expected_sequence_) {
+              // Packets were dropped
+              uint64_t dropped = event.sequence_number - expected_sequence_;
+              metrics_.dropped_packets += dropped;
+              Log::Warn("Trellis::SocketEvent::Receive - {} packet(s) dropped (expected seq {}, got {})", dropped,
+                        expected_sequence_, event.sequence_number);
+            } else if (event.sequence_number < expected_sequence_) {
+              // Out-of-order or duplicate packet
+              Log::Warn("Trellis::SocketEvent::Receive - Out-of-order packet (expected seq {}, got {})",
+                        expected_sequence_, event.sequence_number);
+            }
+          }
+          expected_sequence_ = event.sequence_number + 1;
+        }
+
         if (callback_) {
           callback_(event);
         }

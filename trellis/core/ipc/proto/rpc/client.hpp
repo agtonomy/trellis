@@ -64,11 +64,15 @@ class Client {
                   if (tcp_client_.has_value()) {
                     const auto maybe_remote_port = tcp_client_.value().GetRemotePort();
                     if (!maybe_remote_port.has_value() || maybe_remote_port.value() == tcp_port) {
+                      Log::Info("Trellis::Client - Service {} unregistered, closing TCP connection",
+                                PROTO_SERVICE_T::descriptor()->full_name());
                       tcp_client_.reset();
                     }
                   }
                 } else if (event == discovery::Discovery::EventType::kNewRegistration) {
                   if (!tcp_client_.has_value()) {
+                    Log::Info("Trellis::Client - Service {} registered at port {}, creating TCP connection",
+                              PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
                     tcp_client_ = network::TCP(loop, "127.0.0.1", tcp_port);
                   }
                 }
@@ -79,6 +83,7 @@ class Client {
    * @brief Destructor that stops receiving service discovery events.
    */
   ~Client() {
+    Log::Info("Trellis::Client - Destroying client for service {}", PROTO_SERVICE_T::descriptor()->full_name());
     discovery_->StopReceive(callback_handle_);
     CleanPendingRequest();
 
@@ -89,6 +94,7 @@ class Client {
     }
 
     if (tcp_client_.has_value()) {
+      Log::Info("Trellis::Client - Destroying client for service {}", PROTO_SERVICE_T::descriptor()->full_name());
       tcp_client_->Cancel();  // Cancel any ongoing operations
       tcp_client_->Close();   // Close the TCP connection
     }
@@ -109,6 +115,7 @@ class Client {
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
     if (!tcp_client_.has_value()) {
       RESP_T resp{};
+      Log::Error("Trellis::Client::CallAsync - No tcp instance available for {}", method);
       callback(kFailure, &resp);
       return;
     }
@@ -235,6 +242,7 @@ class Client {
           if (ec == asio::error::operation_aborted || !pending_request_) {
             return;  // short circuit on timeout
           } else if (ec) {
+            Log::Error("Trellis::Client::ProcessNextRequest 1 - Error sending request header: {}", ec.message());
             pending_request_->failure_fn();
             return;
           }
@@ -245,6 +253,7 @@ class Client {
                 if (ec == asio::error::operation_aborted || !pending_request_) {
                   return;  // short circuit on timeout
                 } else if (ec) {
+                  Log::Error("Trellis::Client::ProcessNextRequest 2 - Error sending request header: {}", ec.message());
                   pending_request_->failure_fn();
                   return;
                 }
@@ -256,6 +265,8 @@ class Client {
                       if (ec == asio::error::operation_aborted || !pending_request_) {
                         return;  // short circuit on timeout
                       } else if (ec) {
+                        Log::Error("Trellis::Client::ProcessNextRequest 3 - Error sending request header: {}",
+                                   ec.message());
                         pending_request_->failure_fn();
                         return;
                       }
@@ -273,6 +284,8 @@ class Client {
                             }
 
                             if (ec) {
+                              Log::Error("Trellis::Client::ProcessNextRequest 4 - Error sending request header: {}",
+                                         ec.message());
                               pending_request_->failure_fn();
                               return;
                             }
@@ -280,6 +293,8 @@ class Client {
                             discovery::Response response;
                             response.ParseFromArray(receive_buffer->data(), bytes_received);
                             if (response.header().status() == discovery::ServiceHeader::failed) {
+                              Log::Error("Trellis::Client::ProcessNextRequest 5 - Error sending request header: {}",
+                                         ec.message());
                               pending_request_->failure_fn();
                             } else {
                               pending_request_->success_fn(response);
