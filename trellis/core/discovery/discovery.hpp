@@ -287,6 +287,8 @@ class Discovery {
   const unsigned management_interval_;                 ///< The interval in milliseconds for the management timer
   const std::chrono::milliseconds sample_timeout_ms_;  ///< How long to wait before considering samples stale
   const bool loopback_enabled_;                        ///< Whether or not to loopback broadcasts bypassing UDP
+  const int rcvbuf_size_;                              ///< Size of the UDP receive buffer
+  const int sndbuf_size_;                              ///< Size of the UDP send buffer
   OptUdpReceiver udp_receiver_;                        ///< Receives discovery broadcasts
   OptUdpSender udp_sender_;                            ///< Sends discovery broadcasts
   trellis::core::Timer management_timer_;              ///< Periodic timer for housekeeping

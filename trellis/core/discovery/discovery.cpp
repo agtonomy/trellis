@@ -28,7 +28,7 @@ namespace {
 /**
  * Creates and returns a socket file descriptor with SO_REUSEADDR and SO_REUSEPORT
  */
-int CreateNativeUDPSocket(uint16_t port) {
+int CreateNativeUDPSocket(uint16_t port, int rcvbuf_size, int sndbuf_size) {
   int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     throw std::runtime_error("Failed to create UDP socket");
@@ -51,6 +51,16 @@ int CreateNativeUDPSocket(uint16_t port) {
   if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes)) < 0) {
     ::close(fd);
     throw std::runtime_error("Failed to set SO_BROADCAST");
+  }
+
+  // Set SO_RCVBUF and SO_SNDBUF to handle bursts of incoming/outgoing data
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to set SO_RCVBUF");
+  }
+  if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf_size, sizeof(sndbuf_size)) < 0) {
+    ::close(fd);
+    throw std::runtime_error("Failed to set SO_SNDBUF");
   }
 
   sockaddr_in addr{};
@@ -100,6 +110,8 @@ static constexpr unsigned kDefaultDiscoveryPort = 1400u;
 static constexpr unsigned kDefaultDiscoveryInterval = 1000u;
 static constexpr unsigned kDefaultSampleTimeout = 2000u;
 static constexpr bool kDefaultLoopbackEnabled = false;
+static constexpr unsigned kDefaultRcvBufSize = 8 * 1024 * 1024;  // 8MB
+static constexpr unsigned kDefaultSndBufSize = 2 * 1024 * 1024;  // 2MB
 
 }  // namespace
 
@@ -110,16 +122,19 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
       management_interval_{config.AsIfExists<unsigned>("trellis.discovery.interval", kDefaultDiscoveryInterval)},
       sample_timeout_ms_{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
       loopback_enabled_{config.AsIfExists<bool>("trellis.discovery.loopback_enabled", kDefaultLoopbackEnabled)},
+      rcvbuf_size_{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.rcvbuf_size", kDefaultRcvBufSize))},
+      sndbuf_size_{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.sndbuf_size", kDefaultSndBufSize))},
       udp_receiver_(loopback_enabled_ ? std::nullopt
                                       : std::make_optional<UdpReceiver>(
                                             loop,
                                             static_cast<asio::ip::udp::socket::native_handle_type>(
-                                                CreateNativeUDPSocket(discovery_port_)),
+                                                CreateNativeUDPSocket(discovery_port_, rcvbuf_size_, sndbuf_size_)),
                                             [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
                                               ReceiveData(trellis::core::time::Now(), data, len);
                                             })),
       udp_sender_(loopback_enabled_ ? std::nullopt
-                                    : std::make_optional<trellis::network::UDP>(loop, CreateNativeUDPSocket(0))),
+                                    : std::make_optional<trellis::network::UDP>(
+                                          loop, CreateNativeUDPSocket(0, rcvbuf_size_, sndbuf_size_))),
       management_timer_{std::make_shared<TimerImpl>(
           loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); }, management_interval_,
           management_interval_)} {
