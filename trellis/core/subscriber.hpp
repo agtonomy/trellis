@@ -105,6 +105,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   ~SubscriberImpl() {
     discovery_->StopReceive(callback_handle_);
     discovery_->Unregister(discovery_handle_);
+    discovery_handle_ = discovery::Discovery::kInvalidRegistrationHandle;
   }
 
   SubscriberImpl(const SubscriberImpl&) = delete;

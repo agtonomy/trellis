@@ -473,8 +473,8 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
   std::lock_guard lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
-    throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
-                                       static_cast<unsigned>(handle)));
+    Log::Error("Attempt to retrieve registered sample that doesn't exist. Handle = {}", static_cast<unsigned>(handle));
+    return;
   }
   auto& sample = it->second;
   sample.mutable_topic()->set_data_count(stats.send_receive_count);
@@ -487,7 +487,7 @@ std::string Discovery::GetSampleId(RegistrationHandle handle) {
   std::lock_guard lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);
   if (it == registered_samples_.end()) {
-    throw std::logic_error(fmt::format("Attempt to retrive registered sample that doesn't exist. Handle = {}",
+    throw std::logic_error(fmt::format("Attempt to retrieve registered sample that doesn't exist. Handle = {}",
                                        static_cast<unsigned>(handle)));
   }
   auto& sample = it->second;
