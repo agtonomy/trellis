@@ -18,9 +18,9 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "VariadicTable.h"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
+#include "trellis/utils/formatting/table.hpp"
 
 namespace trellis {
 namespace tools {
@@ -43,11 +43,11 @@ int node_list_main(int argc, char* argv[]) {
 
   const auto process = discovery.GetProcessSamples();
 
-  VariadicTable<std::string> vt({"Node Name"});
+  trellis::utils::formatting::Table<std::string> table({"Node Name"});
   for (const auto& sample : process) {
-    vt.addRow(sample.process().uname());
+    table.AddRow(sample.process().uname());
   }
-  vt.print(std::cout);
+  table.Print(std::cout);
 
   return 0;
 }

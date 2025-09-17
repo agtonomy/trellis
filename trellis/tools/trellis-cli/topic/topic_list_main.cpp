@@ -21,10 +21,10 @@
 #include <set>
 #include <thread>
 
-#include "VariadicTable.h"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/proto_utils.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
+#include "trellis/utils/formatting/table.hpp"
 
 namespace trellis {
 namespace tools {
@@ -92,13 +92,13 @@ int topic_list_main(int argc, char* argv[]) {
     }
   }
 
-  VariadicTable<std::string, int, int, double, int, int, int, std::string> vt(
+  trellis::utils::formatting::Table<std::string, int, int, double, int, int, int, std::string> table(
       {"Topic", "Num Pub", "Num Sub", "Freq (Hz)", "Tx Count", "Max Burst", "Dropped", "Type"});
   for (const auto& [topic, info] : topic_map) {
-    vt.addRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count, info.max_burst_size,
-              info.total_dropped_messages, StringifySet(info.types));
+    table.AddRow(topic, info.publisher_count, info.subscriber_count, info.pub_freq, info.pub_count, info.max_burst_size,
+                 info.total_dropped_messages, StringifySet(info.types));
   }
-  vt.print(std::cout);
+  table.Print(std::cout);
 
   return 0;
 }

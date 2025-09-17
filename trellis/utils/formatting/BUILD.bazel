@@ -1,0 +1,7 @@
+cc_library(
+    name = "table",
+    hdrs = [
+        "table.hpp",
+    ],
+    visibility = ["//visibility:public"],
+)

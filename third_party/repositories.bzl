@@ -140,16 +140,6 @@ def trellis_deps():
     )
     maybe(
         http_archive,
-        name = "variadic_table",
-        build_file = Label("//third_party:variadic_table.BUILD"),
-        sha256 = "6799c0ee507fb3c739bde936630fc826f3c13abeb7b3245ebf997a6446fd0cb3",
-        strip_prefix = "variadic_table-82fcf65c00c70afca95f71c0c77fba1982a20a86",
-        urls = [
-            "https://github.com/friedmud/variadic_table/archive/82fcf65c00c70afca95f71c0c77fba1982a20a86.tar.gz",
-        ],
-    )
-    maybe(
-        http_archive,
         name = "eigen",
         build_file = Label("//third_party:eigen.BUILD"),
         sha256 = "8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72",

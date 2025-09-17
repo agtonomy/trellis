@@ -18,9 +18,9 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "VariadicTable.h"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
+#include "trellis/utils/formatting/table.hpp"
 
 namespace trellis {
 namespace tools {
@@ -47,7 +47,7 @@ int service_list_main(int argc, char* argv[]) {
 
   const auto service_samples = discovery.GetServiceSamples();
 
-  VariadicTable<std::string, std::string> vt({"Service Name", "Methods"});
+  trellis::utils::formatting::Table<std::string, std::string> table({"Service Name", "Methods"});
 
   for (const auto& sample : service_samples) {
     const auto& service = sample.service();
@@ -67,9 +67,9 @@ int service_list_main(int argc, char* argv[]) {
       methods_str = methods_str.substr(0, kMaxMethodsStringLen) + "...";
     }
     // Add the service to the table
-    vt.addRow(service.sname(), methods_str);
+    table.AddRow(service.sname(), methods_str);
   }
-  vt.print(std::cout);
+  table.Print(std::cout);
 
   return 0;
 }

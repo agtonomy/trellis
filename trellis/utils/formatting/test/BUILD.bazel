@@ -1,0 +1,8 @@
+cc_test(
+    name = "table_test",
+    srcs = ["table_test.cpp"],
+    deps = [
+        "//trellis/utils/formatting:table",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

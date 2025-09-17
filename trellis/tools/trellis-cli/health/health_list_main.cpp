@@ -18,10 +18,10 @@
 #include <cxxopts.hpp>
 #include <thread>
 
-#include "VariadicTable.h"
 #include "trellis/core/health_monitor.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
+#include "trellis/utils/formatting/table.hpp"
 
 namespace trellis {
 namespace tools {
@@ -73,16 +73,16 @@ int health_list_main(int argc, char* argv[]) {
   }
   node.Stop();
 
-  VariadicTable<std::string, std::string, trellis::core::Health::Code, std::string> vt(
+  trellis::utils::formatting::Table<std::string, std::string, trellis::core::Health::Code, std::string> table(
       {"Node", "Health State", "Code", "Description"});
   const auto node_name_set = monitor.GetNodeNames();
   for (const auto& name : node_name_set) {
     const auto& status = monitor.GetLastHealthUpdate(name);
-    vt.addRow(name, trellis::core::HealthState_Name(status.health_state()), status.status_code(),
-              status.status_description());
+    table.AddRow(name, trellis::core::HealthState_Name(status.health_state()), status.status_code(),
+                 status.status_description());
   }
 
-  vt.print(std::cout);
+  table.Print(std::cout);
   return 0;
 }
 

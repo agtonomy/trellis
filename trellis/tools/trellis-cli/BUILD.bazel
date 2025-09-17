@@ -35,8 +35,8 @@ cc_binary(
         "//trellis",
         "//trellis/core:core_proto_utils",
         "//trellis/core/discovery",
+        "//trellis/utils/formatting:table",
         "@cxxopts",
         "@json",
-        "@variadic_table",
     ],
 )
