@@ -33,6 +33,8 @@ int discovery_dump_main(int argc, char* argv[]) {
   trellis::core::discovery::Discovery discovery("trellis-cli", loop, trellis::core::Config{});
   loop.RunFor(std::chrono::milliseconds(monitor_delay_ms));
   const auto pubsub_samples = discovery.GetPubSubSamples();
+  const auto service_samples = discovery.GetServiceSamples();
+  const auto process_samples = discovery.GetProcessSamples();
 
   google::protobuf::util::JsonPrintOptions options;
   options.add_whitespace = true;
@@ -40,6 +42,16 @@ int discovery_dump_main(int argc, char* argv[]) {
 
   std::string json_string;
   for (const auto& sample : pubsub_samples) {
+    json_string.clear();
+    google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    std::cout << json_string << std::endl;
+  }
+  for (const auto& sample : service_samples) {
+    json_string.clear();
+    google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    std::cout << json_string << std::endl;
+  }
+  for (const auto& sample : process_samples) {
     json_string.clear();
     google::protobuf::util::MessageToJsonString(sample, &json_string, options);
     std::cout << json_string << std::endl;
