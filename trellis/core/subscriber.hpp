@@ -331,10 +331,6 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   unsigned dropped_message_count_{0};                     ///< Total number of dropped messages detected
 };
 
-/// @brief Alias for consistency with other versions.
-template <typename MSG_T>
-using SubscriberImpl = SubscriberImpl<MSG_T>;
-
 /// @brief Alias for shared pointer to subscriber.
 template <typename MSG_T>
 using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
