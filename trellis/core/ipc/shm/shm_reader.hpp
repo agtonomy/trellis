@@ -94,6 +94,13 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
    */
   Metrics GetMetrics() const { return {evt_.GetMetrics()}; }
 
+  /**
+   * @brief Checks if all shared memory files in this reader are properly initialized.
+   *
+   * @return true if all shared memory files have valid file descriptors and are mapped; false otherwise.
+   */
+  bool IsInitialized() const;
+
   ShmReader(const ShmReader&) = delete;
   ShmReader& operator=(const ShmReader&) = delete;
   ShmReader(ShmReader&&) = delete;

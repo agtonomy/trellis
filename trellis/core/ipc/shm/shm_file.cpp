@@ -42,6 +42,12 @@ int CreateOrOpen(std::string handle, bool owner) {
   const int rt = ::shm_open(posix_name.c_str(), flags, mode);
   const auto err = errno;   // capture before umask
   ::umask(previous_umask);  // reset umask to previous permissions
+
+  // If we're not the owner and the file doesn't exist, return -1 instead of throwing
+  if (!owner && rt < 0 && err == ENOENT) {
+    return -1;
+  }
+  // In all other cases, throw
   if (rt < 0) {
     throw std::system_error(err, std::generic_category(), "ShmFile::CreateOrOpen failed " + posix_name);
   }
@@ -117,7 +123,10 @@ ShmFile::MapInfo Map(int fd, std::string handle, bool owner, size_t requested_si
 }  // namespace
 
 ShmFile::ShmFile(std::string handle, bool owner, size_t requested_size)
-    : handle_{handle}, owner_{owner}, fd_{CreateOrOpen(handle, owner)}, map_{Map(fd_, handle_, owner, requested_size)} {
+    : handle_{handle},
+      owner_{owner},
+      fd_{CreateOrOpen(handle, owner)},
+      map_{fd_ >= 0 ? Map(fd_, handle_, owner, requested_size) : MapInfo{}} {
   if (owner) {
     NamedResourceRegistry::Get().InsertShm(handle_);
   }

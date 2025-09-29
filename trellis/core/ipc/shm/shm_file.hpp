@@ -111,6 +111,12 @@ class ShmFile {
   bool Mapped() const { return map_.addr != nullptr; }
 
   /**
+   * @brief Checks if the shared memory file was properly initialized.
+   * @return true if file descriptor is valid and memory is mapped; false otherwise.
+   */
+  bool IsInitialized() const { return fd_ >= 0 && Mapped(); }
+
+  /**
    * @brief Get the pointer and length to the shared memory buffer for the purpose of reading
    * @return A ReadInfo structure containing the data pointer and size.
    */

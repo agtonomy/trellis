@@ -182,13 +182,20 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
             }
 
             std::weak_ptr<std::remove_reference_t<decltype(*this)>> weak_self = this->shared_from_this();
-            readers_.emplace(topic_id, ipc::shm::ShmReader::Create(loop_, subscriber_id_, memory_file_list,
-                                                                   [weak_self](ipc::shm::ShmFile::SMemFileHeader header,
-                                                                               const void* data, size_t len) {
-                                                                     if (auto self = weak_self.lock()) {
-                                                                       self->ReceiveData(header, data, len);
-                                                                     }
-                                                                   }));
+            auto reader = ipc::shm::ShmReader::Create(
+                loop_, subscriber_id_, memory_file_list,
+                [weak_self](ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+                  if (auto self = weak_self.lock()) {
+                    self->ReceiveData(header, data, len);
+                  }
+                });
+            // Only add the reader to the container if it was properly initialized
+            if (reader && reader->IsInitialized()) {
+              readers_.emplace(topic_id, std::move(reader));
+            } else {
+              trellis::core::Log::Warn("Failed to initialize ShmReader for topic {}. Did the publisher go offline?",
+                                       topic_);
+            }
           }
         }
       }

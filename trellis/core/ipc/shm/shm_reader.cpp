@@ -100,4 +100,13 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
   }
 }
 
+bool ShmReader::IsInitialized() const {
+  for (const auto& file : files_) {
+    if (!file.IsInitialized()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace trellis::core::ipc::shm
