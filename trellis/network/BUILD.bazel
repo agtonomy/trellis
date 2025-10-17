@@ -22,3 +22,15 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)

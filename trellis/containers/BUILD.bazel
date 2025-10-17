@@ -28,3 +28,15 @@ cc_library(
     hdrs = ["dynamic_ring_buffer.hpp"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)

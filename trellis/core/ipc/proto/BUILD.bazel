@@ -9,5 +9,20 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:protobuf",
-    ]
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = [
+            "**/test/**",
+            "**/rpc/**",
+        ],
+    ),
+    visibility = ["//trellis:__pkg__"],
 )

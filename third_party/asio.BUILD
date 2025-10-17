@@ -19,3 +19,12 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "asio_headers",
+    srcs = glob([
+        "asio/include/**/*.hpp",
+        "asio/include/**/*.ipp",
+    ]),
+    visibility = ["//visibility:public"],
+)

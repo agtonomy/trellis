@@ -8,3 +8,9 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "fmt_headers",
+    srcs = glob(["include/fmt/*.h"]),
+    visibility = ["//visibility:public"],
+)

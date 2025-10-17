@@ -16,6 +16,7 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "yaml-cpp",
+        build_file = Label("//third_party:yaml-cpp.BUILD"),
         sha256 = "43e6a9fcb146ad871515f0d0873947e5d497a1c9c60c58cb102a97b47208b7c3",
         strip_prefix = "yaml-cpp-yaml-cpp-0.7.0",
         urls = [
@@ -81,7 +82,7 @@ def trellis_deps():
         sha256 = "1add10f9bd92775b91f326da259f243881e904dd509367d5031d4c782ba82810",
         strip_prefix = "protobuf-3.21.9",
         urls = [
-                "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.tar.gz",
+            "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.tar.gz",
         ],
     )
 

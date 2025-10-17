@@ -9,11 +9,11 @@ cc_library(
     hdrs = ["client.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        "@com_google_protobuf//:protobuf",
+        ":types",
         "//trellis/core:core_event_loop",
         "//trellis/core/discovery",
         "//trellis/network",
-        ":types",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -22,9 +22,21 @@ cc_library(
     hdrs = ["server.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        "@com_google_protobuf//:protobuf",
+        ":types",
         "//trellis/core:core_event_loop",
         "//trellis/core/discovery",
-        ":types",
+        "@com_google_protobuf//:protobuf",
     ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
 )

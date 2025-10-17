@@ -296,3 +296,18 @@ cc_proto_library(
     visibility = ["//visibility:public"],
     deps = [":core_proto_lib"],
 )
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = [
+            "**/test/**",
+            "**/pb/**",
+        ],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)

@@ -2,10 +2,10 @@ cc_test(
     name = "mcap_writer_test",
     srcs = ["mcap_writer_test.cpp"],
     deps = [
-      "//trellis/utils/mcap:writer",
-      "//trellis/core/test:test_fixture",
-      "//trellis/core/test:test_proto",
-      "@com_google_googletest//:gtest_main",
+        "//trellis/core/test:test_fixture",
+        "//trellis/core/test:test_proto",
+        "//trellis/utils/mcap:writer",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -13,10 +13,10 @@ cc_test(
     name = "mcap_reader_test",
     srcs = ["mcap_reader_test.cpp"],
     deps = [
-      "//trellis/utils/mcap:writer",
-      "//trellis/utils/mcap:reader",
-      "//trellis/core/test:test_fixture",
-      "//trellis/core/test:test_proto",
-      "@com_google_googletest//:gtest_main",
+        "//trellis/core/test:test_fixture",
+        "//trellis/core/test:test_proto",
+        "//trellis/utils/mcap:reader",
+        "//trellis/utils/mcap:writer",
+        "@com_google_googletest//:gtest_main",
     ],
 )

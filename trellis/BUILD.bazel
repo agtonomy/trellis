@@ -1,3 +1,5 @@
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+
 cc_library(
     name = "trellis",
     visibility = ["//visibility:public"],
@@ -5,5 +7,94 @@ cc_library(
         "//trellis/containers",
         "//trellis/core",
         "//trellis/network",
+    ],
+)
+
+# Shared library with all symbols retained and available for dynamic linking
+cc_shared_library(
+    name = "trellis_shared",
+    shared_lib_name = "libtrellis.so",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":trellis",
+    ],
+)
+
+# Package shared library
+pkg_tar(
+    name = "libtrellis_lib_tar",
+    srcs = [":trellis_shared"],
+    package_dir = "lib",
+)
+
+# Package trellis headers
+pkg_tar(
+    name = "libtrellis_headers_tar",
+    srcs = [
+        "//trellis/containers:srcs",
+        "//trellis/core:srcs",
+        "//trellis/core/discovery:srcs",
+        "//trellis/core/ipc:srcs",
+        "//trellis/core/ipc/proto:srcs",
+        "//trellis/core/ipc/proto/rpc:srcs",
+        "//trellis/core/ipc/shm:srcs",
+        "//trellis/core/ipc/unix:srcs",
+        "//trellis/core/statistics:srcs",
+        "//trellis/network:srcs",
+        "//trellis/utils/formatting:srcs",
+        "//trellis/utils/mcap:srcs",
+        "//trellis/utils/protobuf:srcs",
+    ],
+    package_dir = "include/trellis",
+    strip_prefix = "/trellis",
+)
+
+# Package asio headers
+pkg_tar(
+    name = "asio_headers_tar",
+    srcs = ["@asio//:asio_headers"],
+    package_dir = "include",
+    strip_prefix = "/external/asio/asio/include",
+)
+
+# Package fmt headers
+pkg_tar(
+    name = "fmt_headers_tar",
+    srcs = ["@fmt//:fmt_headers"],
+    package_dir = "include",
+    strip_prefix = "/external/fmt/include",
+)
+
+# Package yaml-cpp headers
+pkg_tar(
+    name = "yaml_cpp_headers_tar",
+    srcs = ["@yaml-cpp//:yaml_cpp_headers"],
+    package_dir = "include",
+    strip_prefix = "/external/yaml-cpp/include",
+)
+
+# Package generated protobuf headers (includes .pb.h and .pb.cc files)
+pkg_tar(
+    name = "proto_headers_tar",
+    srcs = [
+        "//trellis/core:core_proto",
+        "//trellis/core/discovery/pb:cc_proto",
+    ],
+    package_dir = "include",
+    strip_prefix = "/_virtual_includes",
+)
+
+# Combine into final tarball
+pkg_tar(
+    name = "libtrellis_tarball",
+    extension = "tar.gz",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asio_headers_tar",
+        ":fmt_headers_tar",
+        ":libtrellis_headers_tar",
+        ":libtrellis_lib_tar",
+        ":proto_headers_tar",
+        ":yaml_cpp_headers_tar",
     ],
 )

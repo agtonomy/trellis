@@ -43,3 +43,18 @@ cc_library(
         "//trellis/core/discovery/pb:cc_proto",
     ],
 )
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = [
+            "**/test/**",
+            "**/pb/**",
+        ],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)

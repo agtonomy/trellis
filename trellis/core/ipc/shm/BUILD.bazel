@@ -44,3 +44,15 @@ cc_library(
         "@fmt",
     ],
 )
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)
