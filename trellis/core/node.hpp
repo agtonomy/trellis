@@ -192,13 +192,42 @@ class Node {
    *
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
+   * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
+   * @param watchdog_callback optional watchdog callback to monitor timeouts
+   * @param max_frequency optional maximum frequency to throttle the subscriber callback
+   *
+   * NOTE: Both watchdog_timeout_ms and watchdog_callback must be specified in
+   * order to enable watchdog monitoring.
+   *
    * @return SubscriberRaw
    */
-  SubscriberRaw CreateRawSubscriber(std::string topic, SubscriberRawImpl::RawCallback callback) {
+  SubscriberRaw CreateRawSubscriber(std::string topic, SubscriberRawImpl::RawCallback callback,
+                                    std::optional<unsigned> watchdog_timeout_ms = {},
+                                    TimerImpl::Callback watchdog_callback = {},
+                                    std::optional<double> max_frequency = {}) {
     auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
-    return std::make_shared<SubscriberImpl<google::protobuf::Message>>(
+    const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
+
+    const auto impl = std::make_shared<SubscriberImpl<google::protobuf::Message>>(
         GetEventLoop(), std::string{topic}, SubscriberRawImpl::Callback{}, std::move(callback),
         std::move(update_sim_fn), GetDiscovery(), config_);
+    if (max_frequency.has_value()) {
+      impl->SetMaxFrequencyThrottle(max_frequency.value());
+    }
+    if (do_watchdog) {
+      const auto initial_delay_ms = watchdog_timeout_ms.value();
+      auto watchdog_wrapper =
+          [watchdog_callback = std::move(watchdog_callback),
+           weak_impl = std::weak_ptr<SubscriberImpl<google::protobuf::Message>>(impl)](const time::TimePoint& now) {
+            // Desired behavior is to have the watchdog fire only if messages were previously received
+            auto impl = weak_impl.lock();
+            if (impl && impl->DidReceive()) {
+              watchdog_callback(now);
+            }
+          };
+      impl->SetWatchdogTimer(std::move(CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper))));
+    }
+    return impl;
   }
 
   /**
