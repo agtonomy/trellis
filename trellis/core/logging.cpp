@@ -17,6 +17,7 @@
 
 #include "logging.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
