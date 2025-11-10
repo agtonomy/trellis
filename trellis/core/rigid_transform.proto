@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-option go_package = "go.agtonomy.com/trellis/core";
-
 package trellis.core;
 
 import "trellis/core/quaternion.proto";
