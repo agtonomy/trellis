@@ -21,8 +21,10 @@
 #include <fmt/core.h>
 #include <unistd.h>
 
+#include <functional>
 #include <memory>
 
+#include "trellis/core/constraints.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 #include "trellis/core/logging.hpp"
@@ -31,10 +33,9 @@
 namespace trellis::core {
 
 namespace {
-template <typename MSG_T>
-constexpr bool IsDynamicPublisher() {
-  return std::is_same_v<MSG_T, google::protobuf::Message>;
-}
+
+template <typename SerializableT>
+concept _DynamicPublisher = std::same_as<SerializableT, google::protobuf::Message>;
 
 }  // namespace
 
@@ -45,9 +46,19 @@ constexpr bool IsDynamicPublisher() {
  * This class handles the publication of protobuf messages over shared memory. It integrates
  * with the discovery system to broadcast presence and discover subscribers dynamically.
  *
- * @tparam MSG_T The message type (typically a protobuf message).
+ * This class supports opt-in automatic conversion from native C++ types to protobuf messages. To use this feature,
+ * callers must specify the serializable, native, and converter types as template parameters. A concrete converter is
+ * passed as a constructor argument. Free functions or functors can be used; the type of a free function `Foo` can be
+ * deduced easily via `decltype(Foo)`.
+ *
+ * @tparam SerializableT The serializable message type (typically a protobuf message).
+ * @tparam MsgT The message type (typically a native struct).
+ * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename MSG_T>
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires(_DynamicPublisher<SerializableT> && std::same_as<SerializableT, MsgT> &&
+           std::same_as<ConverterT, std::identity>) ||
+          constraints::_IsConverter<ConverterT, MsgT, SerializableT>
 class PublisherImpl {
  public:
   static constexpr size_t kDefaultNumWriterBuffers = 5u;
@@ -65,9 +76,11 @@ class PublisherImpl {
    * @param topic The name of the topic to publish to.
    * @param discovery Shared pointer to the discovery service instance.
    * @param config The configuration tree to optionally pull values from
+   * @param converter The function to convert from the message to serializable message
    */
   PublisherImpl(trellis::core::EventLoop loop, const std::string& topic,
-                std::shared_ptr<discovery::Discovery> discovery, const trellis::core::Config& config)
+                std::shared_ptr<discovery::Discovery> discovery, const trellis::core::Config& config,
+                ConverterT converter = {})
       : topic_{topic},
         num_write_buffers_{config.GetConfigAttributeForTopic<size_t>(topic, "num_buffers", /* is_publisher = */ true,
                                                                      kDefaultNumWriterBuffers)},
@@ -79,15 +92,19 @@ class PublisherImpl {
             topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
         writer_(loop, ::getpid(), num_write_buffers_, 0),
         discovery_{discovery},
-        discovery_handle_{
-            IsDynamicPublisher<MSG_T>()
-                ? discovery::Discovery::kInvalidRegistrationHandle
-                : discovery_->RegisterPublisher<MSG_T>(topic, writer_.GetMemoryFilePrefix(), writer_.GetBufferCount())},
+        discovery_handle_{[&]() {
+          if constexpr (_DynamicPublisher<SerializableT>)
+            return discovery::Discovery::kInvalidRegistrationHandle;
+          else
+            return discovery_->RegisterPublisher<SerializableT>(topic, writer_.GetMemoryFilePrefix(),
+                                                                writer_.GetBufferCount());
+        }()},
         callback_handle_{discovery->AsyncReceiveSubscribers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceiveSubscriber(event, sample);
             })},
-        frequency_calculator_{statistics_update_interval_ms_} {}
+        frequency_calculator_{statistics_update_interval_ms_},
+        converter_{std::move(converter)} {}
 
   /**
    * @brief Destructor.
@@ -102,25 +119,36 @@ class PublisherImpl {
   /**
    * @brief Send a message immediately using the current time as the timestamp.
    *
+   * Converts from the message type to the serializable message type.
+   *
    * @param msg The message to send.
    * @return The timestamp used.
    */
-  trellis::core::time::TimePoint Send(const MSG_T& msg) { return Send(msg, trellis::core::time::Now()); }
+  trellis::core::time::TimePoint Send(const MsgT& msg) { return Send(msg, trellis::core::time::Now()); }
 
   /**
    * @brief Send a message at a specific timestamp.
    *
-   * Serializes the message to a shared memory buffer and publishes it. If the underlying shared memory buffer needs to
-   * be resized to accommodate the message, it will be done automatically.
+   * First converts from the message type to the serialized message type. Then, serializes the message to a shared
+   * memory buffer and publishes it. If the underlying shared memory buffer needs to be resized to accommodate the
+   * message, it will be done automatically.
    *
    * @param msg The message to send.
    * @param now The timestamp to associate with the message.
    * @return The timestamp used.
    */
-  trellis::core::time::TimePoint Send(const MSG_T& msg, const trellis::core::time::TimePoint& now) {
+  trellis::core::time::TimePoint Send(const MsgT& msg, const trellis::core::time::TimePoint& now) {
     return SendInternal(now, [this, &msg](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
-      bool success = msg.SerializeToArray(write_info.data, write_info.size);
-      size_t bytes_written = success ? msg.ByteSizeLong() : 0;
+      bool success;
+      size_t bytes_written;
+      if constexpr (std::is_same_v<ConverterT, std::identity>) {
+        success = msg.SerializeToArray(write_info.data, write_info.size);
+        bytes_written = success ? msg.ByteSizeLong() : 0;
+      } else {
+        const auto converted = converter_(msg);
+        success = converted.SerializeToArray(write_info.data, write_info.size);
+        bytes_written = success ? converted.ByteSizeLong() : 0;
+      }
       return {success, bytes_written};
     });
   }
@@ -259,13 +287,14 @@ class PublisherImpl {
   size_t buffer_size_{initial_buffer_size_};                   ///< Buffer size for message serialization
   std::mutex mutex_;                                           ///< Mutex for thread safety
   statistics::FrequencyCalculator frequency_calculator_;       ///< Frequency calculation utility
+  ConverterT converter_;                                       ///< Function to convert to serialized message type
 };
 
 // Type aliases for shared ownership and dynamic use
-template <typename T>
-using Publisher = std::shared_ptr<PublisherImpl<T>>;
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+using Publisher = std::shared_ptr<PublisherImpl<SerializableT, MsgT, ConverterT>>;
 
-using DynamicPublisher = std::shared_ptr<PublisherImpl<google::protobuf::Message>>;
+using DynamicPublisher = Publisher<google::protobuf::Message>;
 
 }  // namespace trellis::core
 

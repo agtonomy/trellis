@@ -19,6 +19,7 @@
 
 #include <iostream>
 
+#include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
 
@@ -364,4 +365,48 @@ TEST_F(TrellisFixture, PublisherRapidRecycle) {
   }
 
   ASSERT_EQ(receive_count, kMessagesPerCycle * kRecycleCount);
+}
+
+TEST_F(TrellisFixture, ConvertingPubSub) {
+  static unsigned receive_count{0};
+  static std::mutex count_mutex;
+  static std::condition_variable count_cv;
+  static constexpr unsigned kExpectedMessages = 10U;
+
+  auto pub = node_.CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
+      "test_topic", arbitrary::ToProto);
+  auto sub = node_.CreateSubscriber<test::Test>(
+      "test_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+
+        // Notify waiting thread when we've received all messages
+        if (receive_count == kExpectedMessages) {
+          count_cv.notify_one();
+        }
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < kExpectedMessages; ++i) {
+    pub->Send({.id = i, .msg = std::string(226851, 'x')});
+  }
+
+  // Wait for all messages to be received, with timeout
+  {
+    std::unique_lock<std::mutex> lock(count_mutex);
+    bool received_all =
+        count_cv.wait_for(lock, kProcessEventsWaitTime, []() { return receive_count == kExpectedMessages; });
+    ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
+                              << kExpectedMessages;
+  }
+
+  ASSERT_EQ(receive_count, kExpectedMessages);
 }

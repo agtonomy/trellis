@@ -77,14 +77,20 @@ class Node {
   /**
    * CreatePublisher create a new handle for a publisher
    *
-   * @tparam MSG_T the message type that will be published by this handle
+   * @tparam SerializableT The serializable message type published by this handle (i.e., a protobuf)
+   * @tparam MsgT The message type converted to the serializable message type
+   * @tparam ConverterT The converter type
+   *
    * @param topic the topic name to publish to
+   * @param converter the message converter
    *
    * @return a handle to a publisher instance
    */
-  template <typename MSG_T>
-  Publisher<MSG_T> CreatePublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_);
+  template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  Publisher<SerializableT, MsgT, ConverterT> CreatePublisher(const std::string& topic,
+                                                             ConverterT converter = {}) const {
+    return std::make_shared<PublisherImpl<SerializableT, MsgT, ConverterT>>(GetEventLoop(), topic, GetDiscovery(),
+                                                                            config_, std::move(converter));
   }
 
   /**

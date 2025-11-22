@@ -4,6 +4,7 @@ cc_library(
     deps = [
         ":core_bind",
         ":core_config",
+        ":core_constraints",
         ":core_error_code",
         ":core_event_loop",
         ":core_health",
@@ -213,6 +214,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_constraints",
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc/shm:shm_writer",
@@ -310,4 +312,12 @@ filegroup(
         ],
     ),
     visibility = ["//trellis:__pkg__"],
+)
+
+cc_library(
+    name = "core_constraints",
+    hdrs = [
+        "constraints.hpp",
+    ],
+    visibility = ["//visibility:public"],
 )
