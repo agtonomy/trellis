@@ -15,8 +15,8 @@
  *
  */
 
-#include "command_handlers.hpp"
-#include "constants.hpp"
+#include "trellis/tools/trellis-cli/command_handlers.hpp"
+#include "trellis/tools/trellis-cli/constants.hpp"
 
 using namespace trellis::tools;
 

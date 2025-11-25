@@ -15,10 +15,10 @@
  *
  */
 
-#include "health.hpp"
+#include "trellis/core/health.hpp"
 
-#include "logging.hpp"
 #include "trellis/core/health_status.pb.h"
+#include "trellis/core/logging.hpp"
 
 namespace trellis {
 namespace core {

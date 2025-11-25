@@ -19,6 +19,7 @@
 #define TRELLIS_CONTAINERS_FIFO_HPP_
 
 #include <queue>
+#include <stdexcept>
 
 namespace trellis {
 namespace containers {

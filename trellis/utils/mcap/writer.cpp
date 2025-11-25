@@ -15,7 +15,7 @@
  *
  */
 
-#include "writer.hpp"
+#include "trellis/utils/mcap/writer.hpp"
 
 #include "trellis/utils/protobuf/file_descriptor.hpp"
 

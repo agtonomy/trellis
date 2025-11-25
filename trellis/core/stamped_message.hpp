@@ -19,7 +19,7 @@
 #ifndef TRELLIS_CORE_STAMPED_MESSAGE_HPP_
 #define TRELLIS_CORE_STAMPED_MESSAGE_HPP_
 
-#include "subscriber.hpp"
+#include "trellis/core/subscriber.hpp"
 
 namespace trellis::core {
 

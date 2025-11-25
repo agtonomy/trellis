@@ -1,4 +1,4 @@
-#include "app.hpp"
+#include "trellis/examples/publisher/app.hpp"
 
 using namespace trellis::examples;
 

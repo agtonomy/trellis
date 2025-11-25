@@ -15,7 +15,7 @@
  *
  */
 
-#include "app.hpp"
+#include "trellis/examples/subscriber/app.hpp"
 
 namespace trellis {
 namespace examples {

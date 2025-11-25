@@ -15,7 +15,7 @@
  *
  */
 
-#include "node.hpp"
+#include "trellis/core/node.hpp"
 
 #include <queue>
 #include <thread>

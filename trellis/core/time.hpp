@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CORE_TIME_HPP_
 #define TRELLIS_CORE_TIME_HPP_
 
-#include "time_types.hpp"
+#include "trellis/core/time_types.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {

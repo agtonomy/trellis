@@ -18,11 +18,11 @@
 #ifndef TRELLIS_CORE_INBOX_HPP_
 #define TRELLIS_CORE_INBOX_HPP_
 
-#include "node.hpp"
-#include "stamped_message.hpp"
-#include "subscriber.hpp"
 #include "trellis/containers/dynamic_ring_buffer.hpp"
 #include "trellis/containers/ring_buffer.hpp"
+#include "trellis/core/node.hpp"
+#include "trellis/core/stamped_message.hpp"
+#include "trellis/core/subscriber.hpp"
 
 namespace trellis::core {
 

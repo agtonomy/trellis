@@ -15,7 +15,7 @@
  *
  */
 
-#include "logging.hpp"
+#include "trellis/core/logging.hpp"
 
 #include <algorithm>
 #include <iostream>

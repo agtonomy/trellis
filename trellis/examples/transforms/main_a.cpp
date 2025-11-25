@@ -15,7 +15,7 @@
  *
  */
 
-#include "app.hpp"
+#include "trellis/examples/transforms/app.hpp"
 
 using namespace trellis::examples;
 

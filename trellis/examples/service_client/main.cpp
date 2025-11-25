@@ -1,4 +1,4 @@
-#include "app.hpp"
+#include "trellis/examples/service_client/app.hpp"
 
 using namespace trellis::examples;
 

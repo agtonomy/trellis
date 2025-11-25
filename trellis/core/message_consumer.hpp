@@ -23,10 +23,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "node.hpp"
-#include "stamped_message.hpp"
-#include "subscriber.hpp"
 #include "trellis/containers/multi_fifo.hpp"
+#include "trellis/core/node.hpp"
+#include "trellis/core/stamped_message.hpp"
+#include "trellis/core/subscriber.hpp"
 
 namespace trellis {
 namespace core {

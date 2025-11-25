@@ -18,7 +18,9 @@
 #ifndef TRELLIS_CONTAINERS_MULTI_FIFO_HPP_
 #define TRELLIS_CONTAINERS_MULTI_FIFO_HPP_
 
-#include "fifo.hpp"
+#include <tuple>
+
+#include "trellis/containers/fifo.hpp"
 
 namespace trellis {
 namespace containers {

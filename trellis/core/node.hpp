@@ -24,18 +24,18 @@
 #include <optional>
 #include <string>
 
-#include "bind.hpp"
-#include "config.hpp"
-#include "event_loop.hpp"
-#include "health.hpp"
-#include "logging.hpp"
-#include "publisher.hpp"
-#include "subscriber.hpp"
-#include "time.hpp"
-#include "timer.hpp"
+#include "trellis/core/bind.hpp"
+#include "trellis/core/config.hpp"
+#include "trellis/core/event_loop.hpp"
+#include "trellis/core/health.hpp"
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/ipc/proto/rpc/client.hpp"
 #include "trellis/core/ipc/proto/rpc/server.hpp"
+#include "trellis/core/logging.hpp"
+#include "trellis/core/publisher.hpp"
+#include "trellis/core/subscriber.hpp"
+#include "trellis/core/time.hpp"
+#include "trellis/core/timer.hpp"
 #include "trellis/core/timestamped_message.pb.h"
 
 namespace trellis {

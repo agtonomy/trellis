@@ -15,7 +15,7 @@
  *
  */
 
-#include "timer.hpp"
+#include "trellis/core/timer.hpp"
 
 namespace trellis {
 namespace core {

@@ -22,9 +22,9 @@
 #include <functional>
 #include <string>
 
-#include "publisher.hpp"
 #include "trellis/core/config.hpp"
 #include "trellis/core/health_history.pb.h"
+#include "trellis/core/publisher.hpp"
 #include "trellis/core/timer.hpp"
 
 namespace trellis {

@@ -15,7 +15,7 @@
  *
  */
 
-#include "config.hpp"
+#include "trellis/core/config.hpp"
 
 #include <fstream>
 

@@ -20,9 +20,9 @@
 
 #include <asio.hpp>
 
-#include "error_code.hpp"
-#include "event_loop.hpp"
-#include "time.hpp"
+#include "trellis/core/error_code.hpp"
+#include "trellis/core/event_loop.hpp"
+#include "trellis/core/time.hpp"
 
 namespace trellis {
 namespace core {
