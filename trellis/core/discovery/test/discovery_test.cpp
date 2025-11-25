@@ -53,7 +53,7 @@ static constexpr std::string_view test_config_loopback = R"(
 TEST(DiscoveryTests, IniitalConditions) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  ASSERT_FALSE(discovery.IsLoopbackEnabled());
+  ASSERT_FALSE(discovery.GetConfig().loopback_enabled);
   ev.RunFor(std::chrono::milliseconds(200));
   {
     auto samples = discovery.GetPubSubSamples();
@@ -255,7 +255,7 @@ TEST(DiscoveryTests, MultipleNodesSeparatePorts) {
 TEST(DiscoveryTests, Loopback) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config_loopback))));
-  ASSERT_TRUE(discovery.IsLoopbackEnabled());
+  ASSERT_TRUE(discovery.GetConfig().loopback_enabled);
   ev.RunFor(std::chrono::milliseconds(200));
   {
     auto samples = discovery.GetProcessSamples();

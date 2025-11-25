@@ -115,29 +115,34 @@ static constexpr unsigned kDefaultSndBufSize = 2 * 1024 * 1024;  // 2MB
 
 }  // namespace
 
+Discovery::ConfigData::ConfigData(const trellis::core::Config& config)
+    : send_addr{config.AsIfExists<std::string>("trellis.discovery.send_address", std::string(kDefaultSendAddress))},
+      discovery_port{config.AsIfExists<unsigned>("trellis.discovery.port", kDefaultDiscoveryPort)},
+      management_interval{config.AsIfExists<unsigned>("trellis.discovery.interval", kDefaultDiscoveryInterval)},
+      sample_timeout_ms{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
+      loopback_enabled{config.AsIfExists<bool>("trellis.discovery.loopback_enabled", kDefaultLoopbackEnabled)},
+      rcvbuf_size{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.rcvbuf_size", kDefaultRcvBufSize))},
+      sndbuf_size{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.sndbuf_size", kDefaultSndBufSize))} {}
+
 Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
     : node_name_{std::move(node_name)},
-      send_addr_{config.AsIfExists<std::string>("trellis.discovery.send_address", std::string(kDefaultSendAddress))},
-      discovery_port_{config.AsIfExists<unsigned>("trellis.discovery.port", kDefaultDiscoveryPort)},
-      management_interval_{config.AsIfExists<unsigned>("trellis.discovery.interval", kDefaultDiscoveryInterval)},
-      sample_timeout_ms_{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
-      loopback_enabled_{config.AsIfExists<bool>("trellis.discovery.loopback_enabled", kDefaultLoopbackEnabled)},
-      rcvbuf_size_{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.rcvbuf_size", kDefaultRcvBufSize))},
-      sndbuf_size_{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.sndbuf_size", kDefaultSndBufSize))},
-      udp_receiver_(loopback_enabled_ ? std::nullopt
-                                      : std::make_optional<UdpReceiver>(
-                                            loop,
-                                            static_cast<asio::ip::udp::socket::native_handle_type>(
-                                                CreateNativeUDPSocket(discovery_port_, rcvbuf_size_, sndbuf_size_)),
-                                            [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
-                                              ReceiveData(trellis::core::time::Now(), data, len);
-                                            })),
-      udp_sender_(loopback_enabled_ ? std::nullopt
-                                    : std::make_optional<trellis::network::UDP>(
-                                          loop, CreateNativeUDPSocket(0, rcvbuf_size_, sndbuf_size_))),
+      config_{config},
+      udp_receiver_(config_.loopback_enabled
+                        ? std::nullopt
+                        : std::make_optional<UdpReceiver>(
+                              loop,
+                              static_cast<asio::ip::udp::socket::native_handle_type>(CreateNativeUDPSocket(
+                                  config_.discovery_port, config_.rcvbuf_size, config_.sndbuf_size)),
+                              [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
+                                ReceiveData(trellis::core::time::Now(), data, len);
+                              })),
+      udp_sender_(config_.loopback_enabled
+                      ? std::nullopt
+                      : std::make_optional<trellis::network::UDP>(
+                            loop, CreateNativeUDPSocket(0, config_.rcvbuf_size, config_.sndbuf_size))),
       management_timer_{std::make_shared<TimerImpl>(
-          loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); }, management_interval_,
-          management_interval_)} {
+          loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { Evaluate(now); },
+          config_.management_interval, config_.management_interval)} {
   Register(utils::GetNodeProcessSample(node_name_));
 }
 
@@ -154,7 +159,7 @@ void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, Sam
                                   const SampleCallbackMap& callback_map) {
   std::lock_guard guard(callback_mutex_);
   for (auto it = map.begin(); it != map.end();) {
-    if (now - it->second.stamp > sample_timeout_ms_) {
+    if (now - it->second.stamp > config_.sample_timeout_ms) {
       for (const auto& callback : callback_map) {
         if (callback.second) callback.second(EventType::kNewUnregistration, std::move(it->second.sample));
       }
@@ -167,7 +172,7 @@ void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, Sam
 
 void Discovery::PurgeStalePartialBuffers(const trellis::core::time::TimePoint& now) {
   for (auto it = partial_samples_.begin(); it != partial_samples_.end();) {
-    if (now - it->second.last_update > sample_timeout_ms_) {
+    if (now - it->second.last_update > config_.sample_timeout_ms) {
       it = partial_samples_.erase(it);
     } else {
       ++it;
@@ -389,9 +394,10 @@ void Discovery::BroadcastSample(const Sample& sample) {
     header->total_packets = total_packets;
     header->total_sample_size = static_cast<uint32_t>(total_payload_size);
 
-    if (!loopback_enabled_) {
+    if (!config_.loopback_enabled) {
       size_t bytes_sent = 0;
-      auto error = udp_sender_->SendTo(send_addr_, discovery_port_, send_buf_.data(), packet_size, bytes_sent);
+      auto error =
+          udp_sender_->SendTo(config_.send_addr, config_.discovery_port, send_buf_.data(), packet_size, bytes_sent);
       if (error) {
         trellis::core::Log::Warn("Failed to send discovery packet: {}", error.message());
         break;
@@ -494,6 +500,6 @@ std::string Discovery::GetSampleId(RegistrationHandle handle) {
   return sample.id();
 }
 
-bool Discovery::IsLoopbackEnabled() const { return loopback_enabled_; }
+const Discovery::ConfigData& Discovery::GetConfig() const { return config_; }
 
 }  // namespace trellis::core::discovery

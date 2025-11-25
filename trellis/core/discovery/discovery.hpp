@@ -44,6 +44,26 @@ namespace trellis::core::discovery {
 class Discovery {
  public:
   /**
+   * @brief Configuration structure to hold all settings initialized from Config
+   */
+  struct ConfigData {
+    /**
+     * @brief Construct ConfigData from a trellis::core::Config object
+     *
+     * @param config The configuration tree to pull values from
+     */
+    explicit ConfigData(const trellis::core::Config& config);
+
+    const std::string send_addr;                        ///< The address to send discovery updates to
+    const unsigned discovery_port;                      ///< The port to send and receive discovery updates on
+    const unsigned management_interval;                 ///< The interval in milliseconds for the management timer
+    const std::chrono::milliseconds sample_timeout_ms;  ///< How long to wait before considering samples stale
+    const bool loopback_enabled;                        ///< Whether or not to loopback broadcasts bypassing UDP
+    const int rcvbuf_size;                              ///< Size of the UDP receive buffer
+    const int sndbuf_size;                              ///< Size of the UDP send buffer
+  };
+
+  /**
    * @brief Struct that associates a discovery sample with a timestamp
    */
   struct TimestampedSample {
@@ -264,11 +284,11 @@ class Discovery {
   std::string GetSampleId(RegistrationHandle handle);
 
   /**
-   * @brief Check if loopback mode is enabled
+   * @brief Get the configuration data
    *
-   * @return true if loopback is enabled, false otherwise
+   * @return const reference to the configuration structure
    */
-  bool IsLoopbackEnabled() const;
+  const ConfigData& GetConfig() const;
 
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);
@@ -288,17 +308,11 @@ class Discovery {
   using OptUdpReceiver = std::optional<UdpReceiver>;
   using OptUdpSender = std::optional<trellis::network::UDP>;
 
-  const std::string node_name_;                        ///< This process's logical node name
-  const std::string send_addr_;                        ///< The address to send discovery updates to
-  const unsigned discovery_port_;                      ///< The port to send and receive discovery updates on
-  const unsigned management_interval_;                 ///< The interval in milliseconds for the management timer
-  const std::chrono::milliseconds sample_timeout_ms_;  ///< How long to wait before considering samples stale
-  const bool loopback_enabled_;                        ///< Whether or not to loopback broadcasts bypassing UDP
-  const int rcvbuf_size_;                              ///< Size of the UDP receive buffer
-  const int sndbuf_size_;                              ///< Size of the UDP send buffer
-  OptUdpReceiver udp_receiver_;                        ///< Receives discovery broadcasts
-  OptUdpSender udp_sender_;                            ///< Sends discovery broadcasts
-  trellis::core::Timer management_timer_;              ///< Periodic timer for housekeeping
+  const std::string node_name_;                                          ///< This process's logical node name
+  const ConfigData config_;                                              ///< Configuration data initialized from Config
+  OptUdpReceiver udp_receiver_;                                          ///< Receives discovery broadcasts
+  OptUdpSender udp_sender_;                                              ///< Sends discovery broadcasts
+  trellis::core::Timer management_timer_;                                ///< Periodic timer for housekeeping
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples
   std::mutex registered_samples_mutex_{};               ///< syncrhonize access to registered samples map
   RegistrationHandle next_handle_{0};                   ///< Monotonically increasing handle generator
