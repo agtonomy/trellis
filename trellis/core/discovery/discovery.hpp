@@ -263,6 +263,13 @@ class Discovery {
    */
   std::string GetSampleId(RegistrationHandle handle);
 
+  /**
+   * @brief Check if loopback mode is enabled
+   *
+   * @return true if loopback is enabled, false otherwise
+   */
+  bool IsLoopbackEnabled() const;
+
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);
   void ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample);

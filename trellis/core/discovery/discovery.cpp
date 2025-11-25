@@ -494,4 +494,6 @@ std::string Discovery::GetSampleId(RegistrationHandle handle) {
   return sample.id();
 }
 
+bool Discovery::IsLoopbackEnabled() const { return loopback_enabled_; }
+
 }  // namespace trellis::core::discovery

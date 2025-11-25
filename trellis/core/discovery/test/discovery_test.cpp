@@ -31,11 +31,29 @@ static constexpr std::string_view test_config = R"(
             sample_timeout: 200
             port: 45678
         )";
-}
+
+static constexpr std::string_view test_config_otherport = R"(
+        trellis:
+          discovery:
+            interval: 10
+            sample_timeout: 200
+            port: 45679
+        )";
+
+static constexpr std::string_view test_config_loopback = R"(
+        trellis:
+          discovery:
+            interval: 10
+            sample_timeout: 200
+            loopback_enabled: true
+            port: 45678
+        )";
+}  // namespace
 
 TEST(DiscoveryTests, IniitalConditions) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  ASSERT_FALSE(discovery.IsLoopbackEnabled());
   ev.RunFor(std::chrono::milliseconds(200));
   {
     auto samples = discovery.GetPubSubSamples();
@@ -198,6 +216,52 @@ TEST(DiscoveryTests, RegisterPublisherWithLargeTopicName) {
 
   ASSERT_NE(receive_count, 0);                       // exact count dependent on timing
   ASSERT_EQ(received_topic_name, large_topic_name);  // verify large topic name was received correctly
+}
+
+TEST(DiscoveryTests, MultipleNodes) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  ev.RunFor(std::chrono::milliseconds(200));
+  {  // we should see both process samples
+    auto samples = discovery1.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 2);
+  }
+  {
+    auto samples = discovery2.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 2);
+  }
+}
+
+// test that we only see our own node if discovery is running on a separate port
+TEST(DiscoveryTests, MultipleNodesSeparatePorts) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(std::string(test_config_otherport))));
+  ev.RunFor(std::chrono::milliseconds(200));
+  {
+    auto samples = discovery1.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 1);
+    ASSERT_EQ(samples[0].process().uname(), "test_node1");
+  }
+  {
+    auto samples = discovery2.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 1);
+    ASSERT_EQ(samples[0].process().uname(), "test_node2");
+  }
+}
+
+// test that loopback works
+TEST(DiscoveryTests, Loopback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config_loopback))));
+  ASSERT_TRUE(discovery.IsLoopbackEnabled());
+  ev.RunFor(std::chrono::milliseconds(200));
+  {
+    auto samples = discovery.GetProcessSamples();
+    ASSERT_EQ(samples.size(), 1);
+    ASSERT_EQ(samples[0].process().uname(), "test_node");
+  }
 }
 
 }  // namespace trellis::core::discovery
