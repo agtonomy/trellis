@@ -118,11 +118,12 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
    */
   void ProcessEvent(const unix::SocketEvent::Event& event);
 
-  std::vector<ShmFile> files_;           ///< List of shared memory files being monitored.
-  std::vector<ShmReadWriteLock> locks_;  ///< Associated locks for synchronizing access to shared memory.
-  unix::SocketEvent evt_;                ///< Socket event handler for receiving notifications.
-  Callback receive_callback_;            ///< Callback to invoke when new data is available.
-  ShmFile::SMemFileHeader last_header_;  ///< Most recently processed shared memory header.
+  std::vector<ShmFile> files_;              ///< List of shared memory files being monitored.
+  std::vector<ShmReadWriteLock> locks_;     ///< Associated locks for synchronizing access to shared memory.
+  unix::SocketEvent evt_;                   ///< Socket event handler for receiving notifications.
+  Callback receive_callback_;               ///< Callback to invoke when new data is available.
+  ShmFile::SMemFileHeader last_header_;     ///< Most recently processed shared memory header.
+  size_t num_current_dropped_messages_{0};  ///< Track number of messages dropped in a batch
 };
 
 }  // namespace trellis::core::ipc::shm

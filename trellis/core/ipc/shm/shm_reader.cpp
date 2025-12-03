@@ -21,6 +21,8 @@
 
 #include <regex>
 
+#include "trellis/core/logging.hpp"
+
 namespace trellis::core::ipc::shm {
 
 namespace {
@@ -85,13 +87,22 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
     const auto header = file.FileHeader();
     // Extra sanity check to make sure we don't call back with old data
     if (header.sequence > last_header_.sequence) {
+      if (num_current_dropped_messages_ > 0) {
+        trellis::core::Log::Warn("Dropped {} older messages until we caught up to the current sequence {}",
+                                 num_current_dropped_messages_, header.sequence);
+        num_current_dropped_messages_ = 0;
+      }
       if (receive_callback_) receive_callback_(header, read_info.data, read_info.size);
       last_header_ = header;
     } else {
-      throw std::logic_error(
-          fmt::format("ShmReader::ProcessEvent sequence number of current header {} at buffer index {} is less than or "
-                      "equal to the previous sequence number {}",
-                      header.sequence, buffer_index, last_header_.sequence));
+      // In the case that the writer wrapped around all of the buffers and overwrote a buffer before the reader had a
+      // chance to read it, then we can get into this case here where our last header's sequence number was the
+      // overwritten (newer) message, and then the current sequence number is now from an older message
+
+      // We don't want to call back with the older message so we'll drop it.
+      // We already collect metrics of dropped messages at the subscriber layer, so here we just keep an internal count
+      // for logging.
+      ++num_current_dropped_messages_;
     }
     lock.Unlock();
   } else {
