@@ -211,7 +211,7 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
   const std::string sample_id(buf + kHeaderSize + sizeof(sample_id_string_length), sample_id_string_length);
 
   if (header->total_packets > 1) {
-    // For multi-packet samples, we'll buffer the data until we received all of the packets
+    // For multi-packet samples, we'll buffer the data until we received all the packets
     auto it = partial_samples_.find(sample_id);
     if (it == partial_samples_.end()) {
       if (header->packet_index != 0) {

@@ -58,7 +58,7 @@ class Discovery {
     const unsigned discovery_port;                      ///< The port to send and receive discovery updates on
     const unsigned management_interval;                 ///< The interval in milliseconds for the management timer
     const std::chrono::milliseconds sample_timeout_ms;  ///< How long to wait before considering samples stale
-    const bool loopback_enabled;                        ///< Whether or not to loopback broadcasts bypassing UDP
+    const bool loopback_enabled;                        ///< Whether to loopback broadcasts bypassing UDP
     const int rcvbuf_size;                              ///< Size of the UDP receive buffer
     const int sndbuf_size;                              ///< Size of the UDP send buffer
   };
@@ -151,7 +151,7 @@ class Discovery {
   CallbackHandle AsyncReceiveSubscribers(SampleCallback callback);
 
   /**
-   * @brief Subscribe to discvoery update about services (RPC)
+   * @brief Subscribe to discovery update about services (RPC)
    */
   CallbackHandle AsyncReceiveServices(SampleCallback callback);
 
@@ -215,7 +215,7 @@ class Discovery {
   /**
    * @brief Register a service for a specific RPC service, pulling descriptors from SERVICE_T
    *
-   * @param service_name the fully qualified name of the servce
+   * @param service_name the fully qualified name of the service
    * @param port the TCP port that the service server is listening on
    * @param methods the mapping of available methods to the associated metadata
    * @return Registration handle
@@ -314,7 +314,7 @@ class Discovery {
   OptUdpSender udp_sender_;                                              ///< Sends discovery broadcasts
   trellis::core::Timer management_timer_;                                ///< Periodic timer for housekeeping
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples
-  std::mutex registered_samples_mutex_{};               ///< syncrhonize access to registered samples map
+  std::mutex registered_samples_mutex_{};               ///< synchronize access to registered samples map
   RegistrationHandle next_handle_{0};                   ///< Monotonically increasing handle generator
   CallbackHandle next_callback_handle_{0};              ///< Monotonically increasing callback ID
   std::array<uint8_t, kUdpPayloadSizeMax> send_buf_{};  ///< Reusable send buffer for UDP
