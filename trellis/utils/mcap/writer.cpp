@@ -104,9 +104,9 @@ void FlushWriter(FileWriter& file_writer) {
 core::SubscriberRaw CreateSubscriber(const core::Config& config, core::EventLoop ev,
                                      core::discovery::DiscoveryPtr discovery, const std::string_view topic,
                                      std::shared_ptr<FileWriter> file_writer) {
-  // A bit of a chicken and egg problem, we need the callback to be able to access the subscriber to fill in the schema.
+  // A bit of a chicken-and-egg problem, we need the callback to be able to access the subscriber to fill in the schema.
   // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
-  // Hence we use a shared ptr to update the data after creating the subscriber, and we guard in the
+  // Hence, we use a shared ptr to update the data after creating the subscriber, and we guard in the
   // InitalizeMcapChannel function against data with nullptr subscriber.
   const auto subscriber_data = std::make_shared<SubscriberData>(
       SubscriberData{.topic = std::string{topic}, .file_writer = std::move(file_writer)});

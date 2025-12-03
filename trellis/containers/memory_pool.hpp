@@ -208,7 +208,7 @@ class DynamicMemoryPool {
   /**
    * @brief Find an Unused Slot
    *
-   * @return an unused slot or num_slots_ of there exists no unsed slots
+   * @return an unused slot or num_slots_ if there are no available slots
    */
   size_t FindAnUnusedSlot() {
     // No mutex needed since this is a private method the synchronization will be handled by the caller
