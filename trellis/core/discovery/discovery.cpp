@@ -19,6 +19,8 @@
 
 #include <fmt/core.h>
 
+#include <ranges>
+
 #include "trellis/core/logging.hpp"
 
 namespace trellis::core::discovery {
@@ -446,6 +448,22 @@ void Discovery::StopReceive(Discovery::CallbackHandle handle) {
   if (service_sample_callbacks_.find(handle) != service_sample_callbacks_.end()) {
     service_sample_callbacks_.erase(handle);
   }
+}
+
+std::vector<Sample> Discovery::GetPubSamples() const {
+  std::vector<Sample> samples;
+  for (const auto& timestamped_sample : publisher_samples_ | std::views::values) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  return samples;
+}
+
+std::vector<Sample> Discovery::GetSubSamples() const {
+  std::vector<Sample> samples;
+  for (const auto& timestamped_sample : subscriber_samples_ | std::views::values) {
+    samples.push_back(timestamped_sample.sample);
+  }
+  return samples;
 }
 
 std::vector<Sample> Discovery::GetPubSubSamples() const {

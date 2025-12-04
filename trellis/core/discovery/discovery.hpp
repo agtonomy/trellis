@@ -241,6 +241,24 @@ class Discovery {
   }
 
   /**
+   * @brief Get the current set of known publisher discovery samples
+   *
+   * This method is helpful for introspection tools
+   *
+   * @return A vector of known discovery samples from remote peers
+   */
+  std::vector<Sample> GetPubSamples() const;
+
+  /**
+   * @brief Get the current set of known subscriber discovery samples
+   *
+   * This method is helpful for introspection tools
+   *
+   * @return A vector of known discovery samples from remote peers
+   */
+  std::vector<Sample> GetSubSamples() const;
+
+  /**
    * @brief Get the current set of known pub/sub discovery samples
    *
    * This method is helpful for introspection tools
