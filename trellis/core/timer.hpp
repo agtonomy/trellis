@@ -37,8 +37,8 @@ class TimerImpl {
    *
    * @param loop the event loop used to process the timer
    * @param type the timer type (one shot or periodic)
-   * @param callback the function to callwhen the timer expires
-   * @param interval_ms the timer internval in milliseconds
+   * @param callback the function to call when the timer expires
+   * @param interval_ms the timer interval in milliseconds
    * @param delay_ms an initial delay which can be separate from the timer interval (0 is immediate)
    */
   TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms);
@@ -68,7 +68,7 @@ class TimerImpl {
   std::chrono::milliseconds GetTimeInterval() const;
 
   /**
-   * Fire fire the timer
+   * Fire fires the timer
    *
    * Not needed to be called externally except if simulated time is active
    */
