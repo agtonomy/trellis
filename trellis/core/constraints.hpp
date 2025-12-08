@@ -18,12 +18,18 @@
 #ifndef TRELLIS_CORE_CONSTRAINTS_HPP_
 #define TRELLIS_CORE_CONSTRAINTS_HPP_
 
+#include <google/protobuf/message.h>
+
 #include <concepts>
 
 namespace trellis::core::constraints {
 
 template <typename FuncT, typename SourceT, typename DestT>
 concept _IsConverter = std::convertible_to<std::decay_t<std::invoke_result_t<FuncT, SourceT>>, DestT>;
+
+template <typename SerializableT, typename MsgT, typename ConverterT>
+concept _IsDynamic = std::same_as<SerializableT, google::protobuf::Message> && std::same_as<SerializableT, MsgT> &&
+                     std::same_as<ConverterT, std::identity>;
 
 }  // namespace trellis::core::constraints
 

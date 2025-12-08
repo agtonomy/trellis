@@ -37,6 +37,10 @@ trellis::core::test::Test ToProto(const trellis::core::test::arbitrary::Test& te
   return ret;
 }
 
+trellis::core::test::arbitrary::Test FromProto(const trellis::core::test::Test& test) {
+  return {.id = test.id(), .msg = test.msg()};
+}
+
 }  // namespace arbitrary
 }  // namespace trellis::core::test
 

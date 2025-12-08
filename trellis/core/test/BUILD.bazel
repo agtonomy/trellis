@@ -32,6 +32,7 @@ cc_test(
     name = "core_message_consumer_test",
     srcs = ["message_consumer_test.cpp"],
     deps = [
+        ":test",
         ":test_fixture",
         ":test_proto",
         "//trellis/core:core_message_consumer",

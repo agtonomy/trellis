@@ -32,13 +32,6 @@
 
 namespace trellis::core {
 
-namespace {
-
-template <typename SerializableT>
-concept _DynamicPublisher = std::same_as<SerializableT, google::protobuf::Message>;
-
-}  // namespace
-
 /**
  * @brief Publisher implementation that uses shared memory and service discovery
  *        to broadcast messages to subscribers in other processes.
@@ -56,9 +49,8 @@ concept _DynamicPublisher = std::same_as<SerializableT, google::protobuf::Messag
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires(_DynamicPublisher<SerializableT> && std::same_as<SerializableT, MsgT> &&
-           std::same_as<ConverterT, std::identity>) ||
-          constraints::_IsConverter<ConverterT, MsgT, SerializableT>
+  requires(constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
+           constraints::_IsConverter<ConverterT, MsgT, SerializableT>)
 class PublisherImpl {
  public:
   static constexpr size_t kDefaultNumWriterBuffers = 5u;
@@ -93,7 +85,7 @@ class PublisherImpl {
         writer_(loop, ::getpid(), num_write_buffers_, 0),
         discovery_{discovery},
         discovery_handle_{[&]() {
-          if constexpr (_DynamicPublisher<SerializableT>)
+          if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>)
             return discovery::Discovery::kInvalidRegistrationHandle;
           else
             return discovery_->RegisterPublisher<SerializableT>(topic, writer_.GetMemoryFilePrefix(),

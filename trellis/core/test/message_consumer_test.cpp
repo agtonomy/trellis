@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
 
@@ -33,7 +34,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
   auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<num_burst_messages, test::Test, test::TestTwo> inputs_{
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test>, TypeTuple<test::TestTwo>> inputs_{
       node_,
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
@@ -81,7 +82,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   auto pub = node_.CreatePublisher<test::Test>("consumer_topic_3");
   auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_4");
 
-  trellis::core::MessageConsumer<num_burst_messages, test::Test, test::TestTwo> inputs_{
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test>, TypeTuple<test::TestTwo>> inputs_{
       node_,
       {{"consumer_topic_3", "consumer_topic_4"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
@@ -147,4 +148,52 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
 
   ASSERT_EQ(watchdog_count_1, 2U);
   ASSERT_EQ(watchdog_count_2, 2U);
+}
+
+TEST_F(TrellisFixture, RoundTripConversionWithIndividualCallbacks) {
+  static unsigned receive_count_1{0};
+  static unsigned receive_count_2{0};
+  static constexpr unsigned num_burst_messages = 10U;
+
+  auto pub =
+      node_.CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::ToProto)>>(
+          "consumer_topic_1", test::arbitrary::ToProto);
+  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
+
+  trellis::core::MessageConsumer<
+      num_burst_messages,
+      TypeTuple<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::FromProto)>>,
+      TypeTuple<test::TestTwo>>
+      inputs_{
+          node_,
+          {{"consumer_topic_1", "consumer_topic_2"}},
+          {[this](const std::string& topic, const test::arbitrary::Test& msg, const time::TimePoint&,
+                  const time::TimePoint&) {
+             ASSERT_EQ(topic, "consumer_topic_1");
+             ASSERT_EQ(receive_count_1, msg.id);
+             ++receive_count_1;
+           },
+           [this](const std::string& topic, const test::TestTwo& msg, const time::TimePoint&, const time::TimePoint&) {
+             ASSERT_EQ(topic, "consumer_topic_2");
+             ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
+             ++receive_count_2;
+           }},
+          {test::arbitrary::FromProto, std::identity()},
+      };
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  // Publish messages on both topics
+  for (unsigned i = 0; i < num_burst_messages; ++i) {
+    pub->Send({.id = i, .msg = "designated initialization rules!"});
+    test::TestTwo test_msg2;
+    test_msg2.set_foo(i * 2.0);
+    pub2->Send(test_msg2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  WaitForSendReceive();
+
+  ASSERT_EQ(receive_count_1, num_burst_messages);
+  ASSERT_EQ(receive_count_2, num_burst_messages);
 }

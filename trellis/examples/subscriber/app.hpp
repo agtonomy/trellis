@@ -35,7 +35,7 @@ class App {
                   const trellis::core::time::TimePoint& now, const trellis::core::time::TimePoint& msgtime);
 
   trellis::core::Node& node_;
-  trellis::core::MessageConsumer<1, trellis::examples::proto::HelloWorld> inputs_;
+  trellis::core::MessageConsumer<1, trellis::core::TypeTuple<trellis::examples::proto::HelloWorld>> inputs_;
   unsigned receive_count_{0};
   bool first_receive_{false};
   unsigned initial_offset_{0};  // offset between receive count and message ID

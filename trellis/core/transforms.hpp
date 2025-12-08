@@ -124,7 +124,7 @@ class Transforms {
   Node& node_;
   containers::Transforms container_;
   Publisher<RigidTransform> publisher_;
-  MessageConsumer<kQueueDepth, RigidTransform> inputs_;
+  MessageConsumer<kQueueDepth, TypeTuple<RigidTransform>> inputs_;
 };
 
 }  // namespace core
