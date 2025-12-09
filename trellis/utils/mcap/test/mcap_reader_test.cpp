@@ -31,8 +31,8 @@ using namespace trellis::core::test;
 TEST_F(TrellisFixture, McapReaderBasic) {
   static constexpr unsigned kNumMessagesPerChannel = 100U;
 
-  auto pub1 = node_.CreatePublisher<test::Test>("mcap_reader_test_topic");
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("mcap_reader_test_topic2");
+  auto pub1 = GetNode().CreatePublisher<test::Test>("mcap_reader_test_topic");
+  auto pub2 = GetNode().CreatePublisher<test::TestTwo>("mcap_reader_test_topic2");
 
   StartRunnerThread();
 
@@ -40,7 +40,7 @@ TEST_F(TrellisFixture, McapReaderBasic) {
 
   // Write
   {
-    trellis::utils::mcap::Writer writer(node_, {"mcap_reader_test_topic", "mcap_reader_test_topic2"}, outfile);
+    trellis::utils::mcap::Writer writer(GetNode(), {"mcap_reader_test_topic", "mcap_reader_test_topic2"}, outfile);
     WaitForDiscovery();
     for (unsigned i = 0; i < kNumMessagesPerChannel; ++i) {
       test::Test test_msg;

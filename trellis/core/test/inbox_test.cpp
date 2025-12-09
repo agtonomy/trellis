@@ -117,10 +117,10 @@ static_assert(IsReceiveType<Loopback<int>>, "Test IsReceiveType concept, satisfi
 TEST_F(TrellisFixture, InboxNoMessages) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -132,10 +132,10 @@ TEST_F(TrellisFixture, InboxNoMessages) {
 TEST_F(TrellisFixture, InboxMessagesReceived) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -152,10 +152,10 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
 TEST_F(TrellisFixture, InboxMessageTimeout) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -172,10 +172,10 @@ TEST_F(TrellisFixture, InboxMessageTimeout) {
 TEST_F(TrellisFixture, InboxMissedMessages) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
-  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -197,10 +197,10 @@ TEST_F(TrellisFixture, InboxMissedMessages) {
 TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<test::Test>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<test::Test>("topic_2");
 
-  const auto inbox = Inbox<Latest<test::Test>, Latest<test::Test>>{node_, {"topic_1", "topic_2"}, {100ms, 100ms}};
+  const auto inbox = Inbox<Latest<test::Test>, Latest<test::Test>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -217,9 +217,9 @@ TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
 TEST_F(TrellisFixture, InboxMovable) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  auto inbox = Inbox<Latest<test::Test>>{node_, {"topic"}, {100ms}};
+  auto inbox = Inbox<Latest<test::Test>>{GetNode(), {"topic"}, {100ms}};
   const auto inbox2 = std::move(inbox);
 
   WaitForDiscovery();
@@ -235,9 +235,9 @@ TEST_F(TrellisFixture, InboxMovable) {
 TEST_F(TrellisFixture, InboxNLatestEmpty) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -249,9 +249,9 @@ TEST_F(TrellisFixture, InboxNLatestEmpty) {
 TEST_F(TrellisFixture, InboxNLatestNotFull) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -266,9 +266,9 @@ TEST_F(TrellisFixture, InboxNLatestNotFull) {
 TEST_F(TrellisFixture, InboxNLatestFull) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -288,9 +288,9 @@ TEST_F(TrellisFixture, InboxNLatestFull) {
 TEST_F(TrellisFixture, InboxNLatestOverflow) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -312,9 +312,9 @@ TEST_F(TrellisFixture, InboxNLatestOverflow) {
 TEST_F(TrellisFixture, InboxNLatestTimeout) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<NLatest<test::Test, 3>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -333,9 +333,9 @@ TEST_F(TrellisFixture, InboxNLatestTimeout) {
 TEST_F(TrellisFixture, InboxAllLatestEmpty) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<AllLatest<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -347,9 +347,9 @@ TEST_F(TrellisFixture, InboxAllLatestEmpty) {
 TEST_F(TrellisFixture, InboxAllLatestOne) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<AllLatest<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -364,9 +364,9 @@ TEST_F(TrellisFixture, InboxAllLatestOne) {
 TEST_F(TrellisFixture, InboxAllLatestMany) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<AllLatest<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -386,9 +386,9 @@ TEST_F(TrellisFixture, InboxAllLatestMany) {
 TEST_F(TrellisFixture, InboxAllLatestTimeout) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
 
-  const auto inbox = Inbox<AllLatest<test::Test>>{node_, {"topic"}, {100ms}};
+  const auto inbox = Inbox<AllLatest<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -408,9 +408,9 @@ TEST_F(TrellisFixture, InboxSimpleLoopback) {
   StartRunnerThread();
 
   auto recv_cnt = int{};
-  const auto sub = node_.CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
+  const auto sub = GetNode().CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
 
-  auto inbox = Inbox<Loopback<test::Test>>{node_, {"topic"}, {100ms}};
+  auto inbox = Inbox<Loopback<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -426,9 +426,9 @@ TEST_F(TrellisFixture, InboxSimpleLoopbackTimeout) {
   StartRunnerThread();
 
   auto recv_cnt = int{};
-  const auto sub = node_.CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
+  const auto sub = GetNode().CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
 
-  auto inbox = Inbox<Loopback<test::Test>>{node_, {"topic"}, {100ms}};
+  auto inbox = Inbox<Loopback<test::Test>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -456,9 +456,9 @@ TEST_F(TrellisFixture, InboxSerializingLoopback) {
 
   auto latest = std::string{};
   const auto sub =
-      node_.CreateSubscriber<test::Test>("topic", [&latest](auto, auto, auto msg) { latest = msg->msg(); });
+      GetNode().CreateSubscriber<test::Test>("topic", [&latest](auto, auto, auto msg) { latest = msg->msg(); });
 
-  auto inbox = Inbox<Loopback<std::string, test::Test, Serializer>>{node_, {"topic"}, {100ms}};
+  auto inbox = Inbox<Loopback<std::string, test::Test, Serializer>>{GetNode(), {"topic"}, {100ms}};
 
   WaitForDiscovery();
 
@@ -473,12 +473,12 @@ TEST_F(TrellisFixture, InboxSerializingLoopback) {
 TEST_F(TrellisFixture, GetMessagesCopy) {
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("topic_1");
-  auto pub2 = node_.CreatePublisher<TestTwo>("topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
   auto inbox = Inbox<Latest<test::Test>, NLatest<TestTwo, 5>, AllLatest<test::Test>,
                      Loopback<std::string, test::Test, Serializer>>{
-      node_, {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
+      GetNode(), {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -495,7 +495,7 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 
   auto promise = std::promise<decltype(inbox)::OwningMessages>{};
   auto future = promise.get_future();
-  asio::post(*node_.GetEventLoop(), [&inbox, promise = std::move(promise)]() mutable {
+  asio::post(*GetNode().GetEventLoop(), [&inbox, promise = std::move(promise)]() mutable {
     return promise.set_value(inbox.GetMessagesCopy(kT0));
   });
   const auto result = future.get();

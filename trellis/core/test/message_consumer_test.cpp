@@ -31,11 +31,11 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  auto pub = node_.CreatePublisher<test::Test>("consumer_topic_1");
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
+  auto pub = GetNode().CreatePublisher<test::Test>("consumer_topic_1");
+  auto pub2 = GetNode().CreatePublisher<test::TestTwo>("consumer_topic_2");
 
   trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test>, TypeTuple<test::TestTwo>> inputs_{
-      node_,
+      GetNode(),
       {{"consumer_topic_1", "consumer_topic_2"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
          ASSERT_EQ(topic, "consumer_topic_1");
@@ -79,11 +79,11 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
 
   StartRunnerThread();
 
-  auto pub = node_.CreatePublisher<test::Test>("consumer_topic_3");
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_4");
+  auto pub = GetNode().CreatePublisher<test::Test>("consumer_topic_3");
+  auto pub2 = GetNode().CreatePublisher<test::TestTwo>("consumer_topic_4");
 
   trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test>, TypeTuple<test::TestTwo>> inputs_{
-      node_,
+      GetNode(),
       {{"consumer_topic_3", "consumer_topic_4"}},
       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
          ASSERT_EQ(topic, "consumer_topic_3");
@@ -156,16 +156,16 @@ TEST_F(TrellisFixture, RoundTripConversionWithIndividualCallbacks) {
   static constexpr unsigned num_burst_messages = 10U;
 
   auto pub =
-      node_.CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::ToProto)>>(
+      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::ToProto)>>(
           "consumer_topic_1", test::arbitrary::ToProto);
-  auto pub2 = node_.CreatePublisher<test::TestTwo>("consumer_topic_2");
+  auto pub2 = GetNode().CreatePublisher<test::TestTwo>("consumer_topic_2");
 
   trellis::core::MessageConsumer<
       num_burst_messages,
       TypeTuple<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::FromProto)>>,
       TypeTuple<test::TestTwo>>
       inputs_{
-          node_,
+          GetNode(),
           {{"consumer_topic_1", "consumer_topic_2"}},
           {[this](const std::string& topic, const test::arbitrary::Test& msg, const time::TimePoint&,
                   const time::TimePoint&) {

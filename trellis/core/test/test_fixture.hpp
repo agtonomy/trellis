@@ -54,24 +54,39 @@ class TrellisFixture : public ::testing::Test {
  protected:
   // Arbitrary delay that seems to be sufficient.
   static constexpr auto kSendReceiveTime = std::chrono::milliseconds{100};
-  TrellisFixture()
-      : node_{"test_fixture", trellis::core::Config(YAML::Load(
-                                  CreateConfig(kNumPubBuffers, kTestDiscoveryInterval, kTestDiscoveryTimeout)))} {}
 
-  ~TrellisFixture() {
+  TrellisFixture() = default;
+
+  void SetUp() override {
+    // Create a fresh node for each test to avoid discovery state pollution
+    node_ = std::make_unique<trellis::core::Node>(
+        "test_fixture",
+        trellis::core::Config(YAML::Load(CreateConfig(kNumPubBuffers, kTestDiscoveryInterval, kTestDiscoveryTimeout))));
+  }
+
+  void TearDown() override {
     time::DisableSimulatedClock();
     Stop();
     if (runner_thread_.joinable()) {
       runner_thread_.join();
     }
+    // Destroy the node to clean up all discovery state
+    node_.reset();
   }
+
   static void WaitForDiscovery() { std::this_thread::sleep_for(std::chrono::milliseconds(kTestDiscoveryTimeout)); }
   static void WaitForSendReceive() { std::this_thread::sleep_for(kSendReceiveTime); }
-  void Stop() { node_.Stop(); }
+  void Stop() { node_->Stop(); }
   void StartRunnerThread() {
-    runner_thread_ = std::thread([this]() { node_.Run(); });
+    runner_thread_ = std::thread([this]() { node_->Run(); });
   }
-  trellis::core::Node node_;
+
+  /// @brief Get a reference to the node for use in tests
+  /// Note, should be called after SetUp() (in test body)
+  trellis::core::Node& GetNode() { return *node_; }
+
+ private:
+  std::unique_ptr<trellis::core::Node> node_;
   std::thread runner_thread_;
 };
 

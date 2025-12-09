@@ -28,7 +28,7 @@ TEST_F(TrellisFixture, OneShotTimerFires) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+  auto timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   ASSERT_EQ(timer->Expired(), true);
@@ -39,7 +39,7 @@ TEST_F(TrellisFixture, OneShotTimerCancelsWithoutFiring) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+  auto timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   timer->Stop();  // cancel before timer is set to expire
@@ -52,7 +52,7 @@ TEST_F(TrellisFixture, OneShotTimerReset) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateOneShotTimer(200, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+  auto timer = GetNode().CreateOneShotTimer(200, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
 
   // Now it should still fire once after we wait
@@ -78,7 +78,7 @@ TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+  auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   // There may be a lot of jitter depending on system load, so we're not concerned with a precise count
@@ -89,7 +89,7 @@ TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
   static unsigned fire_count{0};
   StartRunnerThread();
 
-  auto timer = node_.CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+  auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
   timer->Stop();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -103,7 +103,7 @@ TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
   StartRunnerThread();
 
   std::shared_ptr<trellis::core::TimerImpl> timer =
-      node_.CreateTimer(10, [&timer](const trellis::core::time::TimePoint&) {
+      GetNode().CreateTimer(10, [&timer](const trellis::core::time::TimePoint&) {
         if (++fire_count == 5) {
           timer->Stop();
         }

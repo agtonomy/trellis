@@ -54,9 +54,9 @@ using namespace trellis::core::test;
 TEST_F(TrellisFixture, BasicSingleServiceCall) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   // Wait for some time so the client can find the server
   WaitForDiscovery();
@@ -87,9 +87,9 @@ TEST_F(TrellisFixture, BasicSingleServiceCall) {
 TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   WaitForDiscovery();
 
@@ -121,11 +121,11 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
 TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
 
   {
     auto handler = std::make_shared<TestServiceHandler>();
-    auto server1 = node_.CreateServiceServer<TestServiceHandler>(handler);
+    auto server1 = GetNode().CreateServiceServer<TestServiceHandler>(handler);
     WaitForDiscovery();
 
     test::Test req1;
@@ -148,7 +148,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
 
   // Old server destructs here; now create a new one
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server2 = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server2 = GetNode().CreateServiceServer<TestServiceHandler>(handler);
   WaitForDiscovery();
   std::this_thread::sleep_for(kServiceCallWaitTime);
 
@@ -174,10 +174,10 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
   StartRunnerThread();
 
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   {
-    auto client1 = node_.CreateServiceClient<trellis::core::test::TestService>();
+    auto client1 = GetNode().CreateServiceClient<trellis::core::test::TestService>();
     WaitForDiscovery();
 
     test::Test req1;
@@ -199,7 +199,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
   }
 
   // Old client destructs here; now create a new one
-  auto client2 = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client2 = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   WaitForDiscovery();
 
   test::Test req2;
@@ -223,9 +223,9 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
 TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   WaitForDiscovery();
 
@@ -253,9 +253,9 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
 TEST_F(TrellisFixture, BackToBackCallSucceeds) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   // Wait for some time so the client can find the server
   WaitForDiscovery();
@@ -298,9 +298,9 @@ TEST_F(TrellisFixture, BackToBackCallSucceeds) {
 TEST_F(TrellisFixture, LargeRequestResponse) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   // Wait for some time so the client can find the server
   WaitForDiscovery();
@@ -332,9 +332,9 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
 TEST_F(TrellisFixture, LongRunningCallTimeout) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   // Wait for some time so the client can find the server
   WaitForDiscovery();
@@ -374,9 +374,9 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
 TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
   StartRunnerThread();
 
-  auto client = node_.CreateServiceClient<trellis::core::test::TestService>();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
   auto handler = std::make_shared<TestServiceHandler>();
-  auto server = node_.CreateServiceServer<TestServiceHandler>(handler);
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
 
   WaitForDiscovery();
 

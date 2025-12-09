@@ -244,11 +244,13 @@ class PublisherImpl {
     }
     if (event == discovery::Discovery::EventType::kNewRegistration) {
       // In the case of dynamic publishers, we have to learn our metadata from subscribers,
-      // so we delay registration until we receive this data
-      if (discovery_handle_ == discovery::Discovery::kInvalidRegistrationHandle) {
-        discovery_handle_ =
-            discovery_->RegisterDynamicPublisher(topic_, writer_.GetMemoryFilePrefix(), writer_.GetBufferCount(),
-                                                 sample.topic().tdatatype().desc(), sample.topic().tdatatype().name());
+      // so we delay registration until we receive this data.
+      if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {
+        if (discovery_handle_ == discovery::Discovery::kInvalidRegistrationHandle) {
+          discovery_handle_ = discovery_->RegisterDynamicPublisher(
+              topic_, writer_.GetMemoryFilePrefix(), writer_.GetBufferCount(), sample.topic().tdatatype().desc(),
+              sample.topic().tdatatype().name());
+        }
       }
       writer_.AddReader(sample.id());
     } else if (event == discovery::Discovery::EventType::kNewUnregistration) {

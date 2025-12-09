@@ -328,6 +328,7 @@ class Discovery {
 
   const std::string node_name_;                                          ///< This process's logical node name
   const ConfigData config_;                                              ///< Configuration data initialized from Config
+  trellis::core::EventLoop loop_;                                        ///< Event loop for deferred operations
   OptUdpReceiver udp_receiver_;                                          ///< Receives discovery broadcasts
   OptUdpSender udp_sender_;                                              ///< Sends discovery broadcasts
   trellis::core::Timer management_timer_;                                ///< Periodic timer for housekeeping

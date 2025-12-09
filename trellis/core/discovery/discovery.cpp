@@ -129,6 +129,7 @@ Discovery::ConfigData::ConfigData(const trellis::core::Config& config)
 Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
     : node_name_{std::move(node_name)},
       config_{config},
+      loop_{loop},
       udp_receiver_(config_.loopback_enabled
                         ? std::nullopt
                         : std::make_optional<UdpReceiver>(
@@ -405,7 +406,17 @@ void Discovery::BroadcastSample(const Sample& sample) {
         break;
       }
     } else {
-      ReceiveData(trellis::core::time::Now(), send_buf_.data(), packet_size);
+      // IMPORTANT: We must defer ReceiveData via asio::post to prevent deadlocks in loopback scenarios in cases where
+      // the ReceiveData callback results in a call to register a new sample on the same callback. BroadcastSamples()
+      // holds registered_samples_mutex_, and ReceiveData triggers callbacks that may call Register() which also needs
+      // registered_samples_mutex_. By deferring to the next event loop iteration, we break this synchronous chain. We
+      // copy the buffer data since send_buf_ is reused across packets.
+
+      // Loopback mode is only for testing or replay, so the extra copy is acceptable.
+      auto buffer_copy = std::make_shared<std::vector<uint8_t>>(send_buf_.begin(), send_buf_.begin() + packet_size);
+      asio::post(*loop_, [this, buffer_copy]() {
+        ReceiveData(trellis::core::time::Now(), buffer_copy->data(), buffer_copy->size());
+      });
     }
 
     payload_offset += chunk_size;

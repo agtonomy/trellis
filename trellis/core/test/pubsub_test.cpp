@@ -30,15 +30,16 @@ static constexpr std::chrono::milliseconds kProcessEventsWaitTime(500U);
 static constexpr unsigned kWatchdogTimeoutMs{1000u};
 
 TEST_F(TrellisFixture, PubSubBurst) {
-  static unsigned receive_count{0};
-  static std::mutex count_mutex;
-  static std::condition_variable count_cv;
-  static constexpr unsigned kExpectedMessages = 10U;
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = node_.CreatePublisher<test::Test>("test_topic");
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
@@ -51,7 +52,7 @@ TEST_F(TrellisFixture, PubSubBurst) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -66,8 +67,8 @@ TEST_F(TrellisFixture, PubSubBurst) {
   // Wait for all messages to be received, with timeout
   {
     std::unique_lock<std::mutex> lock(count_mutex);
-    bool received_all =
-        count_cv.wait_for(lock, kProcessEventsWaitTime, []() { return receive_count == kExpectedMessages; });
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
     ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
                               << kExpectedMessages;
   }
@@ -76,15 +77,16 @@ TEST_F(TrellisFixture, PubSubBurst) {
 }
 
 TEST_F(TrellisFixture, LargePublisher) {
-  static unsigned receive_count{0};
-  static std::mutex count_mutex;
-  static std::condition_variable count_cv;
-  static constexpr unsigned kExpectedMessages = 10U;
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = node_.CreatePublisher<test::Test>("test_topic");
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
@@ -97,7 +99,7 @@ TEST_F(TrellisFixture, LargePublisher) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -112,8 +114,8 @@ TEST_F(TrellisFixture, LargePublisher) {
   // Wait for all messages to be received, with timeout
   {
     std::unique_lock<std::mutex> lock(count_mutex);
-    bool received_all =
-        count_cv.wait_for(lock, kProcessEventsWaitTime, []() { return receive_count == kExpectedMessages; });
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
     ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
                               << kExpectedMessages;
   }
@@ -122,15 +124,16 @@ TEST_F(TrellisFixture, LargePublisher) {
 }
 
 TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
-  static unsigned receive_count{0};
-  static std::mutex count_mutex;
-  static std::condition_variable count_cv;
-  static constexpr unsigned kExpectedMessages = 10U;
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = node_.CreatePublisher<test::Test>("test_topic");
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
@@ -143,7 +146,7 @@ TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -158,8 +161,8 @@ TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
   // Wait for all messages to be received, with timeout
   {
     std::unique_lock<std::mutex> lock(count_mutex);
-    bool received_all =
-        count_cv.wait_for(lock, kProcessEventsWaitTime, []() { return receive_count == kExpectedMessages; });
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
     ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
                               << kExpectedMessages;
   }
@@ -168,21 +171,22 @@ TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
 }
 
 TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
-  static unsigned receive_count{0};
-  static unsigned watchdog_count{0};
+  unsigned receive_count{0};
+  unsigned watchdog_count{0};
 
-  auto pub = node_.CreatePublisher<test::Test>("test_watchdog_topic");
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_watchdog_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_watchdog_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count](const time::TimePoint&, const time::TimePoint&,
+                       trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
       },
-      kWatchdogTimeoutMs, [](const trellis::core::time::TimePoint&) { ++watchdog_count; });
+      kWatchdogTimeoutMs, [&watchdog_count](const trellis::core::time::TimePoint&) { ++watchdog_count; });
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial values
   ASSERT_EQ(receive_count, 0U);
@@ -229,13 +233,14 @@ TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
 }
 
 TEST_F(TrellisFixture, SubscriberThrottle) {
-  static unsigned receive_count{0};
-  static unsigned sent_count{0};
+  unsigned receive_count{0};
+  unsigned sent_count{0};
 
-  auto pub = node_.CreatePublisher<test::Test>("test_throttle_topic");
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_throttle_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_throttle_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count](const time::TimePoint&, const time::TimePoint&,
+                       trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         ASSERT_TRUE(msg->id() >= receive_count);
         ++receive_count;
       },
@@ -243,7 +248,7 @@ TEST_F(TrellisFixture, SubscriberThrottle) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   for (unsigned i = 0; i < 20U; ++i) {
     test::Test test_msg;
@@ -270,7 +275,7 @@ TEST_F(TrellisFixture, SendReturnsTimestamp) {
   const trellis::core::time::TimePoint time{trellis::core::time::TimePoint(std::chrono::milliseconds(1337))};
   trellis::core::time::SetSimulatedTime(time);
 
-  auto pub = node_.CreatePublisher<test::Test>("test_send_timestamp_topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("test_send_timestamp_topic");
 
   test::Test test_msg;
   test_msg.set_msg("hello world");
@@ -280,12 +285,12 @@ TEST_F(TrellisFixture, SendReturnsTimestamp) {
 }
 
 TEST_F(TrellisFixture, RawSubscriberBasicTest) {
-  static unsigned receive_count{0};
+  unsigned receive_count{0};
 
-  auto pub = node_.CreatePublisher<test::Test>("test_raw_sub_topic");
-  auto sub = node_.CreateRawSubscriber(
+  auto pub = GetNode().CreatePublisher<test::Test>("test_raw_sub_topic");
+  auto sub = GetNode().CreateRawSubscriber(
       "test_raw_sub_topic",
-      [](const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t* data, size_t len) {
+      [&receive_count](const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t* data, size_t len) {
         test::Test proto;
         if (proto.ParseFromArray(data, len)) {
           ASSERT_EQ(proto.id(), receive_count);
@@ -295,7 +300,7 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -312,17 +317,17 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
 }
 
 TEST_F(TrellisFixture, SubscriberRapidRecycle) {
-  static constexpr size_t kRecycleCount{10};
-  static constexpr size_t kMessagesPerCycle{10};
-  static unsigned receive_count{0};
+  constexpr size_t kRecycleCount{10};
+  constexpr size_t kMessagesPerCycle{10};
+  unsigned receive_count{0};
 
-  auto pub = node_.CreatePublisher<test::Test>("test_topic");
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
   StartRunnerThread();
 
   for (size_t i = 0; i < kRecycleCount; ++i) {
-    auto sub = node_.CreateSubscriber<test::Test>(
-        "test_topic",
-        [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+    auto sub = GetNode().CreateSubscriber<test::Test>(
+        "test_topic", [&receive_count](const time::TimePoint&, const time::TimePoint&,
+                                       trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
           ASSERT_EQ(msg->id(), receive_count);
           ++receive_count;
         });
@@ -340,20 +345,20 @@ TEST_F(TrellisFixture, SubscriberRapidRecycle) {
 }
 
 TEST_F(TrellisFixture, PublisherRapidRecycle) {
-  static constexpr size_t kRecycleCount{10};
-  static constexpr size_t kMessagesPerCycle{10};
-  static unsigned receive_count{0};
+  constexpr size_t kRecycleCount{10};
+  constexpr size_t kMessagesPerCycle{10};
+  unsigned receive_count{0};
 
-  auto sub = node_.CreateSubscriber<test::Test>(
-      "test_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+  auto sub = GetNode().CreateSubscriber<test::Test>(
+      "test_topic", [&receive_count](const time::TimePoint&, const time::TimePoint&,
+                                     trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
       });
   StartRunnerThread();
 
   for (size_t i = 0; i < kRecycleCount; ++i) {
-    auto pub = node_.CreatePublisher<test::Test>("test_topic");
+    auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
     WaitForDiscovery();
     for (unsigned j = 0; j < kMessagesPerCycle; ++j) {
       test::Test test_msg;
@@ -368,16 +373,17 @@ TEST_F(TrellisFixture, PublisherRapidRecycle) {
 }
 
 TEST_F(TrellisFixture, ConvertingPubSub) {
-  static unsigned receive_count{0};
-  static std::mutex count_mutex;
-  static std::condition_variable count_cv;
-  static constexpr unsigned kExpectedMessages = 10U;
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = node_.CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
       "test_topic", arbitrary::ToProto);
-  auto sub = node_.CreateSubscriber<test::Test>(
+  auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_topic",
-      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
@@ -390,7 +396,7 @@ TEST_F(TrellisFixture, ConvertingPubSub) {
 
   StartRunnerThread();
   WaitForDiscovery();
-  ASSERT_FALSE(node_.GetEventLoop().Stopped());
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
   // Sanity check initial value
   ASSERT_EQ(receive_count, 0U);
@@ -402,8 +408,141 @@ TEST_F(TrellisFixture, ConvertingPubSub) {
   // Wait for all messages to be received, with timeout
   {
     std::unique_lock<std::mutex> lock(count_mutex);
-    bool received_all =
-        count_cv.wait_for(lock, kProcessEventsWaitTime, []() { return receive_count == kExpectedMessages; });
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
+    ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
+                              << kExpectedMessages;
+  }
+
+  ASSERT_EQ(receive_count, kExpectedMessages);
+}
+
+TEST_F(TrellisFixture, DynamicSubscriber) {
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
+
+  // Publisher with compile-time known message type
+  auto pub = GetNode().CreatePublisher<test::Test>("test_dynamic_topic");
+
+  // Dynamic subscriber that doesn't know the message type at compile time
+  auto sub = GetNode().CreateDynamicSubscriber(
+      "test_dynamic_topic", [&receive_count, &count_mutex, &count_cv](
+                                const time::TimePoint&, const time::TimePoint&,
+                                trellis::core::SubscriberImpl<google::protobuf::Message>::PointerType msg) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+
+        // Use the protobuf reflection API to access fields dynamically
+        ASSERT_NE(msg, nullptr);
+        const google::protobuf::Descriptor* descriptor = msg->GetDescriptor();
+        ASSERT_NE(descriptor, nullptr);
+
+        // Verify this is the expected message type
+        ASSERT_EQ(descriptor->full_name(), "trellis.core.test.Test");
+
+        // Access the 'id' field using reflection
+        const google::protobuf::Reflection* reflection = msg->GetReflection();
+        const google::protobuf::FieldDescriptor* id_field = descriptor->FindFieldByName("id");
+        ASSERT_NE(id_field, nullptr);
+
+        unsigned id = reflection->GetUInt32(*msg, id_field);
+        ASSERT_EQ(id, receive_count);
+        ++receive_count;
+
+        // Notify waiting thread when we've received all messages
+        if (receive_count == kExpectedMessages) {
+          count_cv.notify_one();
+        }
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < kExpectedMessages; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello dynamic world");
+    pub->Send(test_msg);
+  }
+
+  // Wait for all messages to be received, with timeout
+  {
+    std::unique_lock<std::mutex> lock(count_mutex);
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
+    ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
+                              << kExpectedMessages;
+  }
+
+  ASSERT_EQ(receive_count, kExpectedMessages);
+}
+
+TEST_F(TrellisFixture, DynamicPublisher) {
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+  constexpr unsigned kExpectedMessages = 10U;
+
+  // Create subscriber FIRST - the dynamic publisher will learn the message type from it
+  auto sub = GetNode().CreateSubscriber<test::Test>(
+      "test_dynamic_pub_topic",
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+
+        // Notify waiting thread when we've received all messages
+        if (receive_count == kExpectedMessages) {
+          count_cv.notify_one();
+        }
+      });
+
+  // Create dynamic publisher - it will receive subscriber metadata via discovery callbacks
+  auto pub = GetNode().CreateDynamicPublisher("test_dynamic_pub_topic");
+
+  // Start event loop so discovery callbacks can fire
+  StartRunnerThread();
+
+  // Wait for discovery - this allows the dynamic publisher to receive the subscriber's
+  // metadata through its ReceiveSubscriber callback
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  // The dynamic publisher/subscriber handshake requires two discovery cycles:
+  // 1. Publisher receives subscriber info -> registers itself with discovery
+  // 2. Subscriber receives publisher info -> creates shared memory reader
+  // Wait for two more discovery cycles plus processing time to ensure everything is connected
+  WaitForDiscovery();
+  WaitForDiscovery();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < kExpectedMessages; ++i) {
+    // Create message with concrete type, then treat as generic protobuf message
+    // This simulates the real-world scenario where you have a dynamically created
+    // message that you want to publish without compile-time type knowledge
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello from dynamic publisher");
+
+    // Cast to google::protobuf::Message* to use the dynamic publisher API
+    google::protobuf::Message* generic_msg = &test_msg;
+    pub->Send(*generic_msg);
+  }
+
+  // Wait for all messages to be received, with timeout
+  {
+    std::unique_lock<std::mutex> lock(count_mutex);
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime,
+                                          [&receive_count]() { return receive_count == kExpectedMessages; });
     ASSERT_TRUE(received_all) << "Timeout waiting for all messages. Received: " << receive_count << "/"
                               << kExpectedMessages;
   }

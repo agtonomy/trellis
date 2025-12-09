@@ -67,8 +67,8 @@ trellis::core::ServiceServer<MySlowService> CreateNewSlowService(trellis::core::
 TEST_F(TrellisFixture, BasicService) {
   StartRunnerThread();
   static unsigned response_count{0};
-  auto service = CreateNewService(node_);
-  static auto client = node_.CreateServiceClient<MyService>();
+  auto service = CreateNewService(GetNode());
+  static auto client = GetNode().CreateServiceClient<MyService>();
   WaitForDiscovery();
 
   test::Test request;
@@ -88,8 +88,8 @@ TEST_F(TrellisFixture, BasicService) {
 TEST_F(TrellisFixture, UseZeroForTimeout) {
   StartRunnerThread();
   static unsigned response_count{0};
-  auto service = CreateNewService(node_);
-  static auto client = node_.CreateServiceClient<MyService>();
+  auto service = CreateNewService(GetNode());
+  static auto client = GetNode().CreateServiceClient<MyService>();
   WaitForDiscovery();
 
   test::Test request;
@@ -109,8 +109,8 @@ TEST_F(TrellisFixture, UseZeroForTimeout) {
 TEST_F(TrellisFixture, ServiceCallTimeout) {
   StartRunnerThread();
   static unsigned response_count{0};
-  auto service = CreateNewSlowService(node_);
-  static auto client = node_.CreateServiceClient<MySlowService>();
+  auto service = CreateNewSlowService(GetNode());
+  static auto client = GetNode().CreateServiceClient<MySlowService>();
   WaitForDiscovery();
 
   test::Test request;
@@ -129,8 +129,8 @@ TEST_F(TrellisFixture, ServiceCallTimeout) {
 TEST_F(TrellisFixture, BurstServiceCalls) {
   StartRunnerThread();
   static unsigned response_count{0};
-  auto service = CreateNewService(node_);
-  static auto client = node_.CreateServiceClient<MyService>();
+  auto service = CreateNewService(GetNode());
+  static auto client = GetNode().CreateServiceClient<MyService>();
   WaitForDiscovery();
 
   static constexpr unsigned burst_count{20};
