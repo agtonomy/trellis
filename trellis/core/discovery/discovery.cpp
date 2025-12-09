@@ -31,13 +31,13 @@ namespace {
  * Creates and returns a socket file descriptor with SO_REUSEADDR and SO_REUSEPORT
  */
 int CreateNativeUDPSocket(uint16_t port, int rcvbuf_size, int sndbuf_size) {
-  int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+  const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     throw std::runtime_error("Failed to create UDP socket");
   }
 
   // Enable SO_REUSEADDR and SO_REUSEPORT so we can bind even if another process is already bound
-  int reuse = 1;
+  const int reuse = 1;
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
     ::close(fd);
     throw std::runtime_error("Failed to set SO_REUSEADDR");
@@ -49,7 +49,7 @@ int CreateNativeUDPSocket(uint16_t port, int rcvbuf_size, int sndbuf_size) {
     throw std::runtime_error("Failed to set SO_REUSEPORT");
   }
 
-  int yes = 1;
+  const int yes = 1;
   if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes)) < 0) {
     ::close(fd);
     throw std::runtime_error("Failed to set SO_BROADCAST");
@@ -107,13 +107,13 @@ std::string GeneratePreamble(const std::string& id) {
   return preamble_bytes;
 }
 
-static constexpr std::string_view kDefaultSendAddress = "127.255.255.255";
-static constexpr unsigned kDefaultDiscoveryPort = 1400u;
-static constexpr unsigned kDefaultDiscoveryInterval = 1000u;
-static constexpr unsigned kDefaultSampleTimeout = 2000u;
-static constexpr bool kDefaultLoopbackEnabled = false;
-static constexpr unsigned kDefaultRcvBufSize = 8 * 1024 * 1024;  // 8MB
-static constexpr unsigned kDefaultSndBufSize = 2 * 1024 * 1024;  // 2MB
+constexpr std::string_view kDefaultSendAddress = "127.255.255.255";
+constexpr unsigned kDefaultDiscoveryPort = 1400u;
+constexpr unsigned kDefaultDiscoveryInterval = 1000u;
+constexpr unsigned kDefaultSampleTimeout = 2000u;
+constexpr bool kDefaultLoopbackEnabled = false;
+constexpr unsigned kDefaultRcvBufSize = 8 * 1024 * 1024;  // 8MB
+constexpr unsigned kDefaultSndBufSize = 2 * 1024 * 1024;  // 2MB
 
 }  // namespace
 
@@ -163,8 +163,8 @@ void Discovery::PurgeStaleSamples(const trellis::core::time::TimePoint& now, Sam
   std::lock_guard guard(callback_mutex_);
   for (auto it = map.begin(); it != map.end();) {
     if (now - it->second.stamp > config_.sample_timeout_ms) {
-      for (const auto& callback : callback_map) {
-        if (callback.second) callback.second(EventType::kNewUnregistration, std::move(it->second.sample));
+      for (const auto& callback : callback_map | std::views::values) {
+        if (callback) callback(EventType::kNewUnregistration, it->second.sample);
       }
       it = map.erase(it);
     } else {
@@ -192,7 +192,7 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
     return;
   }
 
-  const SampleHeader* header = reinterpret_cast<const SampleHeader*>(data);
+  const SampleHeader* header = static_cast<const SampleHeader*>(data);
   // Do we have enough data to cover the sample name length field?
   if (len < kHeaderSize + sizeof(uint16_t)) {
     return;
@@ -320,24 +320,24 @@ void Discovery::ProcessProcessSample(trellis::core::time::TimePoint now, EventTy
 void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(subscriber_samples_, now, event, sample);
   std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : subscriber_sample_callbacks_) {
-    if (callback.second) callback.second(event, sample);
+  for (const auto& callback : subscriber_sample_callbacks_ | std::views::values) {
+    if (callback) callback(event, sample);
   }
 }
 
 void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(publisher_samples_, now, event, sample);
   std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : publisher_sample_callbacks_) {
-    if (callback.second) callback.second(event, sample);
+  for (const auto& callback : publisher_sample_callbacks_ | std::views::values) {
+    if (callback) callback(event, sample);
   }
 }
 
 void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
   ProcessSamplesMap(service_samples_, now, event, sample);
   std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : service_sample_callbacks_) {
-    if (callback.second) callback.second(event, sample);
+  for (const auto& callback : service_sample_callbacks_ | std::views::values) {
+    if (callback) callback(event, sample);
   }
 }
 
@@ -361,8 +361,8 @@ void Discovery::Unregister(RegistrationHandle handle) {
 
 void Discovery::BroadcastSamples() {
   std::lock_guard lock(registered_samples_mutex_);
-  for (const auto& sample : registered_samples_) {
-    BroadcastSample(sample.second);
+  for (const auto& sample : registered_samples_ | std::views::values) {
+    BroadcastSample(sample);
   }
 }
 
@@ -450,56 +450,56 @@ void Discovery::StopReceive(Discovery::CallbackHandle handle) {
     return;
   }
   std::lock_guard guard(callback_mutex_);
-  if (publisher_sample_callbacks_.find(handle) != publisher_sample_callbacks_.end()) {
+  if (publisher_sample_callbacks_.contains(handle)) {
     publisher_sample_callbacks_.erase(handle);
   }
-  if (subscriber_sample_callbacks_.find(handle) != subscriber_sample_callbacks_.end()) {
+  if (subscriber_sample_callbacks_.contains(handle)) {
     subscriber_sample_callbacks_.erase(handle);
   }
-  if (service_sample_callbacks_.find(handle) != service_sample_callbacks_.end()) {
+  if (service_sample_callbacks_.contains(handle)) {
     service_sample_callbacks_.erase(handle);
   }
 }
 
 std::vector<Sample> Discovery::GetPubSamples() const {
   std::vector<Sample> samples;
-  for (const auto& timestamped_sample : publisher_samples_ | std::views::values) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : publisher_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
   return samples;
 }
 
 std::vector<Sample> Discovery::GetSubSamples() const {
   std::vector<Sample> samples;
-  for (const auto& timestamped_sample : subscriber_samples_ | std::views::values) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : subscriber_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
   return samples;
 }
 
 std::vector<Sample> Discovery::GetPubSubSamples() const {
   std::vector<Sample> samples;
-  for (const auto& [name, timestamped_sample] : publisher_samples_) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : publisher_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
-  for (const auto& [name, timestamped_sample] : subscriber_samples_) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : subscriber_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
   return samples;
 }
 
 std::vector<Sample> Discovery::GetServiceSamples() const {
   std::vector<Sample> samples;
-  for (const auto& [name, timestamped_sample] : service_samples_) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : service_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
   return samples;
 }
 
 std::vector<Sample> Discovery::GetProcessSamples() const {
   std::vector<Sample> samples;
-  for (const auto& [name, timestamped_sample] : process_samples_) {
-    samples.push_back(timestamped_sample.sample);
+  for (const auto& [timestamp, sample] : process_samples_ | std::views::values) {
+    samples.push_back(sample);
   }
   return samples;
 }
@@ -515,7 +515,7 @@ void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) 
   sample.mutable_topic()->set_data_count(stats.send_receive_count);
   sample.mutable_topic()->set_data_frequency(static_cast<int32_t>(stats.measured_frequency_hz * 1000));
   sample.mutable_topic()->set_max_burst_count(stats.max_burst_size);
-  sample.mutable_topic()->set_message_drops(stats.message_drops);
+  sample.mutable_topic()->set_message_drops(static_cast<int32_t>(stats.message_drops));  // narrowing conversion
 }
 
 std::string Discovery::GetSampleId(RegistrationHandle handle) {
