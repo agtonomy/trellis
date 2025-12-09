@@ -68,6 +68,46 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }
 
+TEST_F(TrellisFixture, DuplicateMessageTypes) {
+  static unsigned receive_count_1{0};
+  static unsigned receive_count_2{0};
+  static constexpr unsigned num_burst_messages = 10U;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("consumer_topic_1");
+  auto pub2 = GetNode().CreatePublisher<test::Test>("consumer_topic_2");
+
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test>, TypeTuple<test::Test>> inputs_{
+      GetNode(),
+      {{"consumer_topic_1", "consumer_topic_2"}},
+      {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_1");
+         ASSERT_EQ(receive_count_1, msg.id());
+         ++receive_count_1;
+       },
+       {[this](const std::string& topic, const test::Test& msg, const time::TimePoint&, const time::TimePoint&) {
+         ASSERT_EQ(topic, "consumer_topic_2");
+         ASSERT_EQ(receive_count_2, msg.id());
+         ++receive_count_2;
+       }}}};
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  // Publish messages on both topics
+  for (unsigned i = 0; i < num_burst_messages; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    pub2->Send(test_msg);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  WaitForSendReceive();
+
+  ASSERT_EQ(receive_count_1, num_burst_messages);
+  ASSERT_EQ(receive_count_2, num_burst_messages);
+}
+
 TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
@@ -189,6 +229,52 @@ TEST_F(TrellisFixture, RoundTripConversionWithIndividualCallbacks) {
     test::TestTwo test_msg2;
     test_msg2.set_foo(i * 2.0);
     pub2->Send(test_msg2);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  WaitForSendReceive();
+
+  ASSERT_EQ(receive_count_1, num_burst_messages);
+  ASSERT_EQ(receive_count_2, num_burst_messages);
+}
+
+TEST_F(TrellisFixture, ConvertingDuplicateMessageTypes) {
+  static unsigned receive_count_1{0};
+  static unsigned receive_count_2{0};
+  static constexpr unsigned num_burst_messages = 10U;
+
+  using ToT = std::function<decltype(test::arbitrary::ToProto)>;
+  using FromT = std::function<decltype(test::arbitrary::FromProto)>;
+  auto pub =
+      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, ToT>("consumer_topic_1", test::arbitrary::ToProto);
+  auto pub2 =
+      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, ToT>("consumer_topic_2", test::arbitrary::ToProto);
+
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test, test::arbitrary::Test, FromT>,
+                                 TypeTuple<test::Test, test::arbitrary::Test, FromT>>
+      inputs_{GetNode(),
+              {{"consumer_topic_1", "consumer_topic_2"}},
+              {[this](const std::string& topic, const test::arbitrary::Test& msg, const time::TimePoint&,
+                      const time::TimePoint&) {
+                 ASSERT_EQ(topic, "consumer_topic_1");
+                 ASSERT_EQ(receive_count_1, msg.id);
+                 ++receive_count_1;
+               },
+               {[this](const std::string& topic, const test::arbitrary::Test& msg, const time::TimePoint&,
+                       const time::TimePoint&) {
+                 ASSERT_EQ(topic, "consumer_topic_2");
+                 ASSERT_EQ(receive_count_2, msg.id);
+                 ++receive_count_2;
+               }}},
+              {test::arbitrary::FromProto, test::arbitrary::FromProto}};
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  // Publish messages on both topics
+  for (unsigned i = 0; i < num_burst_messages; ++i) {
+    const auto test_msg = test::arbitrary::Test{.id = i, .msg = "wow this is nice"};
+    pub->Send(test_msg);
+    pub2->Send(test_msg);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 

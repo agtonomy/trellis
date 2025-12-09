@@ -20,6 +20,7 @@
 
 #include "trellis/containers/dynamic_ring_buffer.hpp"
 #include "trellis/containers/ring_buffer.hpp"
+#include "trellis/core/constraints.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/stamped_message.hpp"
 #include "trellis/core/subscriber.hpp"
@@ -30,11 +31,16 @@ namespace trellis::core {
  * @brief Type for representing how to receive a single topic where we always get the latest message on that topic (if
  * not timed out).
  *
- * @tparam MSG_T the message type to receive.
+ * @tparam SerializableT The serializable message type (typically a protobuf message).
+ * @tparam MsgT The message type (typically a native struct).
+ * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename MSG_T>
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct Latest {
-  using MessageType = MSG_T;
+  using SerializableType = SerializableT;
+  using MessageType = MsgT;
+  using ConverterType = ConverterT;
   using LatestTag = int;  // Add an arbitrary type tag so we know we are using this template.
 };
 
@@ -42,12 +48,17 @@ struct Latest {
  * @brief Type for representing how to receive a single topic where we get the latest N messages on the topic that are
  * not timed out.
  *
- * @tparam MSG_T The message type to receive.
+ * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam N The max number of latest messages to return.
+ * @tparam MsgT The message type (typically a native struct).
+ * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename MSG_T, size_t N>
+template <typename SerializableT, size_t N, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct NLatest {
-  using MessageType = MSG_T;
+  using SerializableType = SerializableT;
+  using MessageType = MsgT;
+  using ConverterType = ConverterT;
   static constexpr size_t kNLatest = N;
 };
 
@@ -61,11 +72,16 @@ struct NLatest {
  * Also less efficient than NLatest as we have to copy out of the receiver's memory pool since we don't know the amount
  * of messages we may need to store.
  *
- * @tparam MSG_T The message type to receive.
+ * @tparam SerializableT The serializable message type (typically a protobuf message).
+ * @tparam MsgT The message type (typically a native struct).
+ * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename MSG_T>
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct AllLatest {
-  using MessageType = MSG_T;
+  using SerializableType = SerializableT;
+  using MessageType = MsgT;
+  using ConverterType = ConverterT;
   using AllLatestTag = int;  // Add an arbitrary type tag so we know we are using this template.
 };
 
@@ -73,16 +89,18 @@ struct AllLatest {
  * @brief Type for representing how to receive a single topic which is coming from the owner of the inbox so it does not
  * need to be received, only sent.
  *
- * @tparam MSG_T The message type.
- * @tparam SERIALIZED_T The type to serialize to (default is the same as MSG_T).
- * @tparam SERIALIZATION_FN_T The type of function to call to serialize the message (default is identity). For now the
+ * @tparam SerializableT The serializable message type (typically a protobuf message) to convert to
+ * @tparam MsgT The message type (typically a native struct)
+ * @tparam ConverterT The converter type (a free function or functor).
  * Inbox only supports stateless functors (see example in unit tests).
  */
-template <typename MSG_T, typename SERIALIZED_T = MSG_T, typename SERIALIZATION_FN_T = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsConverter<ConverterT, MsgT, SerializableT>
 struct Loopback {
-  using MessageType = MSG_T;
-  using SerializedType = SERIALIZED_T;
-  using SerializationFn = SERIALIZATION_FN_T;
+  using SerializableType = SerializableT;
+  using MessageType = MsgT;
+  using ConverterType = ConverterT;
+  using LoopbackTag = int;  // Add an arbitrary type tag so we know we are using this template.
 };
 
 /// @brief Concept for a type that derives from Latest.
@@ -101,10 +119,7 @@ concept IsAllLatestReceiveType = requires { typename R::AllLatestTag; };
 
 /// @brief Concept for a type that derives from Loopback.
 template <typename R>
-concept IsLoopbackReceiveType = requires {
-  typename R::SerializedType;
-  typename R::SerializationFn;
-};
+concept IsLoopbackReceiveType = requires { typename R::LoopbackTag; };
 
 /// @brief Concept for a type that derives from one of our receive types and is valid for use in the inbox.
 template <typename R>
@@ -123,6 +138,7 @@ class Inbox {
  public:
   using MessageTimeouts = std::array<time::TimePoint::duration, sizeof...(ReceiveTypes)>;
   using TopicArray = std::array<std::string_view, sizeof...(ReceiveTypes)>;
+  using ConverterTuple = std::tuple<typename ReceiveTypes::ConverterType...>;
 
   /**
    * @brief Construct a new Inbox object.
@@ -131,8 +147,9 @@ class Inbox {
    * @param topics the topic for each type to subscribe to
    * @param timeouts the timeout for each type
    */
-  Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts)
-      : ev_{node.GetEventLoop()}, receivers_{MakeReceivers(node, topics, timeouts)} {}
+  Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+        const ConverterTuple& converters = std::make_tuple(((void)sizeof(ReceiveTypes), std::identity())...))
+      : ev_{node.GetEventLoop()}, receivers_{MakeReceivers(node, topics, timeouts, converters)} {}
 
   template <typename R>
   struct InboxReturnType;
@@ -212,13 +229,13 @@ class Inbox {
   /**
    * @brief Gets the index of the loopback receiver for MSG_T.
    *
-   * @tparam MSG_T the message type to find the looback receiver for
+   * @tparam MsgT the message type to find the looback receiver for
    */
-  template <class MSG_T>
+  template <class MsgT>
   struct LoobackIndex {
     static constexpr std::size_t value = []() {
       constexpr std::array<bool, sizeof...(ReceiveTypes)> matches{
-          {(IsLoopbackReceiveType<ReceiveTypes> && std::is_same_v<typename ReceiveTypes::MessageType, MSG_T>)...}};
+          {(IsLoopbackReceiveType<ReceiveTypes> && std::is_same_v<typename ReceiveTypes::MessageType, MsgT>)...}};
       // As we are in constant expression, we will get a compilation error not a runtime expection.
       if (std::ranges::count(matches, true) != 1) {
         throw std::runtime_error("Expected exactly 1 loopback receiver of the given type.");
@@ -232,15 +249,15 @@ class Inbox {
    *
    * Similar in interface to PublisherImpl::Send.
    *
-   * @tparam MSG_T the message type
+   * @tparam MsgT the message type
    * @param msg the message, encouraged to move into this function as we store the message
    * @param time the send time, default is the current time
    * @return time::TimePoint the time the message was sent
    */
-  template <typename MSG_T>
-  time::TimePoint Send(MSG_T msg, const time::TimePoint& time = trellis::core::time::Now()) {
-    auto& receiver = std::get<LoobackIndex<MSG_T>::value>(receivers_);
-    const auto send_time = receiver.publisher->Send(receiver.serializer(msg), time);
+  template <typename MsgT>
+  time::TimePoint Send(MsgT msg, const time::TimePoint& time = trellis::core::time::Now()) {
+    auto& receiver = std::get<LoobackIndex<MsgT>::value>(receivers_);
+    const auto send_time = receiver.publisher->Send(msg, time);
     receiver.latest.emplace(send_time, std::move(msg));
     return send_time;
   }
@@ -255,8 +272,10 @@ class Inbox {
   struct Receiver<R> {
     using ReceiveType = R;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
-    Subscriber<MessageType> subscriber;
+    Subscriber<SerializableType, MessageType, ConverterType> subscriber;
     // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
     // ptr should always point to the same value. We use `latest->message != nullptr` to check if there is indeed a
     // valid message here. We could wrap it in an optional, but that is not necessary.
@@ -270,11 +289,13 @@ class Inbox {
   struct Receiver<R> {
     using ReceiveType = R;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
     // Increase subscriber memory pool so it can fill the buffer plus the default padding. The buffer may own at most
     // kNLatest + 2 messages, but a little extra padding allows the inbox thread to get slightly behind the subscriber
     // thread.
-    Subscriber<MessageType> subscriber;
+    Subscriber<SerializableType, MessageType, ConverterType> subscriber;
     // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
     // ptr should always point to the same value.
     std::unique_ptr<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>> buffer;
@@ -287,10 +308,12 @@ class Inbox {
   struct Receiver<R> {
     using ReceiveType = R;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
     // We use the default subscriber memory pool size since we will copy messages out of the subscriber since we don't
     // know how large to size it.
-    Subscriber<MessageType> subscriber;
+    Subscriber<SerializableType, MessageType, ConverterType> subscriber;
     // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
     // ptr should always point to the same value.
     std::unique_ptr<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>> buffer;
@@ -303,106 +326,125 @@ class Inbox {
   struct Receiver<R> {
     using ReceiveType = R;
     using MessageType = ReceiveType::MessageType;
-    using SerializedType = ReceiveType::SerializedType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
-    // TODO(matt): Should we support non-simple funtors?
-    ReceiveType::SerializationFn serializer = {};
-    Publisher<SerializedType> publisher;
+    Publisher<SerializableType, MessageType, ConverterType> publisher;
     std::optional<OwningStampedMessage<MessageType>> latest;
     time::TimePoint::duration timeout;
   };
 
   /// @brief Make a latest receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
-  static auto MakeLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+  static auto MakeLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                                 const ConverterTuple& converters) {
     using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
     auto latest = std::make_unique<StampedMessagePtr<MessageType>>();
 
     // Not const to allow move.
-    auto subscriber = node.CreateSubscriber<MessageType>(
-        topics[Index], [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime,
-                                           std::unique_ptr<MessageType> msg) { latest = {msgtime, std::move(msg)}; });
+    auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
+        topics[Index],
+        [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
+          latest = {msgtime, std::move(msg)};
+        },
+        {}, {}, {}, std::get<Index>(converters));
 
     return Receiver<ReceiveType>{std::move(subscriber), std::move(latest), timeouts[Index]};
   }
 
   /// @brief Make an n-latest receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
-  static auto MakeNLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+  static auto MakeNLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                                  const ConverterTuple& converters) {
     using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
     auto buffer = std::make_unique<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>>();
 
     // Not const to allow move.
-    auto subscriber = node.CreateSubscriber<MessageType>(
+    auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
         [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
           buffer.push_back(StampedMessagePtr<MessageType>{msgtime, std::move(msg)});
-        });
+        },
+        {}, {}, {}, std::get<Index>(converters));
 
     return Receiver<ReceiveType>{std::move(subscriber), std::move(buffer), timeouts[Index]};
   }
 
   /// @brief Make an all-latest receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
-  static auto MakeAllLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+  static auto MakeAllLatestReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                                    const ConverterTuple& converters) {
     using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
     using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
     auto buffer = std::make_unique<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>>();
 
     // Not const to allow move.
-    auto subscriber = node.CreateSubscriber<MessageType>(
+    auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
         [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
           buffer.push_back({msgtime, *msg});  // Copies the message out of the subscriber memory pool.
-        });
+        },
+        {}, {}, {}, std::get<Index>(converters));
 
     return Receiver<ReceiveType>{std::move(subscriber), std::move(buffer), timeouts[Index]};
   }
 
   /// @brief Make a loopback receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
-  static auto MakeLoopbackReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+  static auto MakeLoopbackReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                                   const ConverterTuple& converters) {
     using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
-    using SerializedType = ReceiveType::SerializedType;
+    using MessageType = ReceiveType::MessageType;
+    using SerializableType = ReceiveType::SerializableType;
+    using ConverterType = ReceiveType::ConverterType;
 
-    return Receiver<ReceiveType>{.publisher = node.CreatePublisher<SerializedType>(std::string{topics[Index]}),
+    return Receiver<ReceiveType>{.publisher = node.CreatePublisher<SerializableType, MessageType, ConverterType>(
+                                     std::string{topics[Index]}, std::get<Index>(converters)),
                                  .timeout = timeouts[Index]};
   }
 
   /// @brief Make the receiver for topic at position Index in the ReceiveTypes, topics, and timeouts.
   template <size_t Index>
-  static auto MakeReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
+  static auto MakeReceiver(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                           const ConverterTuple& converters) {
     using ReceiveType = std::tuple_element_t<Index, std::tuple<ReceiveTypes...>>;
 
     if constexpr (IsLatestReceiveType<ReceiveType>) {
-      return MakeLatestReceiver<Index>(node, topics, timeouts);
+      return MakeLatestReceiver<Index>(node, topics, timeouts, converters);
     } else if constexpr (IsNLatestReceiveType<ReceiveType>) {
-      return MakeNLatestReceiver<Index>(node, topics, timeouts);
+      return MakeNLatestReceiver<Index>(node, topics, timeouts, converters);
     } else if constexpr (IsLoopbackReceiveType<ReceiveType>) {
-      return MakeLoopbackReceiver<Index>(node, topics, timeouts);
+      return MakeLoopbackReceiver<Index>(node, topics, timeouts, converters);
     } else if constexpr (IsAllLatestReceiveType<ReceiveType>) {
-      return MakeAllLatestReceiver<Index>(node, topics, timeouts);
+      return MakeAllLatestReceiver<Index>(node, topics, timeouts, converters);
     }
   }
 
   template <size_t... Indices>
   static auto MakeReceivers(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
-                            std::index_sequence<Indices...>) {
-    return std::make_tuple(MakeReceiver<Indices>(node, topics, timeouts)...);
+                            const ConverterTuple& converters, std::index_sequence<Indices...>) {
+    return std::make_tuple(MakeReceiver<Indices>(node, topics, timeouts, converters)...);
   }
 
   /// @brief An intermediate of MakeReceivers that creates an index sequence to iterate over the topic and message
   /// timeout arrays.
-  static auto MakeReceivers(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts) {
-    return MakeReceivers(node, topics, timeouts, std::make_index_sequence<sizeof...(ReceiveTypes)>{});
+  static auto MakeReceivers(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
+                            const ConverterTuple& converters) {
+    return MakeReceivers(node, topics, timeouts, converters, std::make_index_sequence<sizeof...(ReceiveTypes)>{});
   }
 
   /// @brief Message return generation for receiving the latest message.

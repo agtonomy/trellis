@@ -19,6 +19,7 @@
 
 #include <gmock/gmock.h>
 
+#include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
 
@@ -71,6 +72,7 @@ auto OwningMessageIs(const TimePoint& time, const Matcher<MSG_T>& message_matche
 }
 
 Matcher<test::Test> TestIs(const std::string msg) { return Property("msg", &test::Test::msg, Eq(msg)); }
+Matcher<arbitrary::Test> ArbitraryTestIs(const std::string msg) { return Field(&arbitrary::Test::msg, msg); }
 
 Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &TestTwo::bar, Eq(bar)); }
 
@@ -458,7 +460,7 @@ TEST_F(TrellisFixture, InboxSerializingLoopback) {
   const auto sub =
       GetNode().CreateSubscriber<test::Test>("topic", [&latest](auto, auto, auto msg) { latest = msg->msg(); });
 
-  auto inbox = Inbox<Loopback<std::string, test::Test, Serializer>>{GetNode(), {"topic"}, {100ms}};
+  auto inbox = Inbox<Loopback<test::Test, std::string, Serializer>>{GetNode(), {"topic"}, {100ms}, {Serializer{}}};
 
   WaitForDiscovery();
 
@@ -477,8 +479,11 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
   auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
 
   auto inbox = Inbox<Latest<test::Test>, NLatest<TestTwo, 5>, AllLatest<test::Test>,
-                     Loopback<std::string, test::Test, Serializer>>{
-      GetNode(), {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
+                     Loopback<test::Test, std::string, Serializer>>{
+      GetNode(),
+      {"topic_1", "topic_2", "topic_1", "loopback_topic"},
+      {100ms, 100ms, 100ms, 100ms},
+      {std::identity(), std::identity(), std::identity(), Serializer{}}};
 
   WaitForDiscovery();
 
@@ -507,6 +512,37 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 
   ASSERT_THAT(inbox.GetMessagesCopy(kT0 + 110ms), FieldsAre(Eq(std::nullopt), IsEmpty(), IsEmpty(), Eq(std::nullopt)))
       << "Messages have timed out.";
+}
+
+TEST_F(TrellisFixture, ConvertingInbox) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test, arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
+      "topic_1", arbitrary::ToProto);
+  auto pub2 = GetNode().CreatePublisher<test::TestTwo>("topic_2");
+
+  using ConverterT = std::function<decltype(arbitrary::FromProto)>;
+  auto inbox = Inbox<Latest<test::Test, arbitrary::Test, ConverterT>,
+                     NLatest<test::Test, 5, arbitrary::Test, ConverterT>, NLatest<TestTwo, 5>,
+                     AllLatest<test::Test, arbitrary::Test, ConverterT>, Loopback<test::Test, std::string, Serializer>>{
+      GetNode(),
+      {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
+      {100ms, 100ms, 100ms, 100ms, 100ms},
+      {arbitrary::FromProto, arbitrary::FromProto, std::identity(), arbitrary::FromProto, Serializer{}}};
+
+  WaitForDiscovery();
+
+  pub->Send({.msg = "hello"}, kT0);
+  pub2->Send(MakeTestTwo("there"), kT0 + 1ms);
+  inbox.Send(std::string{"howdy"}, kT0 + 2ms);
+
+  WaitForSendReceive();
+  inbox.GetMessagesCopy(kT0);
+  ASSERT_THAT(inbox.GetMessagesCopy(kT0), FieldsAre(Optional(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                                                    ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                                                    ElementsAre(OwningMessageIs(kT0 + 1ms, TestTwoIs("there"))),
+                                                    ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                                                    Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
 }
 
 }  // namespace trellis::core::test

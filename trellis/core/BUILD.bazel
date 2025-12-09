@@ -200,6 +200,7 @@ cc_library(
     hdrs = ["inbox.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_constraints",
         ":core_node",
         ":core_stamped_message",
         "//trellis/containers:dynamic_ring_buffer",
