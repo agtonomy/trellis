@@ -43,7 +43,7 @@ HealthMonitor::HealthMonitor(const trellis::core::EventLoop& loop, const trellis
       subscriber_{subscriber_create_fn(
           trellis::core::Health::GetTopicFromConfig(config),
           [this](const time::TimePoint&, const time::TimePoint&,
-                 SubscriberImpl<trellis::core::HealthHistory>::PointerType status) { NewUpdate(*status); })},
+                 SubscriberImpl<trellis::core::HealthHistory>::MsgTypePtr status) { NewUpdate(*status); })},
       health_event_cb_{health_event_callback} {}
 
 void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {

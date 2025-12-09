@@ -42,7 +42,7 @@ TEST_F(TrellisFixture, DynamicSubscriber) {
   auto sub = GetNode().CreateDynamicSubscriber(
       "test_dynamic_topic", [&receive_count, &count_mutex, &count_cv](
                                 const time::TimePoint&, const time::TimePoint&,
-                                trellis::core::SubscriberImpl<google::protobuf::Message>::PointerType msg) {
+                                trellis::core::SubscriberImpl<google::protobuf::Message>::MsgTypePtr msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
 
         // Use the protobuf reflection API to access fields dynamically
@@ -104,7 +104,7 @@ TEST_F(TrellisFixture, DynamicPublisher) {
   auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_dynamic_pub_topic",
       [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
-                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+                                                trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;
@@ -179,7 +179,7 @@ TEST_F(TrellisFixture, DynamicPublisherWithSchema) {
   auto sub = GetNode().CreateSubscriber<test::Test>(
       "test_dynamic_pub_with_schema_topic",
       [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
-                                                trellis::core::SubscriberImpl<test::Test>::PointerType msg) {
+                                                trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id(), receive_count);
         ++receive_count;

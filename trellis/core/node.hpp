@@ -111,39 +111,43 @@ class Node {
   /**
    * CreateSubscriber create a new handle for a subscriber
    *
-   * @tparam MSG_T the message type that we expect to receive from the publisher
-   * @tparam MAX_MSGS the max number of messages that can be allocated and passed out in the callback.
+   * @tparam SerializableT The serializable message type published by this handle
+   * @tparam MsgT The message type converted to the serializable message type
+   * @tparam ConverterT The converter type
+   *
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog
    * @param watchdog_callback optional watchdog callback to monitor timeouts
    * @param max_frequency optional maximum frequency to throttle the subscriber callback
+   * @param converter the message converter
    *
    * NOTE: Both watchdog_timeout_ms and watchdog_callback must be specified in
    * order to enable watchdog monitoring.
    *
    * @return a subscriber handle
    */
-  template <typename MSG_T>
-  Subscriber<MSG_T> CreateSubscriber(std::string_view topic,
-                                     typename trellis::core::SubscriberImpl<MSG_T>::Callback callback,
-                                     std::optional<unsigned> watchdog_timeout_ms = {},
-                                     TimerImpl::Callback watchdog_callback = {},
-                                     std::optional<double> max_frequency = {}) {
+  template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  Subscriber<SerializableT, MsgT, ConverterT> CreateSubscriber(
+      std::string_view topic,
+      typename trellis::core::SubscriberImpl<SerializableT, MsgT, ConverterT>::Callback callback,
+      std::optional<unsigned> watchdog_timeout_ms = {}, TimerImpl::Callback watchdog_callback = {},
+      std::optional<double> max_frequency = {}, ConverterT converter = {}) {
     auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
     Timer watchdog_timer{};
 
-    using RawCallback = typename trellis::core::SubscriberImpl<MSG_T>::RawCallback;
-    const auto impl = std::make_shared<SubscriberImpl<MSG_T>>(GetEventLoop(), std::string{topic}, callback,
-                                                              RawCallback{}, update_sim_fn, GetDiscovery(), config_);
+    using RawCallback = typename trellis::core::SubscriberImpl<SerializableT, MsgT, ConverterT>::RawCallback;
+    const auto impl = std::make_shared<SubscriberImpl<SerializableT, MsgT, ConverterT>>(
+        GetEventLoop(), std::string{topic}, callback, RawCallback{}, update_sim_fn, GetDiscovery(), config_, converter);
     if (max_frequency.has_value()) {
       impl->SetMaxFrequencyThrottle(max_frequency.value());
     }
     if (do_watchdog) {
       const auto initial_delay_ms = watchdog_timeout_ms.value();
       auto watchdog_wrapper = [watchdog_callback = std::move(watchdog_callback),
-                               weak_impl = std::weak_ptr<SubscriberImpl<MSG_T>>(impl)](const time::TimePoint& now) {
+                               weak_impl = std::weak_ptr<SubscriberImpl<SerializableT, MsgT, ConverterT>>(impl)](
+                                  const time::TimePoint& now) {
         // Desired behavior is to have the watchdog fire only if messages were previously received
         auto impl = weak_impl.lock();
         if (impl && impl->DidReceive()) {

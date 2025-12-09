@@ -23,9 +23,6 @@
 
 namespace trellis::core {
 
-template <typename MSG_T>
-using MessagePointer = SubscriberImpl<MSG_T>::PointerType;
-
 /**
  * @brief Structure to hold a timestamp and a message pointer
  *
@@ -37,7 +34,7 @@ using MessagePointer = SubscriberImpl<MSG_T>::PointerType;
 template <typename MSG_T>
 struct StampedMessagePtr {
   time::TimePoint timestamp;
-  MessagePointer<MSG_T> message;
+  std::unique_ptr<MSG_T> message;
 };
 
 /**

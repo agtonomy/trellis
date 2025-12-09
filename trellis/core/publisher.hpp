@@ -61,8 +61,8 @@ struct DynamicPublisherSchema {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires(constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
-           constraints::_IsConverter<ConverterT, MsgT, SerializableT>)
+  requires constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
+           constraints::_IsConverter<ConverterT, MsgT, SerializableT>
 class PublisherImpl {
  public:
   static constexpr size_t kDefaultNumWriterBuffers = 5u;

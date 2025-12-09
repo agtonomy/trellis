@@ -60,7 +60,7 @@ int topic_echo_main(int argc, char* argv[]) {
     auto sub = node.CreateDynamicSubscriber(
         topic, [ev, throttle_interval_ms, add_whitespace, timestamp](
                    const trellis::core::time::TimePoint& now, const trellis::core::time::TimePoint& msgtime,
-                   trellis::core::SubscriberImpl<google::protobuf::Message>::PointerType msg) {
+                   trellis::core::SubscriberImpl<google::protobuf::Message>::MsgTypePtr msg) {
           if (throttle_interval_ms != 0) {
             auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(msgtime - last_echo_time_).count();
             if (elapsed_ms <= throttle_interval_ms) {

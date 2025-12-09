@@ -20,6 +20,7 @@
 
 #include <fmt/core.h>
 
+#include "trellis/core/constraints.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
@@ -36,15 +37,24 @@ namespace trellis::core {
  * This class handles discovery of publishers, connecting to shared memory regions,
  * and deserializing received messages (both statically and dynamically typed).
  *
- * @tparam MSG_T The protobuf message type expected by the subscriber.
+ * This class supports opt-in automatic conversion from protobuf messages to native C++ types. To use this feature,
+ * callers must specify the serializable, native, and converter types as template parameters. A converter is passed as a
+ * constructor argument. Free functions or functors can be used; the type of a free function `Foo` can be deduced easily
+ * via `decltype(Foo)`.
+ *
+ * @tparam SerializableT The serializable message type (typically a protobuf message).
+ * @tparam MsgT The message type (typically a native struct).
+ * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename MSG_T>
-class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>> {
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
+           constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<SerializableT, MsgT, ConverterT>> {
  public:
   static constexpr unsigned kDefaultStatisticsUpdateIntervalMs = 1000u;
 
-  /// @brief The type passed to the callback. A unique_ptr to the message.
-  using PointerType = std::unique_ptr<MSG_T>;
+  /// @brief The message pointer type used in the callback
+  using MsgTypePtr = std::unique_ptr<MsgT>;
 
   /**
    * @brief Callback type for fully parsed messages.
@@ -52,7 +62,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
    * @param msgtime The time the message was sent (embedded in header).
    * @param msg The deserialized message.
    */
-  using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, PointerType msg)>;
+  using Callback = std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, MsgTypePtr msg)>;
 
   /**
    * @brief Callback type for raw, unparsed messages.
@@ -77,10 +87,11 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
    * @param update_sim_fn Function to update a simulation clock (can be nullptr).
    * @param discovery Pointer to the discovery service.
    * @param config The configuration tree to optionally pull values from.
+   * @param converter The function to convert from the serializable message
    */
   SubscriberImpl(trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
                  UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery,
-                 const trellis::core::Config& config)
+                 const trellis::core::Config& config, ConverterT converter = {})
       : loop_{loop},
         topic_{topic},
         callback_{std::move(callback)},
@@ -90,7 +101,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
         statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
             topic, "statistics_update_interval_ms", /* is_publisher = */ false, kDefaultStatisticsUpdateIntervalMs)},
         discovery_{discovery},
-        discovery_handle_{discovery_->RegisterSubscriber<MSG_T>(topic)},
+        discovery_handle_{discovery_->RegisterSubscriber<SerializableT>(topic)},
         subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
         callback_handle_{discovery->AsyncReceivePublishers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
@@ -99,7 +110,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
         statistics_timer_{std::make_shared<TimerImpl>(
             loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { UpdateStatistics(now); },
             statistics_update_interval_ms_, 0)},
-        frequency_calculator_{statistics_update_interval_ms_} {}
+        frequency_calculator_{statistics_update_interval_ms_},
+        converter_{std::move(converter)} {}
 
   /// @brief Destructor unregisters from discovery and stops callbacks.
   ~SubscriberImpl() {
@@ -139,6 +151,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   }
 
  private:
+  using SerializableTypePtr = std::unique_ptr<SerializableT>;
+
   /**
    * @brief Handles discovery events for publishers.
    *
@@ -241,7 +255,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
       }
     }
 
-    PointerType msg = GetMessagePointer();
+    SerializableTypePtr msg = GetSerializableMessagePointer();
 
     if (msg == nullptr) {
       // We may hit this case if we're a dynamic subscriber and we don't yet have the message schema
@@ -265,19 +279,26 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
       raw_callback_(receive_time, send_time, static_cast<const uint8_t*>(data), len);
     }
 
-    if (callback_) callback_(receive_time, send_time, std::move(msg));
+    if (callback_) {
+      if constexpr (std::same_as<SerializableT, MsgT>) {
+        callback_(receive_time, send_time, std::move(msg));
+      } else {
+        callback_(receive_time, send_time, std::make_unique<MsgT>(converter_(*msg)));
+      }
+    }
     if (update_sim_fn_) update_sim_fn_(send_time);
   }
 
   /// @brief Creates a new message instance for statically typed messages.
-  template <class FOO = MSG_T, std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  PointerType GetMessagePointer() {
-    return std::make_unique<MSG_T>();
+  template <class FOO = SerializableT,
+            std::enable_if_t<!std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  SerializableTypePtr GetSerializableMessagePointer() {
+    return std::make_unique<SerializableT>();
   }
 
   /// @brief Retrieves a cached dynamic message for dynamically typed messages.
-  template <class FOO = MSG_T, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
-  PointerType GetMessagePointer() {
+  template <class FOO = SerializableT, std::enable_if_t<std::is_same<FOO, google::protobuf::Message>::value>* = nullptr>
+  SerializableTypePtr GetSerializableMessagePointer() {
     return (dynamic_message_cache_ != nullptr) ? dynamic_message_cache_->Get() : nullptr;
   }
 
@@ -329,11 +350,12 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<MSG_T>
   Timer statistics_timer_;                                ///< Timer for periodic statistics updates
   statistics::FrequencyCalculator frequency_calculator_;  ///< Frequency calculation utility
   unsigned dropped_message_count_{0};                     ///< Total number of dropped messages detected
+  ConverterT converter_;                                  ///< Function to convert to serialized message type
 };
 
 /// @brief Alias for shared pointer to subscriber.
-template <typename MSG_T>
-using Subscriber = std::shared_ptr<SubscriberImpl<MSG_T>>;
+template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+using Subscriber = std::shared_ptr<SubscriberImpl<SerializableT, MsgT, ConverterT>>;
 
 /// @brief Dynamic message subscriber (protobuf::Message).
 using DynamicSubscriberImpl = SubscriberImpl<google::protobuf::Message>;

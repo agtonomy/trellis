@@ -229,6 +229,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_constraints",
         ":core_logging",
         ":core_time",
         ":core_timer",
@@ -320,4 +321,7 @@ cc_library(
         "constraints.hpp",
     ],
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:protobuf",
+    ],
 )

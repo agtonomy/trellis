@@ -207,9 +207,8 @@ class MessageConsumer {
         new_message_callbacks_{},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
-        max_frequencies_hz_{max_frequencies_hz},
-        converters_{std::move(converters)} {
-    CreateSubscribers(node);
+        max_frequencies_hz_{max_frequencies_hz} {
+    CreateSubscribers(node, std::move(converters));
   }
 
   /*
@@ -235,22 +234,21 @@ class MessageConsumer {
         new_message_callbacks_{callbacks},
         watchdog_timeouts_ms_{watchdog_timeouts_ms},
         watchdog_callbacks_{watchdog_callbacks},
-        max_frequencies_hz_{max_frequencies_hz},
-        converters_{std::move(converters)} {
-    CreateSubscribers(node);
+        max_frequencies_hz_{max_frequencies_hz} {
+    CreateSubscribers(node, std::move(converters));
   }
 
   /**
    * @brief Size return the number of elements in the FIFO for the given type
    *
-   * @tparam SerializableT the message type to retrieve;
-   *                       in spirit, this should align with the SerializableT in the TypeTuple.
+   * @tparam MsgT the message type to retrieve;
+   *                       in spirit, this should align with the MsgT in the TypeTuple.
 
    * @return size_t the number of MsgT elements in the FIFO
    */
-  template <typename SerializableT>
+  template <typename MsgT>
   size_t Size() {
-    return fifos_.template Size<StampedMessagePtr<SerializableT>>();
+    return fifos_.template Size<StampedMessagePtr<MsgT>>();
   }
 
   /**
@@ -267,15 +265,13 @@ class MessageConsumer {
   template <typename MsgT>
   StampedMessage<MsgT> Newest() {
     const std::size_t tuple_index = detail::Index<MsgT, std::tuple<typename Types::MsgType...>>::value;
-    using SerializableType = std::tuple_element_t<tuple_index, std::tuple<typename Types::SerializableType...>>;
     // TODO (bsirang) look into evaluating this at compile time.
     const auto& new_message_callback = std::get<tuple_index>(new_message_callbacks_);
     if (new_message_callback) {
       throw std::runtime_error(
           "Invalid use of Newest<>() while a new message callback was given for the message type.");
     }
-    return StampedMessage<MsgT>(
-        std::get<tuple_index>(converters_)(fifos_.template Newest<StampedMessagePtr<SerializableType>>()));
+    return StampedMessage<MsgT>(fifos_.template Newest<StampedMessagePtr<MsgT>>());
   }
 
   /**
@@ -309,7 +305,9 @@ class MessageConsumer {
    */
   template <typename SerializableT>
   void SetMaxFrequencyThrottle(double max_frequency) {
-    auto& subscribers = std::get<std::vector<Subscriber<SerializableT>>>(subscribers_);
+    const std::size_t tuple_index =
+        detail::Index<SerializableT, std::tuple<typename Types::SerializableType...>>::value;
+    auto& subscribers = std::get<tuple_index>(subscribers_);
     for (auto& subscriber : subscribers) {
       subscriber->SetMaxFrequencyThrottle(max_frequency);
     }
@@ -317,14 +315,17 @@ class MessageConsumer {
 
  private:
   template <size_t I = 0>
-  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(Node& node) {}
+  inline typename std::enable_if<I == sizeof...(Types), void>::type CreateSubscribers(Node&, const ConverterTuple&) {}
 
   template <size_t I = 0>
-      inline typename std::enable_if < I<sizeof...(Types), void>::type CreateSubscribers(Node& node) {
+      inline typename std::enable_if <
+      I<sizeof...(Types), void>::type CreateSubscribers(Node& node, const ConverterTuple& converters) {
     const auto& topics = topics_[I];
     const auto& watchdog_callback = watchdog_callbacks_[I];
     auto& latest_stamp = latest_timestamps_[I];
     using SerializableType = std::tuple_element_t<I, std::tuple<typename Types::SerializableType...>>;
+    using MsgType = std::tuple_element_t<I, std::tuple<typename Types::MsgType...>>;
+    using ConverterType = std::tuple_element_t<I, std::tuple<typename Types::ConverterType...>>;
     auto& subscriber_list = std::get<I>(subscribers_);
     const bool do_watchdog = static_cast<bool>(watchdog_timeouts_ms_ && watchdog_callback);
     const bool do_frequency_throttle = static_cast<bool>(max_frequencies_hz_) && ((*max_frequencies_hz_)[I] != 0.0);
@@ -335,9 +336,9 @@ class MessageConsumer {
       // same rate limits and watchdog timeouts. This can be made to be more flexible in the future.
       const auto message_callback = [topic, this, &latest_stamp](const time::TimePoint& now,
                                                                  const time::TimePoint& msgtime,
-                                                                 MessagePointer<SerializableType> msg) {
+                                                                 std::unique_ptr<MsgType> msg) {
         latest_stamp = msgtime;
-        NewMessage<I, SerializableType>(topic, now, msgtime, std::move(msg));
+        NewMessage<I, MsgType>(topic, now, msgtime, std::move(msg));
       };
       if (do_frequency_throttle && do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
@@ -345,31 +346,33 @@ class MessageConsumer {
         auto watchdog_callback_wrapper = [topic, watchdog_callback](const time::TimePoint& now) {
           watchdog_callback(topic, now);
         };
-        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType>(
-            topic, message_callback, watchdog_timeout, watchdog_callback_wrapper, frequency_throttle_hz));
+        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType, MsgType, ConverterType>(
+            topic, message_callback, watchdog_timeout, watchdog_callback_wrapper, frequency_throttle_hz,
+            std::get<I>(converters)));
       } else if (do_frequency_throttle && !do_watchdog) {
         const auto& frequency_throttle_hz = (*max_frequencies_hz_)[I];
-        subscriber_list.emplace_back(
-            node.CreateSubscriber<SerializableType>(topic, message_callback, {}, {}, frequency_throttle_hz));
+        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType, MsgType, ConverterType>(
+            topic, message_callback, {}, {}, frequency_throttle_hz, std::get<I>(converters)));
       } else if (!do_frequency_throttle && do_watchdog) {
         const auto& watchdog_timeout = (*watchdog_timeouts_ms_)[I];
         auto watchdog_callback_wrapper = [topic, watchdog_callback](const time::TimePoint& now) {
           watchdog_callback(topic, now);
         };
-        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType>(topic, message_callback, watchdog_timeout,
-                                                                             watchdog_callback_wrapper));
+        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType, MsgType, ConverterType>(
+            topic, message_callback, watchdog_timeout, watchdog_callback_wrapper, {}, std::get<I>(converters)));
       } else {
-        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType>(topic, message_callback));
+        subscriber_list.emplace_back(node.CreateSubscriber<SerializableType, MsgType, ConverterType>(
+            topic, message_callback, {}, {}, {}, std::get<I>(converters)));
       }
     }
 
-    CreateSubscribers<I + 1>(node);
+    CreateSubscribers<I + 1>(node, converters);
   }
 
-  template <std::size_t I, typename SerializableT>
+  template <std::size_t I, typename MsgT>
   void NewMessage(const std::string& topic, const time::TimePoint& now, const time::TimePoint& msgtime,
-                  MessagePointer<SerializableT> msg) {
-    fifos_.template Push<StampedMessagePtr<SerializableT>>(StampedMessagePtr<SerializableT>{msgtime, std::move(msg)});
+                  std::unique_ptr<MsgT> msg) {
+    fifos_.template Push<StampedMessagePtr<MsgT>>(StampedMessagePtr<MsgT>{msgtime, std::move(msg)});
 
     // Check if we have a callback to signal an update
     if (update_callback_) {
@@ -379,8 +382,8 @@ class MessageConsumer {
     // Check if we have a callback to directly ingest a message of this particular type
     const auto& new_message_callback = std::get<I>(new_message_callbacks_);
     if (new_message_callback) {
-      auto next = fifos_.template Next<StampedMessagePtr<SerializableT>>();
-      new_message_callback(topic, std::get<I>(converters_)(*next.message), now, next.timestamp);
+      auto next = fifos_.template Next<StampedMessagePtr<MsgT>>();
+      new_message_callback(topic, *next.message, now, next.timestamp);
     }
   }
 
@@ -397,8 +400,10 @@ class MessageConsumer {
   const OptionalWatchdogTimeoutsArray watchdog_timeouts_ms_;
   const WatchdogCallbacksArray watchdog_callbacks_;
   const OptionalMaxFrequencyArray max_frequencies_hz_;
-  std::tuple<std::vector<Subscriber<typename Types::SerializableType>>...> subscribers_;
-  trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessagePtr<typename Types::SerializableType>...> fifos_;
+  std::tuple<std::vector<
+      Subscriber<typename Types::SerializableType, typename Types::MsgType, typename Types::ConverterType>>...>
+      subscribers_;
+  trellis::containers::MultiFifo<FIFO_DEPTH, StampedMessagePtr<typename Types::MsgType>...> fifos_;
   LatestTimestampArray latest_timestamps_;
   ConverterTuple converters_;
 };

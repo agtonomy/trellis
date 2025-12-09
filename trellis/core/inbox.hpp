@@ -324,7 +324,7 @@ class Inbox {
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<MessageType>(
         topics[Index], [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime,
-                                           MessagePointer<MessageType> msg) { latest = {msgtime, std::move(msg)}; });
+                                           std::unique_ptr<MessageType> msg) { latest = {msgtime, std::move(msg)}; });
 
     return Receiver<ReceiveType>{std::move(subscriber), std::move(latest), timeouts[Index]};
   }
@@ -341,7 +341,7 @@ class Inbox {
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<MessageType>(
         topics[Index],
-        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, MessagePointer<MessageType> msg) {
+        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
           buffer.push_back(StampedMessagePtr<MessageType>{msgtime, std::move(msg)});
         });
 
@@ -360,7 +360,7 @@ class Inbox {
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<MessageType>(
         topics[Index],
-        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, MessagePointer<MessageType> msg) {
+        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
           buffer.push_back({msgtime, *msg});  // Copies the message out of the subscriber memory pool.
         });
 
