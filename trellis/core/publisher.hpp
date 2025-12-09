@@ -33,6 +33,18 @@
 namespace trellis::core {
 
 /**
+ * @brief Schema information for dynamic publishers.
+ *
+ * Contains the serialized FileDescriptorSet and message type name needed to
+ * register a dynamic publisher with discovery without waiting to learn
+ * the schema from subscribers.
+ */
+struct DynamicPublisherSchema {
+  std::string tdesc;  ///< Serialized FileDescriptorSet describing the message type
+  std::string tname;  ///< Full protobuf message type name (e.g., "trellis.core.test.Test")
+};
+
+/**
  * @brief Publisher implementation that uses shared memory and service discovery
  *        to broadcast messages to subscribers in other processes.
  *
@@ -69,10 +81,12 @@ class PublisherImpl {
    * @param discovery Shared pointer to the discovery service instance.
    * @param config The configuration tree to optionally pull values from
    * @param converter The function to convert from the message to serializable message
+   * @param schema Optional schema for dynamic publishers. When provided, the publisher registers
+   *               immediately with discovery instead of waiting to learn the schema from subscribers.
    */
   PublisherImpl(trellis::core::EventLoop loop, const std::string& topic,
                 std::shared_ptr<discovery::Discovery> discovery, const trellis::core::Config& config,
-                ConverterT converter = {})
+                ConverterT converter = {}, std::optional<DynamicPublisherSchema> schema = std::nullopt)
       : topic_{topic},
         num_write_buffers_{config.GetConfigAttributeForTopic<size_t>(topic, "num_buffers", /* is_publisher = */ true,
                                                                      kDefaultNumWriterBuffers)},
@@ -85,11 +99,16 @@ class PublisherImpl {
         writer_(loop, ::getpid(), num_write_buffers_, 0),
         discovery_{discovery},
         discovery_handle_{[&]() {
-          if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>)
+          if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {
+            if (schema.has_value()) {
+              return discovery_->RegisterDynamicPublisher(topic, writer_.GetMemoryFilePrefix(),
+                                                          writer_.GetBufferCount(), schema->tdesc, schema->tname);
+            }
             return discovery::Discovery::kInvalidRegistrationHandle;
-          else
+          } else {
             return discovery_->RegisterPublisher<SerializableT>(topic, writer_.GetMemoryFilePrefix(),
                                                                 writer_.GetBufferCount());
+          }
         }()},
         callback_handle_{discovery->AsyncReceiveSubscribers(
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {

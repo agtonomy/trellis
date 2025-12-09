@@ -163,11 +163,17 @@ class Node {
    * google::protobuf::Message type at runtime.
    *
    * @param topic the topic name to publish to
+   * @param schema optional schema containing the serialized FileDescriptorSet and message type name.
+   *               If provided, the publisher can register immediately with discovery without waiting
+   *               to learn the message schema from subscribers. If not provided, the publisher waits
+   *               to learn the schema via discovery.
    *
    * @return a publisher handle
    */
-  DynamicPublisher CreateDynamicPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<google::protobuf::Message>>(GetEventLoop(), topic, GetDiscovery(), config_);
+  DynamicPublisher CreateDynamicPublisher(const std::string& topic,
+                                          std::optional<DynamicPublisherSchema> schema = std::nullopt) const {
+    return std::make_shared<PublisherImpl<google::protobuf::Message>>(GetEventLoop(), topic, GetDiscovery(), config_,
+                                                                      std::identity{}, std::move(schema));
   }
 
   /**

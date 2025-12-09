@@ -59,6 +59,16 @@ cc_test(
 )
 
 cc_test(
+    name = "core_pubsub_dynamic_test",
+    srcs = ["pubsub_dynamic_test.cpp"],
+    deps = [
+        ":test",
+        ":test_fixture",
+        ":test_proto",
+    ],
+)
+
+cc_test(
     name = "core_service_test",
     srcs = ["service_test.cpp"],
     deps = [
