@@ -116,7 +116,7 @@ class EventLoop {
   /**
    * @brief Return a reference to the underlying io_context
    *
-   * This overload exists to pass the underyling asio::io_context into asio APIs such as asio::post(). This should not
+   * This overload exists to pass the underlying asio::io_context into asio APIs such as asio::post(). This should not
    * be used to access methods on the io_context directly.
    *
    * @return IOContext& the underlying io context object

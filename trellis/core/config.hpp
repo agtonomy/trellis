@@ -83,7 +83,7 @@ class Config {
    */
   Config() = default;
 
-  /*
+  /**
    * Construct a config object from the contents of a YAML file
    *
    * @param file the file path to read from
@@ -91,7 +91,7 @@ class Config {
    */
   explicit Config(const std::string& file);
 
-  /*
+  /**
    * Construct a config object based on the given YAML node
    * @param root the YAML node that represents the root of the configuration
    */
@@ -118,7 +118,7 @@ class Config {
   const YAML::Node& Root() const { return root_; }
 
   /**
-   * Overlay overlay the given Node on top of the existing configuration
+   * @brief overlay the given Node on top of the existing configuration
    *
    * For any keys that overlap, they will be overwritten.
    *
@@ -128,16 +128,16 @@ class Config {
   void Overlay(const YAML::Node& overlay, bool verbose = false);
 
   /**
-   * Overlay overlay the given config tree as a YAML string on top of the existing configuration
+   * @brief overlay the given config tree as a YAML string on top of the existing configuration
    *
-   * @param raw_YAML a string containing YAML
+   * @param raw_yaml a string containing YAML
    * @param verbose log output
    * @see Overlay(const YAML::Node&)
    */
   void Overlay(const std::string raw_yaml, bool verbose = false);
 
   /**
-   * Overlay overlay the config tree from the given file
+   * @brief overlay the config tree from the given file
    *
    * @param filename the file name containing the configuration
    * @param verbose log output
@@ -183,8 +183,8 @@ class Config {
    * @return The configuration value or the default value if not found.
    */
   template <typename T>
-  T GetConfigAttributeForTopic(const std::string& topic, const std::string& attribute, bool is_publisher,
-                               T default_val) const {
+  T GetConfigAttributeForTopic(const std::string& topic, const std::string& attribute, const bool is_publisher,
+                               const T default_val) const {
     const std::string pub_or_sub = is_publisher ? "publisher" : "subscriber";
     const std::string topic_specific_attribute =
         fmt::format("trellis.{}.topic_specific_attributes.{}.{}", pub_or_sub, SanitizeTopicString(topic), attribute);

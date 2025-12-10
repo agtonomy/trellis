@@ -146,6 +146,7 @@ class Inbox {
    * @param node the node to get the subscribers from
    * @param topics the topic for each type to subscribe to
    * @param timeouts the timeout for each type
+   * @param converters the converters that will be applied on reception of a message
    */
   Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
         const ConverterTuple& converters = std::make_tuple(((void)sizeof(ReceiveTypes), std::identity())...))
@@ -182,8 +183,8 @@ class Inbox {
    * receive type.
    *
    * Since the return type of GetMessages is a borrowing view of the messages cached in the inbox, the messages are only
-   * guaranteed to have liftime as long as the node event loop is blocked. I.e. GetMessages is safe to call from a timer
-   * or subscriber callback, but not from a service callback.
+   * guaranteed to have lifetime as long as the node event loop is blocked. I.e. GetMessages is safe to call from a
+   * timer or subscriber callback, but not from a service callback.
    *
    * @param time the current time at which to check the inbox
    * @return Messages for each topic.
@@ -495,7 +496,7 @@ class Inbox {
 
     auto ret = InboxReturnType_t<R>{};
     ret.reserve(receiver.buffer->size());
-    for (const auto& [time, message] : *receiver.buffer) ret.emplace_back(time, message);
+    for (const auto& [buffer_time, message] : *receiver.buffer) ret.emplace_back(buffer_time, message);
     return ret;
   }
 
@@ -509,7 +510,7 @@ class Inbox {
 
     auto ret = InboxOwningReturnType_t<R>{};
     ret.reserve(receiver.buffer->size());
-    for (const auto& [time, message] : *receiver.buffer) ret.emplace_back(time, message);
+    for (const auto& [buffer_time, message] : *receiver.buffer) ret.emplace_back(buffer_time, message);
     return ret;
   }
 

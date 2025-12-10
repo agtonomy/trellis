@@ -61,7 +61,7 @@ TimePoint NanosecondsToTimePoint(unsigned long long nanoseconds);
 
 /**
  * NowInNanoseconds Get the current time in nanoseconds
- * @return a the time in nanoseconds since Unix epoch as an unsigned long long
+ * @return the time in nanoseconds since Unix epoch as an unsigned long long
  */
 unsigned long long NowInNanoseconds();
 
@@ -74,7 +74,7 @@ unsigned long long TimePointToMilliseconds(const TimePoint& tp);
 
 /**
  * NowInMilliseconds Get the current time in milliseconds
- * @return a the time in milliseconds since Unix epoch as an unsigned long long
+ * @return the time in milliseconds since Unix epoch as an unsigned long long
  */
 unsigned long long NowInMilliseconds();
 
