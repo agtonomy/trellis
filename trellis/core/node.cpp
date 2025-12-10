@@ -100,8 +100,8 @@ bool Node::ShouldRun() {
 }
 
 Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
-  auto timer =
-      std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, callback, interval_ms, initial_delay_ms);
+  auto timer = std::make_shared<TimerImpl>(GetEventLoop(), TimerImpl::Type::kPeriodic, std::move(callback), interval_ms,
+                                           initial_delay_ms);
 
   timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
   return timer;
