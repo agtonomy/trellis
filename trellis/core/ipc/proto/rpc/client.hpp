@@ -213,15 +213,15 @@ class Client {
     if (pending_request_->timeout_ms > 0) {
       // Use weak_ptr to avoid circular reference and check if client still exists
       std::weak_ptr<QueuedRequest> weak_request = pending_request_;
-      pending_timer_ = std::make_shared<TimerImpl>(
-          loop_, TimerImpl::Type::kOneShot,
+      pending_timer_ = std::make_shared<OneShotTimerImpl>(
+          loop_,
           [this, weak_request](const time::TimePoint&) {
             auto request = weak_request.lock();
             if (request && pending_request_ == request) {
               request->timeout_fn();
             }
           },
-          0, pending_request_->timeout_ms);
+          pending_request_->timeout_ms);
     }
 
     // We chain together 4 events:

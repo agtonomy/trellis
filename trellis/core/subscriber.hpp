@@ -107,9 +107,8 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
             [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceivePublisher(event, sample);
             })},
-        statistics_timer_{std::make_shared<TimerImpl>(
-            loop, TimerImpl::Type::kPeriodic, [this](const time::TimePoint& now) { UpdateStatistics(now); },
-            statistics_update_interval_ms_, 0)},
+        statistics_timer_{std::make_shared<PeriodicTimerImpl>(
+            loop, [this](const time::TimePoint& now) { UpdateStatistics(now); }, statistics_update_interval_ms_, 0)},
         frequency_calculator_{statistics_update_interval_ms_},
         converter_{std::move(converter)} {}
 

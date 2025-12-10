@@ -20,15 +20,16 @@
 namespace trellis {
 namespace core {
 
-TimerImpl::TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms)
+// =============================================================================
+// TimerImpl (base class)
+// =============================================================================
+
+TimerImpl::TimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms)
     : loop_{loop},
-      type_{type},
       callback_{std::move(callback)},
       interval_ms_{interval_ms},
       delay_ms_(delay_ms),
-      timer_{CreateSteadyTimer(loop, delay_ms)} {
-  KickOff();
-}
+      timer_{CreateSteadyTimer(loop, delay_ms)} {}
 
 void TimerImpl::Reset() {
   Stop();
@@ -56,34 +57,16 @@ void TimerImpl::KickOff() {
   }
 }
 
-void TimerImpl::Reload() {
-  if (!SimulationActive()) {
-    if (type_ == kPeriodic) {
-      // We calculate the new expiration time based on the last expiration
-      // rather than "now" in order to avoid drift due to jitter error
-      timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
-    } else if (type_ == kOneShot) {
-      // If we're reloading a one shot timer we simply reload to now + our delay time
-      timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
-    }
-  } else {
-    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
-  }
-  did_fire_ = false;
-  cancelled_ = false;
-}
-
 void TimerImpl::Fire() {
-  if (did_fire_ && type_ == kOneShot) {
+  if (!ShouldFire()) {
     return;
   }
   const auto now = time::Now();
   last_fire_time_ = now;  // used for sim time
   did_fire_ = true;
   callback_(now);
-  if (type_ != kOneShot && !cancelled_) {
-    Reload();
-    KickOff();
+  if (!cancelled_) {
+    OnFired();
   }
 }
 
@@ -99,16 +82,71 @@ bool TimerImpl::SimulationActive() const {
   return (timer_ == nullptr);  // just use existence of timer_ as a proxy
 }
 
-time::TimePoint TimerImpl::GetExpiry() const {
+std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chrono::milliseconds(interval_ms_); }
+
+// =============================================================================
+// OneShotTimerImpl
+// =============================================================================
+
+OneShotTimerImpl::OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms)
+    : TimerImpl(loop, std::move(callback), 0, delay_ms) {
+  KickOff();
+}
+
+void OneShotTimerImpl::Reload() {
+  if (!SimulationActive()) {
+    // If we're reloading a one shot timer we simply reload to now + our delay time
+    timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
+  } else {
+    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
+  }
+  did_fire_ = false;
+  cancelled_ = false;
+}
+
+bool OneShotTimerImpl::ShouldFire() const { return !did_fire_; }
+
+time::TimePoint OneShotTimerImpl::GetExpiry() const {
   if (SimulationActive()) {
-    auto interval = (type_ == kPeriodic) ? interval_ms_ : delay_ms_;
-    return last_fire_time_ + std::chrono::milliseconds(interval);
+    return last_fire_time_ + std::chrono::milliseconds(delay_ms_);
   } else {
     return timer_->expiry();
   }
 }
 
-std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chrono::milliseconds(interval_ms_); }
+// =============================================================================
+// PeriodicTimerImpl
+// =============================================================================
+
+PeriodicTimerImpl::PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms)
+    : TimerImpl(loop, std::move(callback), interval_ms, delay_ms) {
+  KickOff();
+}
+
+void PeriodicTimerImpl::Reload() {
+  if (!SimulationActive()) {
+    // We calculate the new expiration time based on the last expiration
+    // rather than "now" in order to avoid drift due to jitter error
+    timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
+  } else {
+    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
+  }
+  did_fire_ = false;
+  cancelled_ = false;
+}
+
+void PeriodicTimerImpl::OnFired() {
+  Reload();
+  KickOff();
+}
+
+time::TimePoint PeriodicTimerImpl::GetExpiry() const {
+  if (SimulationActive()) {
+    return last_fire_time_ + std::chrono::milliseconds(interval_ms_);
+  } else {
+    return timer_->expiry();
+  }
+}
 
 }  // namespace core
 }  // namespace trellis

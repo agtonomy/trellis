@@ -27,21 +27,21 @@
 namespace trellis {
 namespace core {
 
+/**
+ * TimerImpl is the base class for one-shot and periodic timers
+ */
 class TimerImpl {
  public:
   using Callback = std::function<void(const time::TimePoint&)>;
   enum Type { kOneShot = 0, kPeriodic };
 
-  /**
-   * Construct a new timer and start it immediately
-   *
-   * @param loop the event loop used to process the timer
-   * @param type the timer type (one shot or periodic)
-   * @param callback the function to call when the timer expires
-   * @param interval_ms the timer interval in milliseconds
-   * @param delay_ms an initial delay which can be separate from the timer interval (0 is immediate)
-   */
-  TimerImpl(EventLoop loop, Type type, Callback callback, unsigned interval_ms, unsigned delay_ms);
+  virtual ~TimerImpl() = default;
+
+  // Non-copyable, non-movable
+  TimerImpl(const TimerImpl&) = delete;
+  TimerImpl& operator=(const TimerImpl&) = delete;
+  TimerImpl(TimerImpl&&) = delete;
+  TimerImpl& operator=(TimerImpl&&) = delete;
 
   /**
    * Reset resets the timer, which extends the expiration
@@ -77,21 +77,47 @@ class TimerImpl {
   /**
    * GetExpiry get the expiry time
    */
-  time::TimePoint GetExpiry() const;
+  virtual time::TimePoint GetExpiry() const = 0;
 
-  Type GetType() const { return type_; }
+  /**
+   * GetType get the timer type
+   */
+  virtual Type GetType() const = 0;
 
   bool IsCancelled() { return cancelled_; }
 
- private:
+ protected:
+  /**
+   * Construct a new timer and start it immediately
+   *
+   * @param loop the event loop used to process the timer
+   * @param callback the function to call when the timer expires
+   * @param interval_ms the timer interval in milliseconds
+   * @param delay_ms an initial delay which can be separate from the timer interval (0 is immediate)
+   */
+  TimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms);
+
   void KickOff();
-  void Reload();
   bool SimulationActive() const;
 
   static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms);
 
+  /**
+   * Reload resets the timer expiry - implemented by child classes
+   */
+  virtual void Reload() = 0;
+
+  /**
+   * ShouldFire returns true if the timer should fire - can be overridden
+   */
+  virtual bool ShouldFire() const { return true; }
+
+  /**
+   * OnFired is called after the timer fires - can be overridden
+   */
+  virtual void OnFired() {}
+
   EventLoop loop_;
-  const Type type_;
   const Callback callback_;
   const unsigned interval_ms_;
   const unsigned delay_ms_;
@@ -99,6 +125,36 @@ class TimerImpl {
   time::TimePoint last_fire_time_{time::Now()};
   std::atomic<bool> did_fire_{false};
   std::atomic<bool> cancelled_{false};
+};
+
+/**
+ * OneShotTimerImpl is a timer that fires only once
+ */
+class OneShotTimerImpl : public TimerImpl {
+ public:
+  OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms);
+
+  time::TimePoint GetExpiry() const override;
+  Type GetType() const override { return kOneShot; }
+
+ protected:
+  void Reload() override;
+  bool ShouldFire() const override;
+};
+
+/**
+ * PeriodicTimerImpl is a timer that fires repeatedly at a fixed interval
+ */
+class PeriodicTimerImpl : public TimerImpl {
+ public:
+  PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms);
+
+  time::TimePoint GetExpiry() const override;
+  Type GetType() const override { return kPeriodic; }
+
+ protected:
+  void Reload() override;
+  void OnFired() override;
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
