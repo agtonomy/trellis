@@ -86,6 +86,13 @@ class TimerImpl {
 
   bool IsCancelled() { return cancelled_; }
 
+  /**
+   * GetOverrunCount returns the number of times the callback execution time exceeded the timer interval
+   *
+   * @return the number of overruns
+   */
+  virtual uint64_t GetOverrunCount() const = 0;
+
  protected:
   /**
    * Construct a new timer and start it immediately
@@ -114,8 +121,9 @@ class TimerImpl {
 
   /**
    * OnFired is called after the timer fires - can be overridden
+   * @param fire_time the current time captured immediately after firing and before executing the callback
    */
-  virtual void OnFired() {}
+  virtual void OnFired(const time::TimePoint& fire_time) { (void)fire_time; }
 
   EventLoop loop_;
   const Callback callback_;
@@ -135,6 +143,7 @@ class OneShotTimerImpl : public TimerImpl {
   OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms);
 
   time::TimePoint GetExpiry() const override;
+  uint64_t GetOverrunCount() const override { return 0; };  // no overruns for one-shot timers
   Type GetType() const override { return kOneShot; }
 
  protected:
@@ -151,10 +160,14 @@ class PeriodicTimerImpl : public TimerImpl {
 
   time::TimePoint GetExpiry() const override;
   Type GetType() const override { return kPeriodic; }
+  uint64_t GetOverrunCount() const override { return overrun_count_.load(); }
 
  protected:
   void Reload() override;
-  void OnFired() override;
+  void OnFired(const time::TimePoint& now) override;
+
+ private:
+  std::atomic<uint64_t> overrun_count_{0};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

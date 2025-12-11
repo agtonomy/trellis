@@ -33,6 +33,8 @@ TEST_F(TrellisFixture, OneShotTimerFires) {
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   ASSERT_EQ(timer->Expired(), true);
   ASSERT_EQ(fire_count, 1U);
+  // One-shot timers always return 0 for overrun count
+  ASSERT_EQ(timer->GetOverrunCount(), 0U);
 }
 
 TEST_F(TrellisFixture, OneShotTimerCancelsWithoutFiring) {
@@ -83,6 +85,8 @@ TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
 
   // There may be a lot of jitter depending on system load, so we're not concerned with a precise count
   ASSERT_THAT(fire_count, testing::AllOf(testing::Gt(0), testing::Le(6)));
+  // No overruns expected since callback is trivial
+  ASSERT_EQ(timer->GetOverrunCount(), 0U);
 }
 
 TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
@@ -96,6 +100,8 @@ TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
 
   // Periodic timer fires immediately, so we expect it fired once before we stopped it
   ASSERT_EQ(fire_count, 1U);
+  // No overruns expected since callback is trivial
+  ASSERT_EQ(timer->GetOverrunCount(), 0U);
 }
 
 TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
@@ -112,4 +118,26 @@ TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
 
   // Periodic timer fires immediately, so we expect it fired 5 times before we stopped it
   ASSERT_EQ(fire_count, 5);
+  // No overruns expected since callback is trivial
+  ASSERT_EQ(timer->GetOverrunCount(), 0U);
+}
+
+TEST_F(TrellisFixture, PeriodicTimerOverrunDetection) {
+  static unsigned fire_count{0};
+  StartRunnerThread();
+
+  // Create a timer with a 10ms interval, but the callback sleeps for 25ms
+  // This should cause overruns to be detected
+  auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) {
+    ++fire_count;
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  });
+
+  // Wait enough time for several firings
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  timer->Stop();
+
+  // We should have detected overruns since callback takes longer than interval
+  ASSERT_GT(timer->GetOverrunCount(), 0U);
+  ASSERT_GT(fire_count, 0U);
 }

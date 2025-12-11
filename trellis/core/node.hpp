@@ -441,6 +441,15 @@ class Node {
   const trellis::core::Config& GetConfig() { return config_; }
 
   /**
+   * GetTimerOverrunCount returns the total number of timer overruns across all periodic timers
+   *
+   * An overrun occurs when the callback execution time exceeds the timer interval.
+   *
+   * @return the total number of overruns
+   */
+  uint64_t GetTimerOverrunCount() const;
+
+  /**
    * Returns the name of the node
    *
    * @return The name of the node

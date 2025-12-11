@@ -130,6 +130,16 @@ const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return he
 
 void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
 
+uint64_t Node::GetTimerOverrunCount() const {
+  uint64_t total = 0;
+  for (const auto& timer : timers_) {
+    if (auto shared_timer = timer.lock()) {
+      total += shared_timer->GetOverrunCount();
+    }
+  }
+  return total;
+}
+
 void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
   if (time::IsSimulatedClockEnabled()) {
     asio::post(*ev_loop_, [this, new_time]() {

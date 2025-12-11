@@ -61,12 +61,12 @@ void TimerImpl::Fire() {
   if (!ShouldFire()) {
     return;
   }
-  const auto now = time::Now();
-  last_fire_time_ = now;  // used for sim time
+  const auto fire_time = time::Now();
+  last_fire_time_ = fire_time;  // used for sim time
   did_fire_ = true;
-  callback_(now);
+  callback_(fire_time);
   if (!cancelled_) {
-    OnFired();
+    OnFired(fire_time);
   }
 }
 
@@ -135,7 +135,13 @@ void PeriodicTimerImpl::Reload() {
   cancelled_ = false;
 }
 
-void PeriodicTimerImpl::OnFired() {
+void PeriodicTimerImpl::OnFired(const time::TimePoint& fire_time) {
+  // Check if the callback execution time exceeded the timer interval
+  // by comparing callback start time against the previous expiry + interval
+  const auto next_expected_expiry = GetExpiry() + std::chrono::milliseconds(interval_ms_);
+  if (fire_time > next_expected_expiry) {
+    ++overrun_count_;
+  }
   Reload();
   KickOff();
 }
