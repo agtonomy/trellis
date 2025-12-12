@@ -1,0 +1,9 @@
+cc_test(
+    name = "metrics_pub_sub_test",
+    srcs = ["metrics_pub_sub_test.cpp"],
+    deps = [
+        "//trellis/core/test:test_fixture",
+        "//trellis/utils/metrics_pub",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

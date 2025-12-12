@@ -1,0 +1,29 @@
+proto_library(
+    name = "generic_metrics_proto",
+    srcs = ["generic_metrics.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "cc_generic_metrics",
+    visibility = ["//visibility:public"],
+    deps = [":generic_metrics_proto"],
+)
+
+cc_library(
+    name = "metrics_pub",
+    srcs = [
+        "metrics_publisher.cpp",
+    ],
+    hdrs = ["metrics_publisher.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cc_generic_metrics",
+        "//trellis/core:core_node",
+        "//trellis/core:core_publisher",
+        "//trellis/core:core_time",
+    ],
+)
