@@ -22,7 +22,6 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cc_generic_metrics",
-        "//trellis/core:core_node",
         "//trellis/core:core_publisher",
         "//trellis/core:core_time",
     ],

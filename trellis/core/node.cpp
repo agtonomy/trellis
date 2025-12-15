@@ -48,6 +48,20 @@ Node::Node(std::string name, trellis::core::Config config)
     // Kick off health reporting for this node
     UpdateHealth(trellis::core::HealthState::HEALTH_STATE_NORMAL);
   }
+
+  // Initialize metrics publisher if enabled
+  if (config.AsIfExists<bool>("trellis.metrics.enabled", false)) {
+    const auto metrics_topic = config.AsIfExists<std::string>("trellis.metrics.topic", "/trellis/app/metrics");
+    const auto metrics_interval_ms = config.AsIfExists<unsigned>("trellis.metrics.interval_ms", 60000);
+
+    metrics_.emplace(trellis::utils::metrics::MetricsPublisher(
+                         name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
+                     CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
+                       metrics_->first.AddCounter(now, "timer_overrun_count",
+                                                  static_cast<int64_t>(GetTimerOverrunCount()));
+                       metrics_->first.Publish(now);
+                     }));
+  }
 }
 
 Node::~Node() { Stop(); }

@@ -154,6 +154,7 @@ cc_library(
         "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc/proto/rpc:client",
         "//trellis/core/ipc/proto/rpc:server",
+        "//trellis/utils/metrics_pub",
     ],
 )
 

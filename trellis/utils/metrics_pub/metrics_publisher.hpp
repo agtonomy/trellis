@@ -23,7 +23,6 @@
 #include <type_traits>
 #include <unordered_map>
 
-#include "trellis/core/node.hpp"
 #include "trellis/core/publisher.hpp"
 #include "trellis/core/time.hpp"
 #include "trellis/utils/metrics_pub/generic_metrics.pb.h"
@@ -46,18 +45,11 @@ namespace metrics {
 class MetricsPublisher {
  public:
   /**
-   * @brief Configuration for MetricsPublisher.
-   */
-  struct Config {
-    std::string metrics_topic;  ///< The topic name to publish metrics on.
-  };
-
-  /**
    * @brief Constructs a MetricsPublisher.
-   * @param node The trellis node used to create the publisher.
-   * @param config Configuration specifying the metrics topic.
+   * @param source_name The name to identify the source of these metrics (typically the app/node name).
+   * @param publisher A pre-created publisher for MetricsGroup messages.
    */
-  MetricsPublisher(trellis::core::Node& node, const Config& config);
+  MetricsPublisher(std::string source_name, trellis::core::Publisher<MetricsGroup> publisher);
 
   /**
    * @brief Adds an instantaneous measurement to the next publish batch.
@@ -100,11 +92,9 @@ class MetricsPublisher {
   void Publish(const trellis::core::time::TimePoint& now);
 
  private:
-  trellis::core::Node& node_;
-  const Config config_;
-  const std::string app_name_;
-  trellis::core::Publisher<trellis::utils::metrics::MetricsGroup> pub_;
-  trellis::utils::metrics::MetricsGroup msg_;
+  const std::string source_name_;
+  trellis::core::Publisher<MetricsGroup> pub_;
+  MetricsGroup msg_;
   std::unordered_map<std::string, std::pair<int64_t, unsigned long long>> last_counters_;
 };
 

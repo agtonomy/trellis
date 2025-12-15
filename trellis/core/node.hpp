@@ -23,6 +23,7 @@
 #include <list>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "trellis/core/bind.hpp"
 #include "trellis/core/config.hpp"
@@ -37,6 +38,7 @@
 #include "trellis/core/time.hpp"
 #include "trellis/core/timer.hpp"
 #include "trellis/core/timestamped_message.pb.h"
+#include "trellis/utils/metrics_pub/metrics_publisher.hpp"
 
 namespace trellis {
 namespace core {
@@ -486,6 +488,9 @@ class Node {
 
   // A list of the timers that have been created
   std::vector<std::weak_ptr<TimerImpl>> timers_;
+
+  // Optional metrics publisher and timer for internal node metrics (always constructed together)
+  std::optional<std::pair<trellis::utils::metrics::MetricsPublisher, Timer>> metrics_;
 };
 
 }  // namespace core

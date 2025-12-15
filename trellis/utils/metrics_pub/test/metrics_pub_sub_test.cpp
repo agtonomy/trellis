@@ -29,11 +29,12 @@ TEST_F(TrellisFixture, simple_test) {
   trellis::core::time::SetSimulatedTime(start);
 
   static unsigned receive_count{0};
-  trellis::utils::metrics::MetricsPublisher::Config config{.metrics_topic = "/metrics"};
-  trellis::utils::metrics::MetricsPublisher pub(GetNode(), config);
+  trellis::utils::metrics::MetricsPublisher pub(
+      GetNode().GetName(), GetNode().CreatePublisher<trellis::utils::metrics::MetricsGroup>("/trellis/app/metrics"));
   const auto sub = GetNode().CreateSubscriber<trellis::utils::metrics::MetricsGroup>(
-      "/metrics", [&](const trellis::core::time::TimePoint&, const trellis::core::time::TimePoint&,
-                      trellis::core::SubscriberImpl<trellis::utils::metrics::MetricsGroup>::MsgTypePtr msg) {
+      "/trellis/app/metrics",
+      [&](const trellis::core::time::TimePoint&, const trellis::core::time::TimePoint&,
+          trellis::core::SubscriberImpl<trellis::utils::metrics::MetricsGroup>::MsgTypePtr msg) {
         EXPECT_STREQ(msg->source().c_str(), "test_fixture");
         ASSERT_TRUE(msg->measurements().size() == 1);
         EXPECT_STREQ(msg->measurements()[0].name().c_str(), "gauge");

@@ -21,12 +21,9 @@ namespace trellis {
 namespace utils {
 namespace metrics {
 
-MetricsPublisher::MetricsPublisher(trellis::core::Node& node, const Config& config)
-    : node_{node},
-      config_{config},
-      app_name_{node.GetName()},
-      pub_{node.CreatePublisher<trellis::utils::metrics::MetricsGroup>(config_.metrics_topic)} {
-  msg_.set_source(app_name_);
+MetricsPublisher::MetricsPublisher(std::string source_name, trellis::core::Publisher<MetricsGroup> publisher)
+    : source_name_{std::move(source_name)}, pub_{std::move(publisher)} {
+  msg_.set_source(source_name_);
 }
 
 void MetricsPublisher::AddMeasurement(const trellis::core::time::TimePoint& now, const std::string& key, double value) {
