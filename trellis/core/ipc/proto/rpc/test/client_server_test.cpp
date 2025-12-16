@@ -413,4 +413,70 @@ TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
   EXPECT_EQ(fail_count, 0);
 }
 
+TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
+  // This test verifies that after a timeout, the next call receives its own response
+  // and not a stale response from the timed-out call.
+  StartRunnerThread();
+
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+
+  WaitForDiscovery();
+
+  unsigned timeout_count{0};
+  unsigned success_count{0};
+  unsigned correlation_errors{0};
+
+  // First call: will timeout but the server will eventually complete and send a response
+  test::Test request1;
+  request1.set_id(2000);  // triggers 500ms delay in handler
+  request1.set_msg("timeout_request");
+
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request1,
+      [&](ServiceCallStatus status, const test::TestTwo* resp) {
+        if (status == kTimedOut) {
+          ++timeout_count;
+        }
+      },
+      /* timeout_ms = */ 100);
+
+  // Wait for both the client timeout (100ms) and the server handler (500ms) to complete.
+  // This ensures the stale response is sitting in the socket buffer before the second call.
+  std::this_thread::sleep_for(std::chrono::milliseconds{600});
+  EXPECT_EQ(timeout_count, 1);
+
+  // Second call: should receive its own response, not the stale one from the first call
+  test::Test request2;
+  request2.set_id(9999);  // unique ID to verify correlation
+  request2.set_msg("follow_up_request");
+
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request2,
+      [&](ServiceCallStatus status, const test::TestTwo* resp) {
+        if (status == kSuccess) {
+          ++success_count;
+          // The response foo field should match request2's id (9999), not request1's id (2000)
+          if (resp->foo() != 9999.0f) {
+            std::cout << "CORRELATION ERROR: Expected foo=9999, got foo=" << resp->foo() << std::endl;
+            ++correlation_errors;
+          }
+          // The response bar should echo request2's message
+          if (resp->bar() != "Echo: follow_up_request") {
+            std::cout << "CORRELATION ERROR: Expected 'Echo: follow_up_request', got '" << resp->bar() << "'"
+                      << std::endl;
+            ++correlation_errors;
+          }
+        }
+      },
+      /* timeout_ms = */ 500);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{300});
+
+  EXPECT_EQ(timeout_count, 1);
+  EXPECT_EQ(success_count, 1);
+  EXPECT_EQ(correlation_errors, 0) << "Response did not match the request - possible stale response received";
+}
+
 }  // namespace trellis::core::ipc::proto::rpc

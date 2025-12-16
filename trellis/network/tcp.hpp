@@ -223,6 +223,45 @@ class TCP {
    */
   void Close() { socket_->close(); }
 
+  /**
+   * BytesAvailable returns the number of bytes available to be read without blocking
+   *
+   * @return the number of bytes available, or 0 if the socket is not open or an error occurs
+   */
+  size_t BytesAvailable() const {
+    trellis::core::error_code ec;
+    size_t available = socket_->available(ec);
+    if (ec) {
+      return 0;
+    }
+    return available;
+  }
+
+  /**
+   * DrainReceiveBuffer discards any pending bytes in the receive buffer
+   *
+   * This is useful for discarding stale data (e.g., responses from timed-out requests)
+   * before sending a new request.
+   *
+   * @return the number of bytes that were drained
+   */
+  size_t DrainReceiveBuffer() {
+    size_t total_drained = 0;
+    trellis::core::error_code ec;
+    std::vector<uint8_t> discard_buffer;
+
+    while (size_t available = BytesAvailable()) {
+      discard_buffer.resize(available);
+      size_t bytes_read = socket_->receive(asio::buffer(discard_buffer), 0, ec);
+      if (ec) {
+        break;
+      }
+      total_drained += bytes_read;
+    }
+
+    return total_drained;
+  }
+
  private:
   SocketPtr socket_;
 };

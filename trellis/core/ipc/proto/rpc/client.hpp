@@ -224,6 +224,12 @@ class Client {
           pending_request_->timeout_ms);
     }
 
+    // Drain any stale data from the receive buffer immediately before sending.
+    // This handles cases where a previous request timed out but the server eventually
+    // sent a response that is still sitting in the socket buffer.
+    // TODO (bsirang) We should implement request/response ID tracking to avoid this situation entirely.
+    tcp_client_->DrainReceiveBuffer();
+
     // We chain together 4 events:
     // 1. Send 4-byte request payload size
     // 2. Send request payload
