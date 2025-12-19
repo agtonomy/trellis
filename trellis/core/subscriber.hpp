@@ -27,6 +27,7 @@
 #include "trellis/core/ipc/shm/shm_reader.hpp"
 #include "trellis/core/logging.hpp"
 #include "trellis/core/statistics/frequency_calculator.hpp"
+#include "trellis/core/statistics/latency_calculator.hpp"
 #include "trellis/core/timer.hpp"
 
 namespace trellis::core {
@@ -148,6 +149,10 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
       }
     }
   }
+
+  /// @brief Gets the latency stats since last time it was called and resets the stats
+  /// @return latency stats, with min, mean, max latency in microseconds
+  statistics::LatencyCalculator::Stats GetLatestLatencyStats() { return latency_calculator_.GetAndReset(); }
 
  private:
   using SerializableTypePtr = std::unique_ptr<SerializableT>;
@@ -273,6 +278,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
 
     // Track message receive statistics
     frequency_calculator_.IncrementCount();
+    latency_calculator_.RecordLatency(receive_time, send_time);
 
     if (raw_callback_) {
       raw_callback_(receive_time, send_time, static_cast<const uint8_t*>(data), len);
@@ -348,6 +354,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
   std::unordered_map<uint64_t, uint64_t> sequence_numbers_;
   Timer statistics_timer_;                                ///< Timer for periodic statistics updates
   statistics::FrequencyCalculator frequency_calculator_;  ///< Frequency calculation utility
+  statistics::LatencyCalculator latency_calculator_;      ///< Latency calculation utility
   unsigned dropped_message_count_{0};                     ///< Total number of dropped messages detected
   ConverterT converter_;                                  ///< Function to convert to serialized message type
 };

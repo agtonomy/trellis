@@ -1,12 +1,15 @@
 cc_library(
     name = "frequency_calculator",
-    hdrs = [
-        "frequency_calculator.hpp",
-    ],
+    hdrs = ["frequency_calculator.hpp"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//trellis/core:core_time",
-    ],
+    deps = ["//trellis/core:core_time"],
+)
+
+cc_library(
+    name = "latency_calculator",
+    hdrs = ["latency_calculator.hpp"],
+    visibility = ["//visibility:public"],
+    deps = ["//trellis/core:core_time"],
 )
 
 filegroup(

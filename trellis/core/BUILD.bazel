@@ -240,6 +240,7 @@ cc_library(
         "//trellis/core/ipc/proto:dynamic_message_cache",
         "//trellis/core/ipc/shm:shm_reader",
         "//trellis/core/statistics:frequency_calculator",
+        "//trellis/core/statistics:latency_calculator",
         "//trellis/utils/protobuf:file_descriptor",
         "@fmt",
     ],
