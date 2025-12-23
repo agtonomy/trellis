@@ -15,6 +15,7 @@ cc_library(
     hdrs = ["shm_file.hpp"],
     linkopts = ["-lrt"],
     deps = [
+        "//trellis/core:core_time",
         "//trellis/core/ipc:named_resource_registry",
         "@fmt",
     ],

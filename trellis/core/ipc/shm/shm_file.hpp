@@ -22,6 +22,8 @@
 #include <mutex>
 #include <string>
 
+#include "trellis/core/time.hpp"
+
 namespace trellis::core::ipc::shm {
 
 /**
@@ -84,9 +86,9 @@ class ShmFile {
    *
    * @param handle The name of the shared memory object.
    * @param owner Whether this instance owns the shared memory (creator).
-   * @param size Size of the memory region to allocate (ignored if not owner).
+   * @param requested_size Size of the memory region to allocate (ignored if not owner).
    */
-  ShmFile(std::string handle, bool owner, size_t size);
+  ShmFile(const std::string& handle, bool owner, size_t requested_size);
 
   /**
    * @brief Destructor to clean up resources.
@@ -100,7 +102,7 @@ class ShmFile {
    * @brief Move constructor.
    * @param other The ShmFile instance to move from.
    */
-  ShmFile(ShmFile&&);
+  ShmFile(ShmFile&& other);
 
   ShmFile& operator=(ShmFile&&) = delete;
 
@@ -129,34 +131,26 @@ class ShmFile {
   const std::string& Handle() const { return handle_; }
 
   /**
-   * @brief Returns a copy of the current shared memory header.
-   * @return A copy of the ShmHeader structure.
+   * @brief Returns sets the bytes written into the shared memory header.
+   * @param bytes_written
    */
-  ShmHeader Header();
+  void SetHeader(size_t bytes_written);
 
   /**
-   * @brief Returns a reference to the shared memory header for modification.
-   * @return Reference to the ShmHeader.
+   * @brief Sets the values within the file header.
+   * @param bytes_written the number of bytes written
+   * @param sequence the monotonic increasing sequence number
+   * @param now the current timepoint
+   * @param writer_id the unique writer id
    */
-  ShmHeader& MutableHeader();
-
-  /**
-   * @brief Returns a copy of the file header metadata.
-   * @return A copy of the SMemFileHeader structure.
-   */
-  SMemFileHeader FileHeader();
-
-  /**
-   * @brief Returns a reference to the file header for modification.
-   * @return Reference to the SMemFileHeader.
-   */
-  SMemFileHeader& MutableFileHeader();
+  void SetFileHeader(size_t bytes_written, unsigned sequence, const trellis::core::time::TimePoint& now,
+                     uint64_t writer_id);
 
   /**
    * @brief Resizes the shared memory region.
-   * @param size New size for the shared memory.
+   * @param requested_size New size for the shared memory.
    */
-  void Resize(size_t size);
+  void Resize(size_t requested_size);
 
   /**
    * @brief Returns a buffer and size for writing new data.
@@ -164,7 +158,25 @@ class ShmFile {
    */
   WriteInfo GetWriteInfo();
 
+  /** getter method for the file header.
+   *
+   * @return the SMemFileHeader
+   */
+  const SMemFileHeader& GetFileHeader() const;
+
  private:
+  /** private getter method for the header.
+   *
+   * @return the ShmHeader from the map_
+   */
+  ShmHeader& GetHeader() const;
+
+  /** private getter method for the file header.
+   *
+   * @return the SMemFileHeader from the map_
+   */
+  SMemFileHeader& GetMutableFileHeader() const;
+
   std::string handle_;      ///< Name/handle of the shared memory object.
   bool owner_;              ///< True if this instance created the shared memory.
   int fd_{-1};              ///< File descriptor backing the shared memory.

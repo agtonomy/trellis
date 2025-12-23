@@ -95,17 +95,9 @@ void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, si
   auto& lock = locks_.at(file.Handle());
 
   if (success) {
-    auto& header = file.MutableHeader();
-    header.cur_data_size = sizeof(ShmFile::SMemFileHeader) + bytes_written;
-
+    file.SetHeader(bytes_written);
     ++sequence_;
-
-    auto& file_header = file.MutableFileHeader();
-    file_header.hdr_size = sizeof(ShmFile::SMemFileHeader);
-    file_header.data_size = bytes_written;
-    file_header.sequence = sequence_;
-    file_header.clock = time::TimePointToNanoseconds(now);
-    file_header.writer_id = static_cast<uint64_t>(writer_id_);
+    file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
   }
 
   lock.Unlock();

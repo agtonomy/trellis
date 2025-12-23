@@ -33,10 +33,10 @@ namespace trellis::core::ipc::shm {
 
 namespace {
 
-int CreateOrOpen(std::string handle, bool owner) {
-  const std::string posix_name = handle.size() ? ((handle[0] != '/') ? "/" + handle : handle) : handle;
+int CreateOrOpen(const std::string& handle, const bool owner) {
+  const std::string posix_name = handle.starts_with('/') ? handle : "/" + handle;
   const auto flags = owner ? (O_CREAT | O_RDWR | O_EXCL) : O_RDONLY;
-  const auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+  constexpr auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
   const int previous_umask =
       ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
   const int rt = ::shm_open(posix_name.c_str(), flags, mode);
@@ -54,28 +54,28 @@ int CreateOrOpen(std::string handle, bool owner) {
   return rt;
 }
 
-void Unmap(ShmFile::MapInfo map) {
+void Unmap(const ShmFile::MapInfo map) {
   if (map.addr != nullptr) {
     ::munmap(map.addr, map.size);
   }
 }
 
-ShmFile::MapInfo Remap(int& fd, std::string handle, bool owner, size_t requested_size, ShmFile::MapInfo map) {
+ShmFile::MapInfo Remap(const int& fd, const bool owner, const size_t requested_size, ShmFile::MapInfo map) {
   if (map.addr == nullptr) {
     throw std::runtime_error("Attempt to remap with null map");
   }
   if (map.addr != nullptr) {
     Unmap(map);
     map.size = requested_size;
-    const int prot = owner ? PROT_READ | PROT_WRITE : PROT_READ;
     if (owner) {
       if (::ftruncate(fd, map.size) == -1) {
-        int err = errno;  // capture before close
+        const int err = errno;  // capture before close
         ::close(fd);
         throw std::system_error(err, std::generic_category(), "ShmFile::Map ftruncate failed");
       }
     }
 
+    const int prot = owner ? PROT_READ | PROT_WRITE : PROT_READ;
     map.addr = ::mmap(nullptr, map.size, prot, MAP_SHARED, fd, 0);
     if (map.addr == MAP_FAILED) {
       throw std::system_error(errno, std::generic_category(), "ShmFile::Remap failed");
@@ -84,7 +84,7 @@ ShmFile::MapInfo Remap(int& fd, std::string handle, bool owner, size_t requested
   return map;
 }
 
-ShmFile::MapInfo Map(int fd, std::string handle, bool owner, size_t requested_size) {
+ShmFile::MapInfo Map(const int fd, const bool owner, const size_t requested_size) {
   ShmFile::MapInfo map{};
   if (fd < 0) {
     throw std::runtime_error("Call to ShmFile::Map while fd is not open");
@@ -105,28 +105,28 @@ ShmFile::MapInfo Map(int fd, std::string handle, bool owner, size_t requested_si
     throw std::system_error(errno, std::generic_category(), "ShmFile::Map failed");
   }
 
-  ShmFile::ShmHeader* header = reinterpret_cast<ShmFile::ShmHeader*>(map.addr);
+  ShmFile::ShmHeader* header = static_cast<ShmFile::ShmHeader*>(map.addr);
   if (owner) {
     // As the owner, we will map the size requested
     header->header_size = sizeof(ShmFile::ShmHeader);
     header->cur_data_size = sizeof(ShmFile::SMemFileHeader);
     header->max_data_size = requested_size;
   } else {
-    // Each process, whether owner or not has a to decide how large of a region of memory to map into the process'
+    // Each process, whether owner or not, has to decide how large of a region of memory to map into the process'
     // address space. In the case of a non-owner (reader), we use the header metadata to know how much memory to map.
     const auto cur_size = header->cur_data_size + ShmFile::kCombinedHeaderSize;
-    map = Remap(fd, handle, owner, cur_size, map);
+    map = Remap(fd, owner, cur_size, map);
   }
   return map;
 }
 
 }  // namespace
 
-ShmFile::ShmFile(std::string handle, bool owner, size_t requested_size)
+ShmFile::ShmFile(const std::string& handle, const bool owner, const size_t requested_size)
     : handle_{handle},
       owner_{owner},
       fd_{CreateOrOpen(handle, owner)},
-      map_{fd_ >= 0 ? Map(fd_, handle_, owner, requested_size) : MapInfo{}} {
+      map_{fd_ >= 0 ? Map(fd_, owner, requested_size) : MapInfo{}} {
   if (owner) {
     NamedResourceRegistry::Get().InsertShm(handle_);
   }
@@ -151,15 +151,15 @@ ShmFile::ShmFile(ShmFile&& other)
   other.map_.size = 0;
 }
 
-void ShmFile::Resize(size_t requested_size) {
+void ShmFile::Resize(const size_t requested_size) {
   std::lock_guard lock(mutex_);
   const auto total_size = kCombinedHeaderSize + requested_size;
-  map_ = Remap(fd_, handle_, owner_, total_size, map_);
+  map_ = Remap(fd_, owner_, total_size, map_);
   if (map_.size != total_size) {
     throw std::runtime_error(
         fmt::format("ShmFile::Resize Failed to resize mapped memory region to {} bytes", total_size));
   }
-  ShmFile::ShmHeader* header = reinterpret_cast<ShmFile::ShmHeader*>(map_.addr);
+  ShmFile::ShmHeader* header = static_cast<ShmFile::ShmHeader*>(map_.addr);
   header->max_data_size = requested_size;
 }
 
@@ -178,7 +178,7 @@ ShmFile::ReadInfo ShmFile::GetReadInfo() {
     // We have to check the header every time and remap accordingly because the shared memory region size is adjusted at
     // runtime
     if (header.max_data_size + kCombinedHeaderSize > map_.size) {
-      map_ = Remap(fd_, handle_, owner_, header.max_data_size + kCombinedHeaderSize, map_);
+      map_ = Remap(fd_, owner_, header.max_data_size + kCombinedHeaderSize, map_);
       if (map_.addr == nullptr) {
         throw std::runtime_error("ShmFile::GetReadInfo Failed to remap to the given data size");
       }
@@ -198,22 +198,34 @@ ShmFile::WriteInfo ShmFile::GetWriteInfo() {
   return WriteInfo{.data = static_cast<uint8_t*>(map_.addr) + kCombinedHeaderSize, .size = data_size_available};
 }
 
-ShmFile::SMemFileHeader ShmFile::FileHeader() { return MutableFileHeader(); }
+void ShmFile::SetFileHeader(const size_t bytes_written, const unsigned sequence,
+                            const trellis::core::time::TimePoint& now, const uint64_t writer_id) {
+  auto& file_header = GetMutableFileHeader();
+  file_header.hdr_size = sizeof(ShmFile::SMemFileHeader);
+  file_header.data_size = bytes_written;
+  file_header.sequence = sequence;
+  file_header.clock = trellis::core::time::TimePointToNanoseconds(now);
+  file_header.writer_id = writer_id;
+}
 
-ShmFile::SMemFileHeader& ShmFile::MutableFileHeader() {
+void ShmFile::SetHeader(const size_t bytes_written) {
+  GetHeader().cur_data_size = sizeof(ShmFile::SMemFileHeader) + bytes_written;
+}
+
+ShmFile::ShmHeader& ShmFile::GetHeader() const {
+  if (map_.size < sizeof(ShmHeader)) {
+    throw std::runtime_error("ShmFile::Header called without enough bytes mapped");
+  }
+  return *static_cast<ShmHeader*>(map_.addr);
+}
+
+ShmFile::SMemFileHeader& ShmFile::GetMutableFileHeader() const {
   if (map_.size < kCombinedHeaderSize) {
     throw std::runtime_error("ShmFile::FileHeader called without enough bytes mapped.");
   }
   return *reinterpret_cast<SMemFileHeader*>(static_cast<uint8_t*>(map_.addr) + sizeof(ShmHeader));
 }
 
-ShmFile::ShmHeader ShmFile::Header() { return MutableHeader(); }
-
-ShmFile::ShmHeader& ShmFile::MutableHeader() {
-  if (map_.size < sizeof(ShmHeader)) {
-    throw std::runtime_error("ShmFile::Header called without enough bytes mapped");
-  }
-  return *reinterpret_cast<ShmHeader*>(map_.addr);
-}
+const ShmFile::SMemFileHeader& ShmFile::GetFileHeader() const { return GetMutableFileHeader(); }
 
 }  // namespace trellis::core::ipc::shm

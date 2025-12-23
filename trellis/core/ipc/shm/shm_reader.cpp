@@ -75,7 +75,7 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
   auto& file = files_.at(buffer_index);
   if (lock.TryLockRead()) {
     auto read_info = file.GetReadInfo();
-    const auto header = file.FileHeader();
+    const auto& header = file.GetFileHeader();
     // Extra sanity check to make sure we don't call back with old data
     if (header.sequence > last_header_.sequence) {
       if (num_current_dropped_messages_ > 0) {
