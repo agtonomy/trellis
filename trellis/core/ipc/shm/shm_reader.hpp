@@ -19,9 +19,7 @@
 #define TRELLIS_CORE_IPC_SHM_SHM_READER_HPP_
 
 #include <functional>
-#include <optional>
 #include <string>
-#include <thread>
 
 #include "trellis/core/ipc/shm/shm_file.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
@@ -37,11 +35,7 @@ namespace trellis::core::ipc::shm {
  * a shared reader-writer lock to synchronize access with the writer. On data receipt, a user-defined
  * callback is invoked with a pointer to the data and its metadata.
  */
-class ShmReader : public std::enable_shared_from_this<ShmReader> {
- private:
-  // Private token to ensure only Create() can construct the object
-  struct PrivateToken {};
-
+class ShmReader {
  public:
   /**
    * @brief Callback function type invoked when new data is received.
@@ -62,30 +56,29 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
   /**
    * @brief Factory method to create a new ShmReader instance.
    *
-   * @note This needs a factory function because we need to pass a weak ptr to the event handler from
-   * shared_from_this(), but that requires the object to be fully constructed first. we create the object then
-   * initialize the event handler.
+   * @note We use a factory to create the ShmReader because there is post constructor logic that is needed to fully
+   * initialize the ShmReader. The ShmReader contains an event handler that contains a weak_ptr to the owning ShmReader.
    *
    * @note See constructor for parameter details. PrivateToken used to prevent direct instantiation.
    */
   template <typename... Args>
   static std::shared_ptr<ShmReader> Create(Args&&... args) {
-    auto reader = std::make_shared<ShmReader>(PrivateToken{}, std::forward<Args>(args)...);
-    reader->Initialize();
+    // There are multiple ways to use a factory method with a private constructor but this one co-locates all the
+    // special code to make it happen and requires the least amount of modification to the owning class
+    struct PrivateShmReader : ShmReader {
+      explicit PrivateShmReader(Args&&... args) : ShmReader(std::forward<Args>(args)...) {}
+    };
+
+    auto reader = std::make_shared<PrivateShmReader>(std::forward<Args>(args)...);
+
+    reader->evt_.AsyncReceive([weak_self = std::weak_ptr<ShmReader>(reader)](unix::SocketEvent::Event event) {
+      if (auto self = weak_self.lock()) {
+        self->ProcessEvent(event);
+      }
+    });
+
     return reader;
   }
-
-  /**
-   * @brief Constructs a ShmReader instance. Do not call directly, use Create() instead.
-   *
-   * @param token Private token to allow construction only through Create().
-   * @param loop The event loop to integrate with for async socket notifications.
-   * @param reader_id The unique ID of this reader, used for identifying socket events.
-   * @param names A list of shared memory segment names to attach to.
-   * @param receive_callback A user-defined callback invoked when new data is available.
-   */
-  ShmReader(PrivateToken, trellis::core::EventLoop loop, const std::string& reader_id,
-            const std::vector<std::string>& names, Callback receive_callback);
 
   /**
    * @brief Get the current metrics for this ShmReader instance.
@@ -108,9 +101,16 @@ class ShmReader : public std::enable_shared_from_this<ShmReader> {
 
  private:
   /**
-   * @brief Initializes the ShmReader by attaching to shared memory segments and setting up event handlers.
+   * @brief Constructs a ShmReader instance. Do not call directly, use Create() instead.
+   *
+   * @param loop The event loop to integrate with for async socket notifications.
+   * @param reader_id The unique ID of this reader, used for identifying socket events.
+   * @param names A list of shared memory segment names to attach to.
+   * @param receive_callback A user-defined callback invoked when new data is available.
    */
-  void Initialize();
+  ShmReader(trellis::core::EventLoop loop, const std::string& reader_id, const std::vector<std::string>& names,
+            Callback receive_callback);
+
   /**
    * @brief Internal handler for socket events signaling that shared memory has been updated.
    *
