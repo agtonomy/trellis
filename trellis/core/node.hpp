@@ -91,8 +91,8 @@ class Node {
   template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
   Publisher<SerializableT, MsgT, ConverterT> CreatePublisher(const std::string& topic,
                                                              ConverterT converter = {}) const {
-    return std::make_shared<PublisherImpl<SerializableT, MsgT, ConverterT>>(GetEventLoop(), topic, GetDiscovery(),
-                                                                            config_, std::move(converter));
+    return std::make_shared<PublisherImpl<SerializableT, MsgT, ConverterT>>(
+        GetEventLoop(), topic, GetDiscovery(), config_, std::move(converter), std::nullopt, GetName());
   }
 
   /**
@@ -107,7 +107,8 @@ class Node {
    */
   template <typename MSG_T>
   Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_);
+    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_, {}, std::nullopt,
+                                                  GetName());
   }
 
   /**
@@ -179,7 +180,7 @@ class Node {
   DynamicPublisher CreateDynamicPublisher(const std::string& topic,
                                           std::optional<DynamicPublisherSchema> schema = std::nullopt) const {
     return std::make_shared<PublisherImpl<google::protobuf::Message>>(GetEventLoop(), topic, GetDiscovery(), config_,
-                                                                      std::identity{}, std::move(schema));
+                                                                      std::identity{}, std::move(schema), GetName());
   }
 
   /**

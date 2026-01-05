@@ -46,10 +46,11 @@ ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesCo
 
 }  // namespace
 
-ShmWriter::ShmWriter(trellis::core::EventLoop loop, int pid, size_t num_buffers, size_t buffer_size)
-    : loop_{loop},
+ShmWriter::ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, const int pid, const size_t num_buffers,
+                     const size_t buffer_size)
+    : loop_{std::move(loop)},
       writer_id_{std::chrono::steady_clock::now().time_since_epoch().count()},
-      base_name_{fmt::format("trellis_publisher_{}_{}", pid, writer_id_)},
+      base_name_{fmt::format("trellis_{}_{}_{}", node_name, pid, writer_id_)},
       files_(CreateBuffers(base_name_, num_buffers, buffer_size)),
       locks_(CreateReadWriteLocks(files_)) {}
 

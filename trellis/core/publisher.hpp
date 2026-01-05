@@ -53,7 +53,7 @@ struct DynamicPublisherSchema {
  *
  * This class supports opt-in automatic conversion from native C++ types to protobuf messages. To use this feature,
  * callers must specify the serializable, native, and converter types as template parameters. A concrete converter is
- * passed as a constructor argument. Free functions or functors can be used; the type of a free function `Foo` can be
+ * passed as a constructor argument. Free functions or functors can be used; the type of free function `Foo` can be
  * deduced easily via `decltype(Foo)`.
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
@@ -83,10 +83,12 @@ class PublisherImpl {
    * @param converter The function to convert from the message to serializable message
    * @param schema Optional schema for dynamic publishers. When provided, the publisher registers
    *               immediately with discovery instead of waiting to learn the schema from subscribers.
+   * @param application_name an optional name of the application creating this publisher
    */
   PublisherImpl(trellis::core::EventLoop loop, const std::string& topic,
                 std::shared_ptr<discovery::Discovery> discovery, const trellis::core::Config& config,
-                ConverterT converter = {}, std::optional<DynamicPublisherSchema> schema = std::nullopt)
+                ConverterT converter = {}, std::optional<DynamicPublisherSchema> schema = std::nullopt,
+                std::string_view application_name = "")
       : topic_{topic},
         num_write_buffers_{config.GetConfigAttributeForTopic<size_t>(topic, "num_buffers", /* is_publisher = */ true,
                                                                      kDefaultNumWriterBuffers)},
@@ -96,7 +98,8 @@ class PublisherImpl {
                                                                    kDefaultMaxBufferSize)},
         statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
             topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
-        writer_(loop, ::getpid(), num_write_buffers_, 0),
+        writer_(application_name.empty() ? "trellis_publisher" : application_name, loop, ::getpid(), num_write_buffers_,
+                0),
         discovery_{discovery},
         discovery_handle_{[&]() {
           if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {

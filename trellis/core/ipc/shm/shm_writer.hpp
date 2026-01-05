@@ -49,12 +49,13 @@ class ShmWriter {
   /**
    * @brief Constructs a `ShmWriter` instance.
    *
+   * @param node_name Logical name of this node (typically an app name). Will be used in naming the generated files.
    * @param loop Event loop used to send notifications.
    * @param pid The process ID of the writer.
    * @param num_buffers Number of shared memory buffers to use.
    * @param buffer_size Initial size in bytes for each shared memory buffer.
    */
-  ShmWriter(trellis::core::EventLoop loop, int pid, size_t num_buffers, size_t buffer_size);
+  ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, int pid, size_t num_buffers, size_t buffer_size);
 
   ShmWriter(const ShmWriter&) = delete;
   ShmWriter& operator=(const ShmWriter&) = delete;
