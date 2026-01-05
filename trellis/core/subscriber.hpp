@@ -20,6 +20,8 @@
 
 #include <fmt/core.h>
 
+#include <ranges>
+
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/discovery/utils.hpp"
@@ -97,15 +99,14 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
         topic_{topic},
         callback_{std::move(callback)},
         raw_callback_{std::move(raw_callback)},
-        watchdog_timer_{},
         update_sim_fn_{std::move(update_sim_fn)},
         statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
             topic, "statistics_update_interval_ms", /* is_publisher = */ false, kDefaultStatisticsUpdateIntervalMs)},
-        discovery_{discovery},
+        discovery_{std::move(discovery)},
         discovery_handle_{discovery_->RegisterSubscriber<SerializableT>(topic)},
         subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
-        callback_handle_{discovery->AsyncReceivePublishers(
-            [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+        callback_handle_{discovery_->AsyncReceivePublishers(
+            [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
               ReceivePublisher(event, sample);
             })},
         statistics_timer_{std::make_shared<PeriodicTimerImpl>(
@@ -132,7 +133,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
   void SetWatchdogTimer(Timer timer) { watchdog_timer_ = std::move(timer); }
 
   /// @return The protobuf descriptor of the dynamic message type, if available.
-  const google::protobuf::Descriptor* GetDescriptor() {
+  const google::protobuf::Descriptor* GetDescriptor() const {
     if (dynamic_message_cache_ == nullptr) {
       return nullptr;
     }
@@ -162,9 +163,9 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
    *
    * Connects to new shared memory regions or disconnects from dropped ones.
    */
-  void ReceivePublisher(discovery::Discovery::EventType event, const discovery::Sample& sample) {
+  void ReceivePublisher(const discovery::Discovery::EventType event, const discovery::Sample& sample) {
     const auto& topic = sample.topic().tname();
-    const auto topic_id = sample.id();
+    const auto& topic_id = sample.id();
 
     if (topic != topic_) {
       return;
@@ -175,15 +176,16 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
       const auto& desc = sample.topic().tdatatype().desc();
       const auto& name = sample.topic().tdatatype().name();
       if (!desc.empty() && !name.empty()) {
-        dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(sample.topic().tdatatype().desc());
-        dynamic_message_cache_->Create(sample.topic().tdatatype().name());
+        dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(desc);
+        dynamic_message_cache_->Create(name);
       }
     }
-
-    auto it = readers_.find(topic_id);
-
-    if (event == discovery::Discovery::EventType::kNewRegistration) {
-      if (it == readers_.end()) {
+    if (readers_.contains(topic_id)) {
+      if (event == discovery::Discovery::EventType::kNewUnregistration) {
+        readers_.erase(topic_id);
+      }
+    } else {
+      if (event == discovery::Discovery::EventType::kNewRegistration) {
         for (const auto& layer : sample.topic().tlayer()) {
           if (layer.type() == discovery::tl_shm) {
             const std::string& memory_file_prefix = layer.par_layer().layer_par_shm().memory_file_prefix();
@@ -216,10 +218,6 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
             }
           }
         }
-      }
-    } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
-      if (it != readers_.end()) {
-        readers_.erase(topic_id);
       }
     }
   }
@@ -318,9 +316,9 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
     if (frequency_calculator_.UpdateFrequency(now)) {
       // Collect max burst size from all readers
       unsigned max_burst_size = 0;
-      for (const auto& reader_pair : readers_) {
-        if (reader_pair.second) {
-          const auto& metrics = reader_pair.second->GetMetrics();
+      for (const auto& reader : readers_ | std::views::values) {
+        if (reader) {
+          const auto& metrics = reader->GetMetrics();
           max_burst_size = std::max(max_burst_size, metrics.socket_event.max_burst_size);
         }
       }
