@@ -28,19 +28,6 @@
 
 namespace trellis::core::ipc::proto::rpc {
 
-namespace {
-
-/**
- * @brief Thread to run the RPC work on.
- *
- * @param io_context Reference to the ASIO I/O context.
- */
-void ProcessingThread(asio::io_context& io_context) {
-  io_context.run();  // This runs the event loop for this thread
-}
-
-}  // namespace
-
 /**
  * @brief Generic gRPC-style RPC server using protobuf and TCP.
  *
@@ -60,9 +47,9 @@ class Server {
    */
   Server(std::shared_ptr<PROTO_SERVICE_T> prototype, trellis::core::EventLoop loop, discovery::DiscoveryPtr discovery)
       : work_guard_{asio::make_work_guard(io_context_)},
-        rpc_thread_(ProcessingThread, std::ref(io_context_)),
+        rpc_thread_([](asio::io_context& io_context) { io_context.run(); }, std::ref(io_context_)),
         prototype_{prototype},
-        discovery_{discovery},
+        discovery_{std::move(discovery)},
         tcp_server_{loop, /* port = */ 0,
                     [this](const trellis::core::error_code& ec, network::TCP socket) mutable {
                       if (ec) {
