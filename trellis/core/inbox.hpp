@@ -415,6 +415,7 @@ class Inbox {
 
     return Receiver<ReceiveType>{.publisher = node.CreatePublisher<SerializableType, MessageType, ConverterType>(
                                      std::string{topics[Index]}, std::get<Index>(converters)),
+                                 .latest = std::nullopt,
                                  .timeout = timeouts[Index]};
   }
 
