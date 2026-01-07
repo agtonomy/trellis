@@ -276,6 +276,20 @@ class Node {
     return std::make_shared<ipc::proto::rpc::Server<RPC_T>>(rpc, GetEventLoop(), GetDiscovery());
   }
 
+  /** Generic interface for creating a new timer.
+   *
+   * @tparam TimerType The type of timer to create
+   * @tparam Params The parameter types used to create the timer
+   * @param params The parameters to the timer
+   * @return the created timer
+   */
+  template <typename TimerType = PeriodicTimerImpl, typename... Params>
+  std::shared_ptr<TimerType> CreateTimer(Params&&... params) {
+    auto timer = std::make_shared<TimerType>(GetEventLoop(), std::forward<Params>(params)...);
+    timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
+    return timer;
+  }
+
   /**
    * CreateTimer create a new periodic timer
    *
@@ -285,7 +299,7 @@ class Node {
    *
    * @return a periodic timer object
    */
-  Timer CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0);
+  PeriodicTimer CreatePeriodicTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms = 0);
 
   /**
    * CreateOneShotTimer create a new one-shot timer.
@@ -293,11 +307,11 @@ class Node {
    * A one-shot timer fires only once at some point in the future as specified by the delay.
    *
    * @param initial_delay_ms the amount of delay in milliseconds before the timer expires
-   * @param callback the function to call when the timer expries
+   * @param callback the function to call when the timer expires
    *
    * @return a one-shot timer object
    */
-  Timer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
+  OneShotTimer CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback);
 
   /**
    * UpdateHealth update application health state

@@ -156,7 +156,9 @@ class OneShotTimerImpl : public TimerImpl {
  */
 class PeriodicTimerImpl : public TimerImpl {
  public:
-  PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms);
+  PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms = 0);
+  // alternative argument list
+  PeriodicTimerImpl(EventLoop loop, unsigned interval_ms, Callback callback, unsigned delay_ms = 0);
 
   time::TimePoint GetExpiry() const override;
   Type GetType() const override { return kPeriodic; }
@@ -171,6 +173,8 @@ class PeriodicTimerImpl : public TimerImpl {
 };
 
 using Timer = std::shared_ptr<TimerImpl>;
+using OneShotTimer = std::shared_ptr<OneShotTimerImpl>;
+using PeriodicTimer = std::shared_ptr<PeriodicTimerImpl>;
 
 }  // namespace core
 }  // namespace trellis

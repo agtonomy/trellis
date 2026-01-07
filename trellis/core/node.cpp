@@ -113,17 +113,13 @@ bool Node::ShouldRun() {
   return should_run;
 }
 
-Timer Node::CreateTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
-  auto timer = std::make_shared<PeriodicTimerImpl>(GetEventLoop(), std::move(callback), interval_ms, initial_delay_ms);
-
-  timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
+PeriodicTimer Node::CreatePeriodicTimer(unsigned interval_ms, TimerImpl::Callback callback, unsigned initial_delay_ms) {
+  auto timer = Node::CreateTimer<PeriodicTimerImpl>(interval_ms, std::move(callback), initial_delay_ms);
   return timer;
 }
 
-Timer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) {
-  auto timer = std::make_shared<OneShotTimerImpl>(GetEventLoop(), std::move(callback), initial_delay_ms);
-
-  timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
+OneShotTimer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Callback callback) {
+  auto timer = Node::CreateTimer<OneShotTimerImpl>(std::move(callback), initial_delay_ms);
   return timer;
 }
 

@@ -123,6 +123,9 @@ PeriodicTimerImpl::PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned
   KickOff();
 }
 
+PeriodicTimerImpl::PeriodicTimerImpl(EventLoop loop, unsigned interval_ms, Callback callback, unsigned delay_ms)
+    : PeriodicTimerImpl(loop, std::move(callback), interval_ms, delay_ms) {};
+
 void PeriodicTimerImpl::Reload() {
   if (!SimulationActive()) {
     // We calculate the new expiration time based on the last expiration
