@@ -22,18 +22,18 @@
 
 using namespace trellis::core;
 
-Node::Node(std::string name, trellis::core::Config config)
+Node::Node(std::string_view name, trellis::core::Config config)
     : name_{name},
-      config_{config},
+      config_{std::move(config)},
       ev_loop_{},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
-      health_{name, config,
+      health_{std::string(name), config_,
               [this](const std::string& topic) { return CreatePublisher<trellis::core::HealthHistory>(topic); },
               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
                 return CreateTimer(interval_ms, cb);
               }} {
-  Log::SetLogLevel(config.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
+  Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
   // Handle signals explicitly, allowing the user to supply their own handler
   signal_set_.async_wait([this](const trellis::core::error_code& error, int signal_number) {
     if (!error) {
@@ -44,13 +44,13 @@ Node::Node(std::string name, trellis::core::Config config)
     }
   });
 
-  if (config.AsIfExists<bool>("trellis.health.auto_report", false)) {
+  if (config_.AsIfExists<bool>("trellis.health.auto_report", false)) {
     // Kick off health reporting for this node
     UpdateHealth(trellis::core::HealthState::HEALTH_STATE_NORMAL);
   }
 
   // Initialize metrics publisher if enabled
-  if (config.AsIfExists<bool>("trellis.metrics.enabled", false)) {
+  if (config_.AsIfExists<bool>("trellis.metrics.enabled", false)) {
     const auto metrics_topic = config.AsIfExists<std::string>("trellis.metrics.topic", "/trellis/app/metrics");
     const auto metrics_interval_ms = config.AsIfExists<unsigned>("trellis.metrics.interval_ms", 60000);
 
@@ -88,22 +88,22 @@ int Node::Run() {
   return 0;
 }
 
-bool Node::RunN(unsigned n) {
-  unsigned count = 0;
+bool Node::RunN(const unsigned n) {
   try {
+    unsigned count{0};
     // poll_one will return immediately (never block). If it returned 0 there's
-    // nothing to do right now and so we'll just drop out of the loop, otherwise we keep
+    // nothing to do right now, so we'll just drop out of the loop, otherwise we keep
     // polling so long as work is being done
     while (ShouldRun() && ev_loop_.PollOne() && count++ < n);
     return ShouldRun();
   } catch (const std::exception& e) {
     Log::Error("Unhandled std::exception: {}", e.what());
     ipc::NamedResourceRegistry::Get().UnlinkAll();
-    return 1;
+    return false;
   } catch (...) {
     Log::Error("Unhandled unknown exception occurred.");
     ipc::NamedResourceRegistry::Get().UnlinkAll();
-    return 1;
+    return false;
   }
 }
 
@@ -142,7 +142,7 @@ trellis::core::HealthState Node::GetHealthState() const { return health_.GetHeal
 
 const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return health_.GetLastHealthStatus(); }
 
-void Node::AddSignalHandler(SignalHandler handler) { user_handler_ = handler; }
+void Node::AddSignalHandler(const SignalHandler& handler) { user_handler_ = handler; }
 
 uint64_t Node::GetTimerOverrunCount() const {
   uint64_t total = 0;

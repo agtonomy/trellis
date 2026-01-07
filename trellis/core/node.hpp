@@ -65,8 +65,9 @@ class Node {
    * Node Construct an instance
    *
    * @param name the name of the application this instance represents
+   * @param config the config object
    */
-  Node(std::string name, trellis::core::Config config);
+  Node(std::string_view name, trellis::core::Config config);
 
   ~Node();
 
@@ -244,7 +245,7 @@ class Node {
               watchdog_callback(now);
             }
           };
-      impl->SetWatchdogTimer(std::move(CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper))));
+      impl->SetWatchdogTimer(CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper)));
     }
     return impl;
   }
@@ -336,7 +337,7 @@ class Node {
   const trellis::core::HealthStatus& GetLastHealthStatus() const;
 
   /*
-   * Run run the application
+   * @brief run the application
    *
    * After the application has performed the required initialization, call this method to co-opt the current thread to
    * run the underlying Trellis facilities. It is recommended to call this method as your main() return statement.
@@ -403,7 +404,7 @@ class Node {
   }
 
   /**
-   * Stop stop the underlying threads
+   * @brief stop the underlying threads
    *
    * Note: this method is not needed for typical applications
    */
@@ -412,8 +413,6 @@ class Node {
   /**
    * GetEventLoop retrieve a handle to the underlying asio event loop
    * used under the hood.
-   *
-   * @param a handle to the underlying asio::io_context instance
    */
   EventLoop GetEventLoop() const { return ev_loop_; }
 
@@ -427,7 +426,7 @@ class Node {
    *
    * @param handler the function to call when SIGINT or SIGTERM is caught
    */
-  void AddSignalHandler(SignalHandler handler);
+  void AddSignalHandler(const SignalHandler& handler);
 
   /**
    * UpdateSimulatedClock update the simulated clock
