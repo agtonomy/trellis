@@ -54,10 +54,9 @@ ShmWriter::ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, 
       files_(CreateBuffers(base_name_, num_buffers, buffer_size)),
       locks_(CreateReadWriteLocks(files_)) {}
 
-ShmFile::WriteInfo ShmWriter::GetWriteAccess(size_t minimum_size) {
-  ShmFile::WriteInfo info{};
+ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
   if (files_.empty()) {
-    return info;
+    return ShmFile::WriteInfo{};
   }
   if (buffer_index_ >= files_.size()) {
     throw std::logic_error("Memory file vector is too small, size = " + std::to_string(files_.size()));
@@ -91,7 +90,8 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(size_t minimum_size) {
   return write_info;
 }
 
-void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, size_t bytes_written, bool success) {
+void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, const size_t bytes_written,
+                                   const bool success) {
   auto& file = files_[buffer_index_];
   auto& lock = locks_.at(file.Handle());
 
@@ -112,7 +112,7 @@ void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, si
 }
 
 void ShmWriter::AddReader(const std::string& reader_id) {
-  if (events_.find(reader_id) == events_.end()) {
+  if (!events_.contains(reader_id)) {
     const auto event_handle = fmt::format("/tmp/trellis/{}_{}_evt.sock", base_name_, reader_id);
     events_.emplace(std::piecewise_construct, std::forward_as_tuple(reader_id),
                     std::forward_as_tuple(loop_, /* reader = */ false, event_handle));
@@ -120,12 +120,12 @@ void ShmWriter::AddReader(const std::string& reader_id) {
 }
 
 void ShmWriter::RemoveReader(const std::string& reader_id) {
-  if (events_.find(reader_id) != events_.end()) {
+  if (events_.contains(reader_id)) {
     events_.erase(reader_id);
   }
 }
 
-void ShmWriter::SignalWriteEvent(unsigned buffer_index) {
+void ShmWriter::SignalWriteEvent(const unsigned buffer_index) {
   for (auto it = events_.begin(); it != events_.end();) {
     if (!it->second.Send(unix::SocketEvent::Event{.buffer_number = buffer_index})) {
       it = events_.erase(it);
