@@ -30,6 +30,7 @@
 #include "trellis/core/logging.hpp"
 #include "trellis/core/statistics/frequency_calculator.hpp"
 #include "trellis/core/statistics/latency_calculator.hpp"
+#include "trellis/core/subscriber_base.hpp"
 #include "trellis/core/timer.hpp"
 
 namespace trellis::core {
@@ -51,8 +52,9 @@ namespace trellis::core {
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
   requires constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
-           constraints::_IsConverter<ConverterT, SerializableT, MsgT>
-class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<SerializableT, MsgT, ConverterT>> {
+               constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+class SubscriberImpl : public SubscriberBase,
+                       public std::enable_shared_from_this<SubscriberImpl<SerializableT, MsgT, ConverterT>> {
  public:
   static constexpr unsigned kDefaultStatisticsUpdateIntervalMs = 1000u;
 
@@ -129,6 +131,9 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
   /// @return True if a message has ever been received.
   bool DidReceive() const { return did_receive_; }
 
+  /// @brief Get the topic name this subscriber is subscribed to.
+  const std::string& GetTopic() const override { return topic_; }
+
   /// @brief Sets a watchdog timer that is reset upon each received message.
   void SetWatchdogTimer(Timer timer) { watchdog_timer_ = std::move(timer); }
 
@@ -153,7 +158,7 @@ class SubscriberImpl : public std::enable_shared_from_this<SubscriberImpl<Serial
 
   /// @brief Gets the latency stats since last time it was called and resets the stats
   /// @return latency stats, with min, mean, max latency in microseconds
-  statistics::LatencyCalculator::Stats GetLatestLatencyStats() { return latency_calculator_.GetAndReset(); }
+  statistics::LatencyCalculator::Stats GetLatestLatencyStats() override { return latency_calculator_.GetAndReset(); }
 
  private:
   using SerializableTypePtr = std::unique_ptr<SerializableT>;

@@ -35,6 +35,7 @@
 #include "trellis/core/logging.hpp"
 #include "trellis/core/publisher.hpp"
 #include "trellis/core/subscriber.hpp"
+#include "trellis/core/subscriber_base.hpp"
 #include "trellis/core/time.hpp"
 #include "trellis/core/timer.hpp"
 #include "trellis/core/timestamped_message.pb.h"
@@ -161,6 +162,7 @@ class Node {
       auto timer = CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper));
       impl->SetWatchdogTimer(std::move(timer));
     }
+    subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
     return impl;
   }
 
@@ -247,6 +249,7 @@ class Node {
           };
       impl->SetWatchdogTimer(CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper)));
     }
+    subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
     return impl;
   }
 
@@ -502,6 +505,9 @@ class Node {
 
   // A list of the timers that have been created
   std::vector<std::weak_ptr<TimerImpl>> timers_;
+
+  // A list of the subscribers that have been created (for metrics collection)
+  std::vector<std::weak_ptr<SubscriberBase>> subscribers_;
 
   // Optional metrics publisher and timer for internal node metrics (always constructed together)
   std::optional<std::pair<trellis::utils::metrics::MetricsPublisher, Timer>> metrics_;

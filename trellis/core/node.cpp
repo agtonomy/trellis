@@ -54,13 +54,27 @@ Node::Node(std::string_view name, trellis::core::Config config)
     const auto metrics_topic = config.AsIfExists<std::string>("trellis.metrics.topic", "/trellis/app/metrics");
     const auto metrics_interval_ms = config.AsIfExists<unsigned>("trellis.metrics.interval_ms", 60000);
 
-    metrics_.emplace(trellis::utils::metrics::MetricsPublisher(
-                         name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
-                     CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
-                       metrics_->first.AddCounter(now, "timer_overrun_count",
-                                                  static_cast<int64_t>(GetTimerOverrunCount()));
-                       metrics_->first.Publish(now);
-                     }));
+    metrics_.emplace(
+        trellis::utils::metrics::MetricsPublisher(
+            name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
+        CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
+          metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
+
+          // Collect and publish subscriber latency stats
+          for (const auto& weak_sub : subscribers_) {
+            if (auto sub = weak_sub.lock()) {
+              const auto stats = sub->GetLatestLatencyStats();
+              if (stats.count > 0) {
+                const auto& topic = sub->GetTopic();
+                metrics_->first.AddMeasurement(now, topic + "__latency_min_us", static_cast<double>(stats.min_us));
+                metrics_->first.AddMeasurement(now, topic + "__latency_mean_us", static_cast<double>(stats.mean_us));
+                metrics_->first.AddMeasurement(now, topic + "__latency_max_us", static_cast<double>(stats.max_us));
+              }
+            }
+          }
+
+          metrics_->first.Publish(now);
+        }));
   }
 }
 

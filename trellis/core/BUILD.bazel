@@ -228,6 +228,7 @@ cc_library(
     name = "core_subscriber",
     hdrs = [
         "subscriber.hpp",
+        "subscriber_base.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
