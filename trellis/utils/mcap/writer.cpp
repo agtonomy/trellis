@@ -17,6 +17,7 @@
 
 #include "trellis/utils/mcap/writer.hpp"
 
+#include "trellis/core/timer.hpp"
 #include "trellis/utils/protobuf/file_descriptor.hpp"
 
 namespace trellis::utils::mcap {
@@ -135,8 +136,10 @@ void Writer::Initialize(core::Node& node, const std::vector<std::string>& topics
 
   // Set up periodic flush timer if interval is greater than 0
   if (flush_interval_ms.count() > 0) {
-    flush_timer_ = node.CreateTimer(
-        flush_interval_ms.count(), [file_writer](const core::time::TimePoint&) { FlushWriter(*file_writer); }, 0);
+    // Manually create timer so we use the provided event loop instead of the node's event loop
+    flush_timer_ = std::make_shared<core::PeriodicTimerImpl>(
+        loop_, [file_writer](const core::time::TimePoint&) { FlushWriter(*file_writer); },
+        static_cast<unsigned>(flush_interval_ms.count()), 0);
   }
 }
 
