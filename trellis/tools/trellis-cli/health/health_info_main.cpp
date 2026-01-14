@@ -76,7 +76,7 @@ int health_info_main(int argc, char* argv[]) {
   if (got_node_update) {
     google::protobuf::util::JsonPrintOptions json_options;
     json_options.add_whitespace = true;
-    json_options.always_print_primitive_fields = true;
+    json_options.always_print_fields_with_no_presence = true;
     json_options.always_print_enums_as_ints = false;
     json_options.preserve_proto_field_names = false;
     const auto& msg = monitor.GetHealthHistory(expected_node_name);
