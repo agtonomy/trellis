@@ -26,7 +26,7 @@
 using namespace trellis::core;
 using namespace trellis::core::test;
 
-TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacks) {
+TEST_F(TrellisFixture, MultipleMsgTypesEachWithCallbacks) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
@@ -108,7 +108,7 @@ TEST_F(TrellisFixture, DuplicateMessageTypes) {
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }
 
-TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) {
+TEST_F(TrellisFixture, MultiMsgTypesWithBothCallbacks) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
   static unsigned watchdog_count_1{0};
@@ -190,7 +190,7 @@ TEST_F(TrellisFixture, MultipleMessageTypesWithIndividualCallbacksAndWatchdogs) 
   ASSERT_EQ(watchdog_count_2, 2U);
 }
 
-TEST_F(TrellisFixture, RoundTripConversionWithIndividualCallbacks) {
+TEST_F(TrellisFixture, RoundTripConversionEachWithCallbacks) {
   static unsigned receive_count_1{0};
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;

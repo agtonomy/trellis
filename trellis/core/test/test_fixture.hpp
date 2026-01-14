@@ -60,7 +60,7 @@ class TrellisFixture : public ::testing::Test {
   void SetUp() override {
     // Create a fresh node for each test to avoid discovery state pollution
     node_ = std::make_unique<trellis::core::Node>(
-        "test_fixture",
+        ::testing::UnitTest::GetInstance()->current_test_info()->name(),
         trellis::core::Config(YAML::Load(CreateConfig(kNumPubBuffers, kTestDiscoveryInterval, kTestDiscoveryTimeout))));
   }
 

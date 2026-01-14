@@ -130,7 +130,7 @@ class ShmWriter {
 
   trellis::core::EventLoop loop_;  ///< Event loop used for asynchronous reader notifications.
   int64_t writer_id_;              ///< Unique ID for the writer instance.
-  std::string base_name_;          ///< Base name used for generating shared memory file handles.
+  const std::string base_name_;    ///< Base name used for generating shared memory file handles.
   FilesContainer files_;           ///< Set of shared memory file buffers.
   ReadWriteLocksContainer locks_;  ///< Lock set for controlling access to each buffer.
   std::unordered_map<std::string, unix::SocketEvent>

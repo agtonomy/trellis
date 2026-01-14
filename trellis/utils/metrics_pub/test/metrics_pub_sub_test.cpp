@@ -35,7 +35,7 @@ TEST_F(TrellisFixture, simple_test) {
       "/trellis/app/metrics",
       [&](const trellis::core::time::TimePoint&, const trellis::core::time::TimePoint&,
           trellis::core::SubscriberImpl<trellis::utils::metrics::MetricsGroup>::MsgTypePtr msg) {
-        EXPECT_STREQ(msg->source().c_str(), "test_fixture");
+        EXPECT_STREQ(msg->source().c_str(), "simple_test");
         ASSERT_TRUE(msg->measurements().size() == 1);
         EXPECT_STREQ(msg->measurements()[0].name().c_str(), "gauge");
         EXPECT_FLOAT_EQ(msg->measurements()[0].value(), -1.1 * receive_count);

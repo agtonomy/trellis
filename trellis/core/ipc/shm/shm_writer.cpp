@@ -18,6 +18,13 @@
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 
 #include <fmt/core.h>
+#include <fmt/ranges.h>
+#include <sys/mman.h>
+
+#include <filesystem>
+#include <iostream>
+
+#include "trellis/core/logging.hpp"
 
 namespace trellis::core::ipc::shm {
 
@@ -44,15 +51,61 @@ ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesCo
   return locks;
 }
 
+/**
+ * @brief Removes all shm files that haves names starting with a prefix and are followed by a number. This is intended
+ * to be used when no files with that name prefix are being used.
+ *
+ * @param file_name_prefix The prefix for the files that will be deleted.
+ */
+void RemoveSHMFiles(std::string_view file_name_prefix) {
+  std::set<std::string> unlinked, failed_to_unlink;
+
+  std::string filename_str;
+  for (const auto& file : std::filesystem::directory_iterator("/dev/shm/")) {
+    filename_str = file.path().filename().string();
+    // the find_first_not_of ensures that we aren't accidentally deleting files from different apps that have a
+    // common stem name with this app. For instance, if this app is named foo, this avoids deleting files from a
+    // different app named foo_4_thought.
+    if (filename_str.starts_with(file_name_prefix) &&
+        filename_str.substr(file_name_prefix.size(), std::string::npos).find_first_not_of("_0123456789") ==
+            std::string::npos) {
+      try {
+        if (::shm_unlink(file.path().string().c_str()) == 0 ||
+            std::filesystem::remove(file.path())) {  // if unlink fails, rm might succeed
+          unlinked.insert(filename_str);
+          continue;
+        }
+      } catch (const std::exception& ex) {
+        // all the un-removable files are collected into a single msg so that the log isn't flooded
+      }
+      failed_to_unlink.insert(filename_str);
+    }
+  }
+
+  if (!unlinked.empty()) {
+    trellis::core::Log::Debug("Removed the following SHM files : {}", fmt::join(unlinked, ", "));
+  }
+  if (!failed_to_unlink.empty()) {
+    trellis::core::Log::Warn("Unable to remove the following SHM files : {}", fmt::join(failed_to_unlink, ", "));
+  }
+}
+
 }  // namespace
 
 ShmWriter::ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, const int pid, const size_t num_buffers,
                      const size_t buffer_size)
     : loop_{std::move(loop)},
       writer_id_{std::chrono::steady_clock::now().time_since_epoch().count()},
-      base_name_{fmt::format("trellis_{}_{}_{}", node_name, pid, writer_id_)},
-      files_(CreateBuffers(base_name_, num_buffers, buffer_size)),
-      locks_(CreateReadWriteLocks(files_)) {}
+      base_name_{fmt::format("trellis_{}_{}_{}", node_name, pid, writer_id_)} {
+  // It may not be safe to call RemoveSHMFiles after the first time a ShmWriter is created by an application.
+  // Subsequence calls might delete shm files that are currently in use by active ShmWriters that were created earlier
+  // during the same program's lifetime.
+  static std::once_flag remove_shm_once;
+  std::call_once(remove_shm_once, RemoveSHMFiles, fmt::format("trellis_{}_", node_name));
+
+  files_ = CreateBuffers(base_name_, num_buffers, buffer_size);
+  locks_ = CreateReadWriteLocks(files_);
+}
 
 ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
   if (files_.empty()) {
