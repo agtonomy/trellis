@@ -62,6 +62,9 @@ class Client {
                 const auto tcp_port = sample.service().tcp_port();
                 if (event == discovery::Discovery::EventType::kNewUnregistration) {
                   if (tcp_client_.has_value()) {
+                    trellis::core::Log::Info(
+                        "Received unregistration for service {} server on port {}, removing TCP connection",
+                        PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
                     const auto maybe_remote_port = tcp_client_.value().GetRemotePort();
                     if (!maybe_remote_port.has_value() || maybe_remote_port.value() == tcp_port) {
                       tcp_client_.reset();
@@ -69,7 +72,20 @@ class Client {
                   }
                 } else if (event == discovery::Discovery::EventType::kNewRegistration) {
                   if (!tcp_client_.has_value()) {
+                    trellis::core::Log::Info(
+                        "Received registration for service {} server on port {}, creating TCP connection",
+                        PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
                     tcp_client_ = network::TCP(loop, "127.0.0.1", tcp_port);
+                  } else {
+                    // if for some reason tcp_client_ is set already, but on the wrong port
+                    const auto maybe_remote_port = tcp_client_.value().GetRemotePort();
+                    if (maybe_remote_port.has_value() && maybe_remote_port.value() != tcp_port) {
+                      trellis::core::Log::Info(
+                          "Received registration for service {} server on port {}, updating existing TCP connection",
+                          PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
+                      tcp_client_.reset();  // Port changed - TCP destructor handles cleanup
+                      tcp_client_ = network::TCP(loop, "127.0.0.1", tcp_port);
+                    }
                   }
                 }
               }
@@ -238,7 +254,7 @@ class Client {
     tcp_client_.value().AsyncSendAll(
         send_header_buf->data(), send_header_buf->size(),
         [this, send_header_buf](const trellis::core::error_code& ec, size_t bytes_sent) {
-          if (ec == asio::error::operation_aborted || !pending_request_) {
+          if (!pending_request_) {
             return;  // short circuit on timeout
           } else if (ec) {
             pending_request_->failure_fn();
@@ -248,7 +264,7 @@ class Client {
           tcp_client_.value().AsyncSendAll(
               pending_request_->request_buffer->data(), pending_request_->request_buffer->size(),
               [this](const trellis::core::error_code& ec, size_t bytes_sent) {
-                if (ec == asio::error::operation_aborted || !pending_request_) {
+                if (!pending_request_) {
                   return;  // short circuit on timeout
                 } else if (ec) {
                   pending_request_->failure_fn();
@@ -259,7 +275,7 @@ class Client {
                 tcp_client_.value().AsyncReceiveAll(
                     receive_header_buf->data(), receive_header_buf->size(),
                     [this, receive_header_buf](const trellis::core::error_code& ec, size_t /*bytes_received*/) {
-                      if (ec == asio::error::operation_aborted || !pending_request_) {
+                      if (!pending_request_) {
                         return;  // short circuit on timeout
                       } else if (ec) {
                         pending_request_->failure_fn();
@@ -274,11 +290,9 @@ class Client {
                       tcp_client_.value().AsyncReceiveAll(
                           receive_buffer->data(), receive_buffer->size(),
                           [this, receive_buffer](const trellis::core::error_code& ec, size_t bytes_received) {
-                            if (ec == asio::error::operation_aborted || !pending_request_) {
+                            if (!pending_request_) {
                               return;  // short circuit on timeout
-                            }
-
-                            if (ec) {
+                            } else if (ec) {
                               pending_request_->failure_fn();
                               return;
                             }
