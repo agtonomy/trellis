@@ -34,19 +34,21 @@ std::string GenerateBufferName(const std::string& base_name, size_t buf_num) {
   return fmt::format("{}_{:03}", base_name, buf_num);
 }
 
-ShmWriter::FilesContainer CreateBuffers(const std::string& base_name, size_t num_buffers, size_t buffer_size) {
+ShmWriter::FilesContainer CreateBuffers(const std::string& base_name, size_t num_buffers, size_t buffer_size,
+                                        const trellis::core::Config& config) {
   ShmWriter::FilesContainer files;
   for (size_t i = 0; i < num_buffers; ++i) {
-    files.emplace_back(ShmFile(GenerateBufferName(base_name, i), /* owner = */ true, buffer_size));
+    files.emplace_back(ShmFile(GenerateBufferName(base_name, i), /* owner = */ true, buffer_size, config));
   }
   return files;
 }
 
-ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesContainer& files) {
+ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesContainer& files,
+                                                        const trellis::core::Config& config) {
   ShmWriter::ReadWriteLocksContainer locks;
   for (const auto& file : files) {
     const auto& name = file.Handle();
-    locks.emplace(std::make_pair(name, ShmReadWriteLock(name + "_mtx", /* owner = */ true)));
+    locks.emplace(std::make_pair(name, ShmReadWriteLock(name + "_mtx", /* owner = */ true, config)));
   }
   return locks;
 }
@@ -93,18 +95,19 @@ void RemoveSHMFiles(std::string_view file_name_prefix) {
 }  // namespace
 
 ShmWriter::ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, const int pid, const size_t num_buffers,
-                     const size_t buffer_size)
+                     const size_t buffer_size, const trellis::core::Config& config)
     : loop_{std::move(loop)},
       writer_id_{std::chrono::steady_clock::now().time_since_epoch().count()},
-      base_name_{fmt::format("trellis_{}_{}_{}", node_name, pid, writer_id_)} {
+      base_name_{fmt::format("trellis_{}_{}_{}", node_name, pid, writer_id_)},
+      config_{config} {
   // It may not be safe to call RemoveSHMFiles after the first time a ShmWriter is created by an application.
   // Subsequence calls might delete shm files that are currently in use by active ShmWriters that were created earlier
   // during the same program's lifetime.
   static std::once_flag remove_shm_once;
   std::call_once(remove_shm_once, RemoveSHMFiles, fmt::format("trellis_{}_", node_name));
 
-  files_ = CreateBuffers(base_name_, num_buffers, buffer_size);
-  locks_ = CreateReadWriteLocks(files_);
+  files_ = CreateBuffers(base_name_, num_buffers, buffer_size, config_);
+  locks_ = CreateReadWriteLocks(files_, config_);
 }
 
 ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
@@ -168,7 +171,7 @@ void ShmWriter::AddReader(const std::string& reader_id) {
   if (!events_.contains(reader_id)) {
     const auto event_handle = fmt::format("/tmp/trellis/{}_{}_evt.sock", base_name_, reader_id);
     events_.emplace(std::piecewise_construct, std::forward_as_tuple(reader_id),
-                    std::forward_as_tuple(loop_, /* reader = */ false, event_handle));
+                    std::forward_as_tuple(loop_, /* reader = */ false, event_handle, config_));
   }
 }
 

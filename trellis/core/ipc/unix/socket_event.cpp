@@ -23,18 +23,16 @@
 #include <filesystem>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
+#include "trellis/core/ipc/utils.hpp"
 #include "trellis/core/logging.hpp"
 #include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis::core::ipc::unix {
 
-SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string handle)
+SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string handle,
+                         const trellis::core::Config& config)
     : reader_(reader), handle_(std::move(handle)), socket_(*loop) {
   if (reader_) {
-    // First create the base directories if they don't exist
-    std::filesystem::path handle_path(handle_);
-    std::filesystem::create_directories(handle_path.parent_path());
-
     // Unlink if there is a collision with an existing resource
     ::unlink(handle_.c_str());
 
@@ -46,7 +44,10 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
     socket_.set_option(asio::socket_base::receive_buffer_size(sizeof(Event) * kMaxEventNumEvents));
 
     {
-      trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+      const auto [uid_opt, gid_opt] = trellis::core::ipc::utils::GetUidGidFromConfig(config);
+      trellis::utils::UmaskGuard guard(000, uid_opt, gid_opt);
+      std::filesystem::path handle_path(handle_);
+      std::filesystem::create_directories(handle_path.parent_path());
       socket_.bind(endpoint_);
     }
     if (::chmod(endpoint_.path().c_str(), 0777) < 0) {

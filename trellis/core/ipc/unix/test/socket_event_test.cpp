@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <thread>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
 
 namespace fs = std::filesystem;
@@ -35,6 +36,7 @@ class TrellisSocketEventTest : public ::testing::Test {
     socket_path_ = "/tmp/test_socket_event.sock";
     fs::remove(socket_path_);
     loop_ = std::make_shared<trellis::core::EventLoop>();
+    config_ = trellis::core::Config{};
   }
 
   void TearDown() override { fs::remove(socket_path_); }
@@ -48,19 +50,20 @@ class TrellisSocketEventTest : public ::testing::Test {
 
   std::shared_ptr<trellis::core::EventLoop> loop_;
   std::string socket_path_;
+  trellis::core::Config config_;
 };
 
 TEST_F(TrellisSocketEventTest, SendAndReceiveSingleEvent) {
   std::atomic<bool> received{false};
   SocketEvent::Event received_event{};
 
-  SocketEvent reader(*loop_, true, socket_path_);
+  SocketEvent reader(*loop_, true, socket_path_, config_);
   reader.AsyncReceive([&](SocketEvent::Event ev) {
     received_event = ev;
     received = true;
   });
 
-  SocketEvent writer(*loop_, false, socket_path_);
+  SocketEvent writer(*loop_, false, socket_path_, config_);
   SocketEvent::Event sent_event{42};
   writer.Send(sent_event);
 
@@ -74,14 +77,14 @@ TEST_F(TrellisSocketEventTest, MultipleEventsAreReceived) {
   const int kNumEvents = 5;
   std::atomic<int> received_count{0};
 
-  SocketEvent reader(*loop_, true, socket_path_);
+  SocketEvent reader(*loop_, true, socket_path_, config_);
   reader.AsyncReceive([&](SocketEvent::Event ev) {
     EXPECT_GE(ev.buffer_number, 0u);
     EXPECT_LT(ev.buffer_number, static_cast<unsigned>(kNumEvents));
     received_count++;
   });
 
-  SocketEvent writer(*loop_, false, socket_path_);
+  SocketEvent writer(*loop_, false, socket_path_, config_);
   for (unsigned i = 0; i < kNumEvents; ++i) {
     SocketEvent::Event event{i};
     writer.Send(event);

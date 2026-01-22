@@ -28,6 +28,7 @@
 #include <mutex>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
+#include "trellis/core/ipc/utils.hpp"
 #include "trellis/core/time.hpp"
 #include "trellis/utils/umask_guard/umask_guard.hpp"
 
@@ -36,14 +37,15 @@ namespace trellis::core::ipc::shm {
 namespace {
 namespace {
 
-ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle) {
+ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle, const trellis::core::Config& config) {
   int fd;
   int err;
   {
-    trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+    const auto [uid_opt, gid_opt] = trellis::core::ipc::utils::GetUidGidFromConfig(config);
+    trellis::utils::UmaskGuard guard(000, uid_opt, gid_opt);
     fd = ::shm_open(handle.c_str(), O_RDWR | O_CREAT | O_EXCL,
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-    err = errno;  // capture before guard restores umask
+    err = errno;
   }
 
   if (fd < 0) {
@@ -82,8 +84,8 @@ ShmReadWriteLock::NamedRwLock* OpenRwLock(std::string handle) {
   return rw;
 }
 
-ShmReadWriteLock::NamedRwLock* CreateOrOpenRwLock(std::string handle, bool owner) {
-  auto rw = CreateRwLock(handle);
+ShmReadWriteLock::NamedRwLock* CreateOrOpenRwLock(std::string handle, bool owner, const trellis::core::Config& config) {
+  auto rw = CreateRwLock(handle, config);
   if (rw == nullptr) {
     rw = OpenRwLock(handle);
   }
@@ -97,8 +99,8 @@ ShmReadWriteLock::NamedRwLock* CreateOrOpenRwLock(std::string handle, bool owner
 
 }  // namespace
 
-ShmReadWriteLock::ShmReadWriteLock(std::string handle, bool owner)
-    : handle_{handle}, owner_{owner}, rwlock_{CreateOrOpenRwLock(handle, owner)} {}
+ShmReadWriteLock::ShmReadWriteLock(std::string handle, bool owner, const trellis::core::Config& config)
+    : handle_{handle}, owner_{owner}, rwlock_{CreateOrOpenRwLock(handle, owner, config)} {}
 
 ShmReadWriteLock::~ShmReadWriteLock() {
   if (rwlock_ != nullptr) {

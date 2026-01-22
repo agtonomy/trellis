@@ -22,6 +22,7 @@
 #include <mutex>
 #include <string>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/time.hpp"
 
 namespace trellis::core::ipc::shm {
@@ -87,8 +88,9 @@ class ShmFile {
    * @param handle The name of the shared memory object.
    * @param owner Whether this instance owns the shared memory (creator).
    * @param requested_size Size of the memory region to allocate (ignored if not owner).
+   * @param config Configuration object for reading IPC settings (uid/gid).
    */
-  ShmFile(const std::string& handle, bool owner, size_t requested_size);
+  ShmFile(const std::string& handle, bool owner, size_t requested_size, const trellis::core::Config& config);
 
   /**
    * @brief Destructor to clean up resources.

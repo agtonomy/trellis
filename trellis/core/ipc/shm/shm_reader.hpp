@@ -21,6 +21,7 @@
 #include <functional>
 #include <string>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/ipc/shm/shm_file.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/ipc/unix/socket_event.hpp"
@@ -107,9 +108,10 @@ class ShmReader {
    * @param reader_id The unique ID of this reader, used for identifying socket events.
    * @param names A list of shared memory segment names to attach to.
    * @param receive_callback A user-defined callback invoked when new data is available.
+   * @param config Configuration object for reading IPC settings (uid/gid).
    */
   ShmReader(trellis::core::EventLoop loop, const std::string& reader_id, const std::vector<std::string>& names,
-            Callback receive_callback);
+            Callback receive_callback, const trellis::core::Config& config);
 
   /**
    * @brief Internal handler for socket events signaling that shared memory has been updated.

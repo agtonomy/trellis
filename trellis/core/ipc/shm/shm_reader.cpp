@@ -44,18 +44,19 @@ std::string GenerateEventSocketName(const std::vector<std::string>& names, const
   return socket_name;
 }
 
-std::vector<ShmReadWriteLock> CreateReaderWriterLocks(const std::vector<std::string>& names) {
+std::vector<ShmReadWriteLock> CreateReaderWriterLocks(const std::vector<std::string>& names,
+                                                      const trellis::core::Config& config) {
   std::vector<ShmReadWriteLock> locks;
   for (const auto& name : names) {
-    locks.emplace_back(ShmReadWriteLock(GenerateMutexName(name), /* owner = */ false));
+    locks.emplace_back(ShmReadWriteLock(GenerateMutexName(name), /* owner = */ false, config));
   }
   return locks;
 }
 
-std::vector<ShmFile> CreateShmFiles(const std::vector<std::string>& names) {
+std::vector<ShmFile> CreateShmFiles(const std::vector<std::string>& names, const trellis::core::Config& config) {
   std::vector<ShmFile> files;
   for (const auto& name : names) {
-    files.emplace_back(name, /* owner = */ false, 0);
+    files.emplace_back(name, /* owner = */ false, 0, config);
   }
   return files;
 }
@@ -63,10 +64,10 @@ std::vector<ShmFile> CreateShmFiles(const std::vector<std::string>& names) {
 }  // namespace
 
 ShmReader::ShmReader(trellis::core::EventLoop loop, const std::string& reader_id, const std::vector<std::string>& names,
-                     Callback receive_callback)
-    : files_(CreateShmFiles(names)),
-      locks_(CreateReaderWriterLocks(names)),
-      evt_(unix::SocketEvent(loop, /* reader = */ true, GenerateEventSocketName(names, reader_id))),
+                     Callback receive_callback, const trellis::core::Config& config)
+    : files_(CreateShmFiles(names, config)),
+      locks_(CreateReaderWriterLocks(names, config)),
+      evt_(unix::SocketEvent(loop, /* reader = */ true, GenerateEventSocketName(names, reader_id), config)),
       receive_callback_{std::move(receive_callback)} {}
 
 void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {

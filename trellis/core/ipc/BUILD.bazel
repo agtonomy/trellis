@@ -4,6 +4,15 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+cc_library(
+    name = "utils",
+    hdrs = ["utils.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_config",
+    ],
+)
+
 filegroup(
     name = "srcs",
     srcs = glob(

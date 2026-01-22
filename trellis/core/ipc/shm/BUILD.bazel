@@ -4,8 +4,10 @@ cc_library(
     hdrs = ["shm_read_write_lock.hpp"],
     linkopts = ["-lrt"],
     deps = [
+        "//trellis/core:core_config",
         "//trellis/core:core_time",
         "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc:utils",
         "//trellis/utils/umask_guard",
     ],
 )
@@ -16,8 +18,10 @@ cc_library(
     hdrs = ["shm_file.hpp"],
     linkopts = ["-lrt"],
     deps = [
+        "//trellis/core:core_config",
         "//trellis/core:core_time",
         "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc:utils",
         "//trellis/utils/umask_guard",
         "@fmt",
     ],
@@ -31,6 +35,7 @@ cc_library(
     deps = [
         ":shm_file",
         ":shm_read_write_lock",
+        "//trellis/core:core_config",
         "//trellis/core/ipc/unix:socket_event",
     ],
 )
@@ -43,6 +48,7 @@ cc_library(
     deps = [
         ":shm_file",
         ":shm_read_write_lock",
+        "//trellis/core:core_config",
         "//trellis/core/ipc/unix:socket_event",
         "@fmt",
     ],

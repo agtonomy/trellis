@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
 
 namespace trellis::core::ipc::unix {
@@ -59,8 +60,9 @@ class SocketEvent {
    * @param loop Event loop used for asynchronous socket operations.
    * @param reader Whether this instance is used for receiving (true) or sending (false).
    * @param handle A unique identifier used to construct the UNIX socket path.
+   * @param config Configuration object for reading IPC settings (uid/gid).
    */
-  SocketEvent(trellis::core::EventLoop loop, bool reader, std::string handle);
+  SocketEvent(trellis::core::EventLoop loop, bool reader, std::string handle, const trellis::core::Config& config);
 
   /// Destructor closes the socket and releases any OS-level resources.
   ~SocketEvent();

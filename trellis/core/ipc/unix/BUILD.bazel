@@ -8,9 +8,11 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//trellis/core:core_config",
         "//trellis/core:core_event_loop",
         "//trellis/core:core_logging",
         "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc:utils",
         "//trellis/utils/umask_guard",
         "@asio",
     ],

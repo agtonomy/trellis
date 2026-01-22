@@ -99,6 +99,7 @@ class SubscriberImpl : public SubscriberBase,
                  const trellis::core::Config& config, ConverterT converter = {})
       : loop_{loop},
         topic_{topic},
+        config_{config},
         callback_{std::move(callback)},
         raw_callback_{std::move(raw_callback)},
         update_sim_fn_{std::move(update_sim_fn)},
@@ -213,7 +214,8 @@ class SubscriberImpl : public SubscriberBase,
                   if (auto self = weak_self.lock()) {
                     self->ReceiveData(header, data, len);
                   }
-                });
+                },
+                config_);
             // Only add the reader to the container if it was properly initialized
             if (reader && reader->IsInitialized()) {
               readers_.emplace(topic_id, std::move(reader));
@@ -340,6 +342,7 @@ class SubscriberImpl : public SubscriberBase,
 
   trellis::core::EventLoop loop_;
   const std::string topic_;
+  const trellis::core::Config config_;
   Callback callback_;
   RawCallback raw_callback_;
   Timer watchdog_timer_;

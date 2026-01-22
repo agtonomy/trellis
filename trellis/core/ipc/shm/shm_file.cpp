@@ -28,13 +28,14 @@
 #include <system_error>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
+#include "trellis/core/ipc/utils.hpp"
 #include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis::core::ipc::shm {
 
 namespace {
 
-int CreateOrOpen(const std::string& handle, const bool owner) {
+int CreateOrOpen(const std::string& handle, const bool owner, const trellis::core::Config& config) {
   const std::string posix_name = handle.starts_with('/') ? handle : "/" + handle;
   const auto flags = owner ? (O_CREAT | O_RDWR | O_EXCL) : O_RDONLY;
   constexpr auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
@@ -42,7 +43,8 @@ int CreateOrOpen(const std::string& handle, const bool owner) {
   int rt;
   int err;
   {
-    trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+    const auto [uid_opt, gid_opt] = trellis::core::ipc::utils::GetUidGidFromConfig(config);
+    trellis::utils::UmaskGuard guard(000, uid_opt, gid_opt);
     rt = ::shm_open(posix_name.c_str(), flags, mode);
     err = errno;  // capture before guard restores umask
   }
@@ -126,10 +128,11 @@ ShmFile::MapInfo Map(const int fd, const bool owner, const size_t requested_size
 
 }  // namespace
 
-ShmFile::ShmFile(const std::string& handle, const bool owner, const size_t requested_size)
+ShmFile::ShmFile(const std::string& handle, const bool owner, const size_t requested_size,
+                 const trellis::core::Config& config)
     : handle_{handle},
       owner_{owner},
-      fd_{CreateOrOpen(handle, owner)},
+      fd_{CreateOrOpen(handle, owner, config)},
       map_{fd_ >= 0 ? Map(fd_, owner, requested_size) : MapInfo{}} {
   if (owner) {
     NamedResourceRegistry::Get().InsertShm(handle_);

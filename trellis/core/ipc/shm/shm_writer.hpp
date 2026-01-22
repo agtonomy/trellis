@@ -24,6 +24,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/ipc/shm/shm_file.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/ipc/unix/socket_event.hpp"
@@ -54,8 +55,10 @@ class ShmWriter {
    * @param pid The process ID of the writer.
    * @param num_buffers Number of shared memory buffers to use.
    * @param buffer_size Initial size in bytes for each shared memory buffer.
+   * @param config Configuration object for reading IPC settings (uid/gid).
    */
-  ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, int pid, size_t num_buffers, size_t buffer_size);
+  ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, int pid, size_t num_buffers, size_t buffer_size,
+            const trellis::core::Config& config);
 
   ShmWriter(const ShmWriter&) = delete;
   ShmWriter& operator=(const ShmWriter&) = delete;
@@ -128,11 +131,12 @@ class ShmWriter {
    */
   void SignalWriteEvent(unsigned buffer_index);
 
-  trellis::core::EventLoop loop_;  ///< Event loop used for asynchronous reader notifications.
-  int64_t writer_id_;              ///< Unique ID for the writer instance.
-  const std::string base_name_;    ///< Base name used for generating shared memory file handles.
-  FilesContainer files_;           ///< Set of shared memory file buffers.
-  ReadWriteLocksContainer locks_;  ///< Lock set for controlling access to each buffer.
+  trellis::core::EventLoop loop_;       ///< Event loop used for asynchronous reader notifications.
+  int64_t writer_id_;                   ///< Unique ID for the writer instance.
+  const std::string base_name_;         ///< Base name used for generating shared memory file handles.
+  const trellis::core::Config config_;  ///< Configuration object for IPC settings.
+  FilesContainer files_;                ///< Set of shared memory file buffers.
+  ReadWriteLocksContainer locks_;       ///< Lock set for controlling access to each buffer.
   std::unordered_map<std::string, unix::SocketEvent>
       events_{};              ///< Active reader socket event mappings keyed by reader ID.
   unsigned buffer_index_{0};  ///< Current buffer index for round-robin writing.

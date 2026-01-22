@@ -23,6 +23,8 @@
 #include <chrono>
 #include <string>
 
+#include "trellis/core/config.hpp"
+
 namespace trellis::core::ipc::shm {
 
 /**
@@ -45,8 +47,9 @@ class ShmReadWriteLock {
    *
    * @param handle Name of the shared memory segment backing the lock.
    * @param owner If true, this instance is responsible for unlinking the named shm region.
+   * @param config Configuration object for reading IPC settings (uid/gid).
    */
-  ShmReadWriteLock(std::string handle, bool owner);
+  ShmReadWriteLock(std::string handle, bool owner, const trellis::core::Config& config);
 
   /**
    * @brief Destructor that cleans up the shared memory and lock if owned.

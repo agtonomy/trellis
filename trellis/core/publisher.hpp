@@ -99,7 +99,7 @@ class PublisherImpl {
         statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
             topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
         writer_(application_name.empty() ? "trellis_publisher" : application_name, loop, ::getpid(), num_write_buffers_,
-                0),
+                0, config),
         discovery_{discovery},
         discovery_handle_{[&]() {
           if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {
