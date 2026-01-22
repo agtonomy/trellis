@@ -1,0 +1,17 @@
+cc_library(
+    name = "umask_guard",
+    hdrs = ["umask_guard.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)

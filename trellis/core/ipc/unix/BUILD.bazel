@@ -11,6 +11,7 @@ cc_library(
         "//trellis/core:core_event_loop",
         "//trellis/core:core_logging",
         "//trellis/core/ipc:named_resource_registry",
+        "//trellis/utils/umask_guard",
         "@asio",
     ],
 )

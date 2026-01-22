@@ -29,6 +29,7 @@
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/time.hpp"
+#include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis::core::ipc::shm {
 
@@ -36,14 +37,18 @@ namespace {
 namespace {
 
 ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle) {
-  int previous_umask = ::umask(000);
-  int fd =
-      ::shm_open(handle.c_str(), O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-  ::umask(previous_umask);
+  int fd;
+  int err;
+  {
+    trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+    fd = ::shm_open(handle.c_str(), O_RDWR | O_CREAT | O_EXCL,
+                    S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    err = errno;  // capture before guard restores umask
+  }
 
   if (fd < 0) {
-    if (errno == EEXIST) return nullptr;
-    throw std::system_error(errno, std::generic_category(), "CreateRwLock shm_open failed on " + handle);
+    if (err == EEXIST) return nullptr;
+    throw std::system_error(err, std::generic_category(), "CreateRwLock shm_open failed on " + handle);
   }
 
   if (::ftruncate(fd, sizeof(ShmReadWriteLock::NamedRwLock)) == -1) {

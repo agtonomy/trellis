@@ -28,6 +28,7 @@
 #include <system_error>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
+#include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis::core::ipc::shm {
 
@@ -37,11 +38,14 @@ int CreateOrOpen(const std::string& handle, const bool owner) {
   const std::string posix_name = handle.starts_with('/') ? handle : "/" + handle;
   const auto flags = owner ? (O_CREAT | O_RDWR | O_EXCL) : O_RDONLY;
   constexpr auto mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
-  const int previous_umask =
-      ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
-  const int rt = ::shm_open(posix_name.c_str(), flags, mode);
-  const auto err = errno;   // capture before umask
-  ::umask(previous_umask);  // reset umask to previous permissions
+
+  int rt;
+  int err;
+  {
+    trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+    rt = ::shm_open(posix_name.c_str(), flags, mode);
+    err = errno;  // capture before guard restores umask
+  }
 
   // If we're not the owner and the file doesn't exist, return -1 instead of throwing
   if (!owner && rt < 0 && err == ENOENT) {

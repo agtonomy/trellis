@@ -24,6 +24,7 @@
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/logging.hpp"
+#include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis::core::ipc::unix {
 
@@ -44,10 +45,10 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
     socket_.set_option(asio::socket_base::send_buffer_size(sizeof(Event) * kMaxEventNumEvents));
     socket_.set_option(asio::socket_base::receive_buffer_size(sizeof(Event) * kMaxEventNumEvents));
 
-    const int previous_umask =
-        ::umask(000);  // set umask to nothing, so we can create files with all possible permission bits
-    socket_.bind(endpoint_);
-    (void)::umask(previous_umask);  // reset umask to previous permissions
+    {
+      trellis::utils::UmaskGuard guard(000);  // thread-safe umask manipulation
+      socket_.bind(endpoint_);
+    }
     if (::chmod(endpoint_.path().c_str(), 0777) < 0) {
       throw std::system_error(errno, std::generic_category(), "SocketEvent::chmod failed");
     }
