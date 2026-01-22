@@ -254,8 +254,8 @@ class Client {
     tcp_client_.value().AsyncSendAll(
         send_header_buf->data(), send_header_buf->size(),
         [this, send_header_buf](const trellis::core::error_code& ec, size_t bytes_sent) {
-          if (!pending_request_) {
-            return;  // short circuit on timeout
+          if (ec == asio::error::operation_aborted || !pending_request_) {
+            return;  // short circuit on Client destruction/cancellation or timeout
           } else if (ec) {
             pending_request_->failure_fn();
             return;
@@ -264,8 +264,8 @@ class Client {
           tcp_client_.value().AsyncSendAll(
               pending_request_->request_buffer->data(), pending_request_->request_buffer->size(),
               [this](const trellis::core::error_code& ec, size_t bytes_sent) {
-                if (!pending_request_) {
-                  return;  // short circuit on timeout
+                if (ec == asio::error::operation_aborted || !pending_request_) {
+                  return;  // short circuit on Client destruction/cancellation or timeout
                 } else if (ec) {
                   pending_request_->failure_fn();
                   return;
@@ -275,8 +275,8 @@ class Client {
                 tcp_client_.value().AsyncReceiveAll(
                     receive_header_buf->data(), receive_header_buf->size(),
                     [this, receive_header_buf](const trellis::core::error_code& ec, size_t /*bytes_received*/) {
-                      if (!pending_request_) {
-                        return;  // short circuit on timeout
+                      if (ec == asio::error::operation_aborted || !pending_request_) {
+                        return;  // short circuit on Client destruction/cancellation or timeout
                       } else if (ec) {
                         pending_request_->failure_fn();
                         return;
@@ -290,8 +290,8 @@ class Client {
                       tcp_client_.value().AsyncReceiveAll(
                           receive_buffer->data(), receive_buffer->size(),
                           [this, receive_buffer](const trellis::core::error_code& ec, size_t bytes_received) {
-                            if (!pending_request_) {
-                              return;  // short circuit on timeout
+                            if (ec == asio::error::operation_aborted || !pending_request_) {
+                              return;  // short circuit on Client destruction/cancellation or timeout
                             } else if (ec) {
                               pending_request_->failure_fn();
                               return;
