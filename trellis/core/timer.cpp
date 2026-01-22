@@ -47,13 +47,17 @@ void TimerImpl::Stop() {
 bool TimerImpl::Expired() const { return did_fire_.load() || cancelled_.load(); }
 
 void TimerImpl::KickOff() {
-  if (!SimulationActive()) {
-    timer_->async_wait([this](const trellis::core::error_code& e) {
-      if (e) {
-        return;
-      }
-      Fire();
-    });
+  if (timer_ != nullptr) {
+    if (time::IsSimulatedClockEnabled()) {
+      timer_.reset();  // we must have enabled simulated time
+    } else {
+      timer_->async_wait([this](const trellis::core::error_code& e) {
+        if (e) {
+          return;
+        }
+        Fire();
+      });
+    }
   }
 }
 
@@ -78,9 +82,7 @@ std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop,
   }
 }
 
-bool TimerImpl::SimulationActive() const {
-  return (timer_ == nullptr);  // just use existence of timer_ as a proxy
-}
+bool TimerImpl::SimulationActive() const { return time::IsSimulatedClockEnabled(); }
 
 std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chrono::milliseconds(interval_ms_); }
 
