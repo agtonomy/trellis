@@ -79,10 +79,10 @@ def trellis_deps():
     maybe(
         http_archive,
         name = "com_google_protobuf",
-        sha256 = "1add10f9bd92775b91f326da259f243881e904dd509367d5031d4c782ba82810",
-        strip_prefix = "protobuf-3.21.9",
+        sha256 = "4e8515793ab052d0e2e8ce4269bc69afbfd358b2bdb2faadaac03a1cea028ad1",
+        strip_prefix = "protobuf-3.29.0",
         urls = [
-            "https://github.com/protocolbuffers/protobuf/archive/v3.21.9.tar.gz",
+            "https://github.com/protocolbuffers/protobuf/archive/v3.29.0.tar.gz",
         ],
     )
 
