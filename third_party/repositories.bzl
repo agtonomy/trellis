@@ -88,39 +88,6 @@ def trellis_deps():
 
     maybe(
         http_archive,
-        name = "hdf5",
-        build_file = Label("//third_party:hdf5.BUILD"),
-        sha256 = "7a1a0a54371275ce2dfc5cd093775bb025c365846512961e7e5ceaecb437ef15",
-        strip_prefix = "hdf5-1.10.7",
-        urls = [
-            "https://hdf-wordpress-1.s3.amazonaws.com/wp-content/uploads/manual/HDF5/HDF5_1_10_7/src/hdf5-1.10.7.tar.gz",  # Oct 16, 2020
-        ],
-    )
-
-    maybe(
-        http_archive,
-        name = "termcolor",
-        build_file = Label("//third_party:termcolor.BUILD"),
-        sha256 = "4a73a77053822ca1ed6d4a2af416d31028ec992fb0ffa794af95bd6216bb6a20",
-        strip_prefix = "termcolor-2.0.0",
-        urls = [
-            "https://github.com/ikalnytskyi/termcolor/archive/refs/tags/v2.0.0.tar.gz",
-        ],
-    )
-
-    maybe(
-        http_archive,
-        name = "spdlog",
-        build_file = Label("//third_party:spdlog.BUILD"),
-        sha256 = "6fff9215f5cb81760be4cc16d033526d1080427d236e86d70bb02994f85e3d38",
-        strip_prefix = "spdlog-1.9.2",
-        urls = [
-            "https://github.com/gabime/spdlog/archive/refs/tags/v1.9.2.tar.gz",
-        ],
-    )
-
-    maybe(
-        http_archive,
         name = "json",
         build_file = Label("//third_party:json.BUILD"),
         sha256 = "61e605be15e88deeac4582aaf01c09d616f8302edde7adcaba9261ddc3b4ceca",
