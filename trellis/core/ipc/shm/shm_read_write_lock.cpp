@@ -75,7 +75,7 @@ ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle, const trellis::c
 ShmReadWriteLock::NamedRwLock* OpenRwLock(std::string handle) {
   int fd = ::shm_open(handle.c_str(), O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
   if (fd < 0) {
-    throw std::system_error(errno, std::generic_category(), "OpenRwLock shm_open failed on " + handle);
+    return nullptr;
   }
 
   ShmReadWriteLock::NamedRwLock* rw = static_cast<ShmReadWriteLock::NamedRwLock*>(
@@ -88,9 +88,6 @@ ShmReadWriteLock::NamedRwLock* CreateOrOpenRwLock(std::string handle, bool owner
   auto rw = CreateRwLock(handle, config);
   if (rw == nullptr) {
     rw = OpenRwLock(handle);
-  }
-  if (rw == nullptr) {
-    throw std::runtime_error("Failed to open shared memory RWLock " + handle);
   }
   return rw;
 }

@@ -100,6 +100,12 @@ class ShmReadWriteLock {
    */
   bool Unlock();
 
+  /**
+   * @brief Checks if the lock was properly initialized.
+   * @return true if the shared memory was successfully mapped; false otherwise.
+   */
+  bool IsInitialized() const { return rwlock_ != nullptr; }
+
  private:
   std::string handle_;   ///< Name of the shared memory object.
   bool owner_{false};    ///< True if this instance created the shared memory and initialized the lock.

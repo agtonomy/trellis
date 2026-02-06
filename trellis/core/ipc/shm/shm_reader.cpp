@@ -109,6 +109,11 @@ bool ShmReader::IsInitialized() const {
       return false;
     }
   }
+  for (const auto& lock : locks_) {
+    if (!lock.IsInitialized()) {
+      return false;
+    }
+  }
   return true;
 }
 
