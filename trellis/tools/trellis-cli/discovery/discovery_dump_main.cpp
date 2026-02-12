@@ -18,6 +18,7 @@
 #include <google/protobuf/util/json_util.h>
 
 #include <cxxopts.hpp>
+#include <sstream>
 #include <thread>
 
 #include "trellis/core/health_monitor.hpp"
@@ -43,17 +44,32 @@ int discovery_dump_main(int argc, char* argv[]) {
   std::string json_string;
   for (const auto& sample : pubsub_samples) {
     json_string.clear();
-    google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    const auto status = google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    if (!status.ok()) {
+      std::ostringstream ss;
+      ss << status;
+      throw std::runtime_error(ss.str());
+    }
     std::cout << json_string << std::endl;
   }
   for (const auto& sample : service_samples) {
     json_string.clear();
-    google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    const auto status = google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    if (!status.ok()) {
+      std::ostringstream ss;
+      ss << status;
+      throw std::runtime_error(ss.str());
+    }
     std::cout << json_string << std::endl;
   }
   for (const auto& sample : process_samples) {
     json_string.clear();
-    google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    const auto status = google::protobuf::util::MessageToJsonString(sample, &json_string, options);
+    if (!status.ok()) {
+      std::ostringstream ss;
+      ss << status;
+      throw std::runtime_error(ss.str());
+    }
     std::cout << json_string << std::endl;
   }
   return 0;
