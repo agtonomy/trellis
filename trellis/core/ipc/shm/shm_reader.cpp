@@ -75,6 +75,8 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
   auto& lock = locks_.at(buffer_index);
   auto& file = files_.at(buffer_index);
   if (lock.TryLockRead()) {
+    ShmReadWriteLock::UnlockGuard guard{lock};
+
     auto read_info = file.GetReadInfo();
     const auto& header = file.GetFileHeader();
     // Extra sanity check to make sure we don't call back with old data
@@ -96,7 +98,6 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
       // for logging.
       ++num_current_dropped_messages_;
     }
-    lock.Unlock();
   } else {
     throw std::runtime_error(
         "Failed to take reader lock for buffer {}. There is contention with the writer. We must be falling behind!");

@@ -106,6 +106,20 @@ class ShmReadWriteLock {
    */
   bool IsInitialized() const { return rwlock_ != nullptr; }
 
+  /**
+   * @brief RAII class that calls lock.Unlock() upon destruction
+   */
+  class UnlockGuard {
+   public:
+    explicit UnlockGuard(ShmReadWriteLock& lock) : lock_{lock} {}
+    ~UnlockGuard() { lock_.Unlock(); }
+    UnlockGuard(const UnlockGuard&) = delete;
+    UnlockGuard& operator=(const UnlockGuard&) = delete;
+
+   private:
+    ShmReadWriteLock& lock_;
+  };
+
  private:
   std::string handle_;   ///< Name of the shared memory object.
   bool owner_{false};    ///< True if this instance created the shared memory and initialized the lock.
