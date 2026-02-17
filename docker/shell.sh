@@ -19,8 +19,13 @@ case $ARCHITECTURE in
         echo "Unexpected architecture: $ARCHITECTURE"; exit 1;;
 esac
 
+DOCKER_ARGS="-i "
+if [ -t 1 ]; then
+  DOCKER_ARGS+="-t "
+fi
+
 # shellcheck disable=SC2068
-docker run -it --rm \
+docker run "$DOCKER_ARGS" --rm \
   --network host \
   --ipc host \
   --pid host \

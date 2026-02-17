@@ -16,6 +16,7 @@
  */
 
 #include <cxxopts.hpp>
+#include <nlohmann/json.hpp>
 #include <thread>
 
 #include "trellis/core/health_monitor.hpp"
@@ -29,13 +30,14 @@ namespace cli {
 
 int health_list_main(int argc, char* argv[]) {
   cxxopts::Options options(health_list_command.data(), health_list_command_desc.data());
-  options.add_options()("h,help", "print usage");
+  options.add_options()("j,json", "output as JSON")("h,help", "print usage");
 
   const auto result = options.parse(argc, argv);
   if (result.count("help")) {
     std::cout << options.help() << std::endl;
     return 1;
   }
+  const bool json_output = result.count("json") > 0;
 
   trellis::core::time::TimePoint start_time{trellis::core::time::Now()};
   trellis::core::time::TimePoint last_event_time{trellis::core::time::Now()};
@@ -57,7 +59,7 @@ int health_list_main(int argc, char* argv[]) {
         got_event = true;
       }};
 
-  std::cout << "Collecting data..." << std::endl;
+  (json_output ? std::cerr : std::cout) << "Collecting data..." << std::endl;
   while (true) {
     node.RunN(kHealthMonitorRunLoopCycles);
     const auto time_since_start_ms =
@@ -73,16 +75,29 @@ int health_list_main(int argc, char* argv[]) {
   }
   node.Stop();
 
-  trellis::utils::formatting::Table<std::string, std::string, trellis::core::Health::Code, std::string> table(
-      {"Node", "Health State", "Code", "Description"});
   const auto node_name_set = monitor.GetNodeNames();
-  for (const auto& name : node_name_set) {
-    const auto& status = monitor.GetLastHealthUpdate(name);
-    table.AddRow(name, trellis::core::HealthState_Name(status.health_state()), status.status_code(),
-                 status.status_description());
+
+  if (json_output) {
+    auto json_array = nlohmann::json::array();
+    for (const auto& name : node_name_set) {
+      const auto& status = monitor.GetLastHealthUpdate(name);
+      json_array.push_back({{"node", name},
+                            {"health_state", trellis::core::HealthState_Name(status.health_state())},
+                            {"code", status.status_code()},
+                            {"description", status.status_description()}});
+    }
+    std::cout << json_array.dump(2) << std::endl;
+  } else {
+    trellis::utils::formatting::Table<std::string, std::string, trellis::core::Health::Code, std::string> table(
+        {"Node", "Health State", "Code", "Description"});
+    for (const auto& name : node_name_set) {
+      const auto& status = monitor.GetLastHealthUpdate(name);
+      table.AddRow(name, trellis::core::HealthState_Name(status.health_state()), status.status_code(),
+                   status.status_description());
+    }
+    table.Print(std::cout);
   }
 
-  table.Print(std::cout);
   return 0;
 }
 
