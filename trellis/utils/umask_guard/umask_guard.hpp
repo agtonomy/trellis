@@ -51,8 +51,11 @@ void TrySetId(bool is_root, std::optional<IdType> requested_id, IdType (*getter)
     }
     changed_flag = true;
   } else if (requested_id.value() != current_id) {
-    trellis::core::Log::Warn("Cannot change {} from {} to {} without root privileges", id_name, current_id,
-                             requested_id.value());
+    static std::once_flag warn_flag;
+    std::call_once(warn_flag, [id_name, current_id, requested_id] {
+      trellis::core::Log::Warn("Cannot change {} from {} to {} without root privileges", id_name, current_id,
+                               requested_id.value());
+    });
   }
 }
 
