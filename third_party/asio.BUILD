@@ -12,6 +12,7 @@ cc_library(
     ),
     defines = [
         "ASIO_STANDALONE",
+        "ASIO_HAS_STD_ALIGNED_ALLOC=1",
     ],
     includes = ["asio/include"],
     linkopts = [
