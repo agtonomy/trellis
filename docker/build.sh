@@ -8,31 +8,30 @@ Help()
   exit 1
 }
 
-USE_DOCKER_BUILD_KIT=1
+DOCKER_BUILDKIT=1
 while getopts "hb:" OPTION; do
   case $OPTION in
-    b) USE_DOCKER_BUILD_KIT=${OPTARG}; ;;
+    b) DOCKER_BUILDKIT=${OPTARG}; ;;
     h) Help; ;;
     *) Help; ;;
   esac;
 done;
 
 set -e
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+export DOCKER_BUILDKIT
+
+bazel_version="$(cat "$(cd "$SCRIPT_DIR"; git rev-parse --show-toplevel 2>/dev/null)"/.bazelversion)"
 
 ARCHITECTURE="$(uname -m)"
 DOCKER_IMAGE_NAME="trellis-docker"
 
 case $ARCHITECTURE in
-    x86_64)
-        DOCKER_IMAGE_NAME+=":amd64";;
-    arm64)
-        DOCKER_IMAGE_NAME+=":arm64";;
-    aarch64)
-        DOCKER_IMAGE_NAME+=":arm64";;
-    *)
-        echo "Failed to build. Unexpected architecture: $ARCHITECTURE"; exit 1;;
+    x86_64) DOCKER_IMAGE_NAME+=":amd64" ;;
+    arm64|aarch64) DOCKER_IMAGE_NAME+=":arm64" ;;
+    *) echo "Failed to build. Unexpected architecture: $ARCHITECTURE"; exit 1 ;;
 esac
 
-cd "$SCRIPT_DIR"
-DOCKER_BUILDKIT=$USE_DOCKER_BUILD_KIT docker build . -t "$DOCKER_IMAGE_NAME"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+docker buildx build --build-arg BAZEL_VERSION="$bazel_version" \
+    -t "$DOCKER_IMAGE_NAME" --load .

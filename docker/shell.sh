@@ -1,35 +1,50 @@
 #!/bin/bash
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd)"
 
-WORKSPACE_ROOT="$SCRIPT_DIR/.."
-HOME_DIR="/root/trellis"
+HOME_DIR="/home/trellis/trellis"
 
-ARCHITECTURE="$(uname -m)"
-DOCKER_IMAGE_NAME="trellis-docker"
+DOCKER_IMAGE="trellis-docker"
 
-case $ARCHITECTURE in
-    x86_64)
-        DOCKER_IMAGE_NAME+=":amd64";;
-    arm64)
-        DOCKER_IMAGE_NAME+=":arm64";;
-    aarch64)
-        DOCKER_IMAGE_NAME+=":arm64";;
-    *)
-        echo "Unexpected architecture: $ARCHITECTURE"; exit 1;;
+docker_args=()
+docker_cmd=()
+
+while [ "$1" ]; do
+    case "$1" in
+        --docker-args)
+            docker_args+=("$2")
+            shift 2
+            ;;
+        *)
+            docker_cmd+=("$1")
+            shift
+            ;;
+    esac
+done
+
+case "$(uname -m)" in
+    x86_64) tag=amd64;;
+    arm64|aarch64) tag=arm64;;
+    *) echo "Unexpected architecture: $ARCHITECTURE"; exit 1;;
 esac
 
-DOCKER_ARGS="-i "
 if [ -t 1 ]; then
-  DOCKER_ARGS+="-t "
+  docker_args+=(-it)
 fi
 
-# shellcheck disable=SC2068
-docker run "$DOCKER_ARGS" --rm \
+bazelrc="$HOME/.bazelrc"
+if [ -f "$bazelrc" ]; then
+  docker_args+=(-v "$bazelrc:/workspace/.bazelrc")
+fi
+
+docker run --rm \
   --network host \
   --ipc host \
   --pid host \
+  -u trellis \
   -v "$WORKSPACE_ROOT:$HOME_DIR" \
-  -v "$HOME/.cache:/root/.cache" \
+  -v "$HOME/.cache:/home/trellis/.cache" \
   -v "/tmp:/tmp" \
-  $DOCKER_IMAGE_NAME $@
+  "${docker_args[@]}" \
+  "$DOCKER_IMAGE:$tag" \
+  "${docker_cmd[@]}"
