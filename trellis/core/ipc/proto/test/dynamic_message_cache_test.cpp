@@ -21,7 +21,9 @@
 #include <gtest/gtest.h>
 
 #include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/health_history.pb.h"
 #include "trellis/core/test/test.pb.h"
+#include "trellis/utils/protobuf/file_descriptor.hpp"
 
 namespace trellis::core::ipc::proto {
 
@@ -51,6 +53,19 @@ TEST(DynamicMessageCache, CreateMessageThatDoesntExist) {
   trellis::core::ipc::proto::DynamicMessageCache cache(desc);
 
   EXPECT_THROW(cache.Create("trellis.core.test.FakeMessage"), std::runtime_error);
+}
+
+TEST(DynamicMessageCache, CreateMessageWithTransitiveDeps) {
+  const auto fd_set =
+      trellis::utils::protobuf::GenerateFileDescriptorSetFromTopLevelDescriptor(HealthHistory::descriptor());
+  trellis::core::ipc::proto::DynamicMessageCache cache(fd_set.SerializeAsString());
+
+  auto dyn_msg = cache.Create("trellis.core.HealthHistory");
+  ASSERT_NE(dyn_msg, nullptr);
+
+  const auto* desc = dyn_msg->GetDescriptor();
+  ASSERT_NE(desc, nullptr);
+  EXPECT_NE(desc->FindFieldByName("history"), nullptr);
 }
 
 }  // namespace trellis::core::ipc::proto

@@ -26,20 +26,15 @@ namespace trellis::core::ipc::proto {
 
 using namespace google::protobuf;
 
-DynamicMessageCache::DynamicMessageCache(const std::string& descriptor_set_data) : factory_(&pool_) {
+DynamicMessageCache::DynamicMessageCache(const std::string& descriptor_set_data) : pool_(&db_), factory_(&pool_) {
   FileDescriptorSet file_descriptor_set;
   if (!file_descriptor_set.ParseFromString(descriptor_set_data)) {
     throw std::runtime_error("Failed to parse FileDescriptorSet");
   }
 
   for (int i = 0; i < file_descriptor_set.file_size(); ++i) {
-    const FileDescriptorProto& file_proto = file_descriptor_set.file(i);
-    if (pool_.FindFileByName(file_proto.name()) != nullptr) {
-      continue;  // already added
-    }
-
-    if (pool_.BuildFile(file_proto) == nullptr) {
-      throw std::runtime_error("Failed to build file descriptor: " + file_proto.name());
+    if (!db_.Add(file_descriptor_set.file(i))) {
+      throw std::runtime_error("Failed to add file descriptor: " + file_descriptor_set.file(i).name());
     }
   }
 }

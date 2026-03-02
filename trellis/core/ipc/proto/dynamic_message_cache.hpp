@@ -28,6 +28,7 @@
 
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/descriptor_database.h>
 #include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/message.h>
 
@@ -84,7 +85,8 @@ class DynamicMessageCache {
   std::unique_ptr<google::protobuf::Message> Get();
 
  private:
-  google::protobuf::DescriptorPool pool_;            ///< Descriptor pool for storing parsed file descriptors.
+  google::protobuf::SimpleDescriptorDatabase db_;    ///< Database for storing file descriptors in any order.
+  google::protobuf::DescriptorPool pool_;            ///< Descriptor pool backed by db_, resolves deps lazily.
   google::protobuf::DynamicMessageFactory factory_;  ///< Factory for creating dynamic message instances.
   std::unique_ptr<google::protobuf::Message> message_prototype_;  ///< Cached prototype for reuse in Get().
 };
