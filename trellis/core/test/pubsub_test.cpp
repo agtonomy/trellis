@@ -551,3 +551,56 @@ TEST_F(TrellisFixture, DynamicPublisher) {
 
   ASSERT_EQ(receive_count, kExpectedMessages);
 }
+
+TEST_F(TrellisFixture, EarlyStopSubscriber) {
+  unsigned receive_count{0};
+  std::mutex count_mutex;
+  std::condition_variable count_cv;
+
+  constexpr unsigned kPublishCount = 20U;
+  constexpr unsigned kExpectedReceivedCount = 7U;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("early_stop_test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
+      "early_stop_test_topic",
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        ASSERT_EQ(msg->id(), receive_count);
+        ++receive_count;
+        std::cout << receive_count << '\t';
+
+        if (receive_count == kPublishCount) {
+          ASSERT_TRUE(false) << "The subscriber received all published messages which means it was not stopped early";
+          count_cv.notify_one();
+        }
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  // Sanity check initial value
+  ASSERT_EQ(receive_count, 0U);
+
+  for (unsigned i = 0; i < kPublishCount; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    test_msg.set_msg("hello world");
+    pub->Send(test_msg);
+    if (i + 1 == kExpectedReceivedCount) {  // +1 because of 0 index
+      sleep(1);
+      sub->Stop();
+    }
+  }
+
+  auto spurious_wakeup_predicate = [&receive_count]() { return receive_count == kExpectedReceivedCount; };
+  // Wait for all messages to be received, with timeout
+  {
+    std::unique_lock<std::mutex> lock(count_mutex);
+    bool received_all = count_cv.wait_for(lock, kProcessEventsWaitTime, spurious_wakeup_predicate);
+    ASSERT_TRUE(received_all);  // Should time out because some messages from the publisher arrive after the sub stops
+  }
+
+  ASSERT_EQ(receive_count, kExpectedReceivedCount);
+}

@@ -48,6 +48,7 @@ class SocketEvent {
   };
 
   struct Metrics {
+    /// The current maximum number of packets received in a single read session.
     unsigned max_burst_size{0};
   };
 
@@ -66,6 +67,9 @@ class SocketEvent {
 
   /// Destructor closes the socket and releases any OS-level resources.
   ~SocketEvent();
+
+  /// Closes the socket and unlinks the handle
+  void Stop();
 
   /**
    * @brief Sends an event over the UNIX domain socket.

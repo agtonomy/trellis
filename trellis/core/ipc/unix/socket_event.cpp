@@ -61,7 +61,9 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
   }
 }
 
-SocketEvent::~SocketEvent() {
+SocketEvent::~SocketEvent() { Stop(); }
+
+void SocketEvent::Stop() {
   if (socket_.is_open()) {
     socket_.close();
   }
@@ -86,9 +88,21 @@ void SocketEvent::AsyncReceive(ReceiveCallback callback) {
 }
 
 void SocketEvent::StartReceive() {
+  if (!socket_.is_open()) {
+    // There is no reason to wait for further events if the socket is closed.
+    // If the socket has been closed then it is reasonable to assume that "this" will soon be destroyed.
+    return;
+  }
+
   socket_.async_wait(asio::socket_base::wait_read, [this](const std::error_code& ec) {
-    if (ec == asio::error::operation_aborted) {
-      return;
+    if (ec != std::error_code{}) {
+      // The expectation is that if the socket is shutdown then the error code will be aborted. Any error is reason to
+      // not continue but in the case where the socket is closed, the error code will be for a bad file descriptor.
+      if (ec == asio::error::operation_aborted) {
+        return;
+      } else {
+        throw std::runtime_error(fmt::format("Socket event error: {}", ec.message()));
+      }
     }
 
     std::array<char, sizeof(Event)> buf;

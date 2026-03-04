@@ -117,11 +117,24 @@ class SubscriberImpl : public SubscriberBase,
         frequency_calculator_{statistics_update_interval_ms_},
         converter_{std::move(converter)} {}
 
-  /// @brief Destructor unregisters from discovery and stops callbacks.
-  ~SubscriberImpl() {
+  /// @brief Destructor calls the Stop method which unregisters from discovery and stops callbacks.
+  ~SubscriberImpl() { Stop(); }
+
+  /// @brief unregisters from discovery and stops callbacks.
+  void Stop() {
     discovery_->StopReceive(callback_handle_);
     discovery_->Unregister(discovery_handle_);
     discovery_handle_ = discovery::Discovery::kInvalidRegistrationHandle;
+    if (statistics_timer_) {
+      statistics_timer_->Stop();
+    }
+    if (watchdog_timer_) {
+      watchdog_timer_->Stop();
+    }
+
+    for (const auto& r : readers_ | std::views::values) {
+      r->Stop();
+    }
   }
 
   SubscriberImpl(const SubscriberImpl&) = delete;

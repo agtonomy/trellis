@@ -100,6 +100,11 @@ class ShmReader {
   ShmReader(ShmReader&&) = delete;
   ShmReader& operator=(ShmReader&&) = delete;
 
+  /**
+   * @brief Stops the socket event handler so no new notifications will be processed.
+   */
+  void Stop() { evt_.Stop(); }
+
  private:
   /**
    * @brief Constructs a ShmReader instance. Do not call directly, use Create() instead.
