@@ -37,6 +37,16 @@ def trellis_deps():
 
     maybe(
         http_archive,
+        name = "ftxui",
+        sha256 = "45819c1e54914783d4a1ca5633885035d74146778a1f74e1213cdb7b76340e71",
+        strip_prefix = "FTXUI-6.1.9",
+        urls = [
+            "https://github.com/ArthurSonzogni/FTXUI/archive/refs/tags/v6.1.9.tar.gz",
+        ],
+    )
+
+    maybe(
+        http_archive,
         name = "tclap",
         build_file = Label("//third_party:tclap.BUILD"),
         sha256 = "7363f8f571e6e733b269c4b4e9c18f392d3cd7240d39a379d95de5a4c4bdc47f",
