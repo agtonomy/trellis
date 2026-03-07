@@ -35,10 +35,16 @@ time::TimePoint last_echo_time_;
 
 int topic_echo_main(int argc, char* argv[]) {
   cxxopts::Options options(topic_echo_command.data(), topic_echo_command_desc.data());
-  options.add_options()("t,topic", "topic name(s)", cxxopts::value<std::vector<std::string>>())(
-      "r,rate", "max echo rate in hz", cxxopts::value<int>()->default_value("0"))(
-      "w,whitespace", "add whitespace to output")("v,verbose", "include non-essential output")("h,help", "print usage")(
-      "s,stamp", "inject timestamp into message output");
+  options.add_options()("t,topic", "topic name(s)", cxxopts::value<std::vector<std::string>>());
+  options.add_options()("r,rate", "max echo rate in hz", cxxopts::value<int>()->default_value("0"));
+  options.add_options()("w,whitespace", "add whitespace to output");
+  options.add_options()("v,verbose", "include non-essential output");
+  options.add_options()("h,help", "print usage");
+  options.add_options()("s,stamp", "inject timestamp into message output");
+  options.add_options()("c,count", "exit after count limit of messages are received for each topic (0 means no limit)",
+                        cxxopts::value<size_t>()->default_value("0"));
+  options.add_options()("z,total_count", "exit after count limit of total messages is received (0 is no limit)",
+                        cxxopts::value<size_t>()->default_value("0"));
 
   auto result = options.parse(argc, argv);
   if (result.count("help") || !result.count("topic")) {
@@ -52,13 +58,18 @@ int topic_echo_main(int argc, char* argv[]) {
   const bool add_whitespace = result.count("whitespace");
   const bool verbose = result.count("verbose");
   const bool timestamp = result.count("stamp");
+  const size_t max_per_topic_message_count = result["count"].as<size_t>();
+  const size_t max_total_count = result["total_count"].as<size_t>();
+
+  std::vector<size_t> topic_counts;
+  topic_counts.reserve(topics.size());
 
   Node node(root_command.data(), {});
   std::vector<trellis::core::DynamicSubscriber> subs;
   auto ev = node.GetEventLoop();
   for (const auto& topic : topics) {
     auto sub = node.CreateDynamicSubscriber(
-        topic, [ev, throttle_interval_ms, add_whitespace, timestamp](
+        topic, [ev, throttle_interval_ms, add_whitespace, timestamp, &count = topic_counts.emplace_back(0)](
                    const trellis::core::time::TimePoint& now, const trellis::core::time::TimePoint& msgtime,
                    trellis::core::SubscriberImpl<google::protobuf::Message>::MsgTypePtr msg) {
           if (throttle_interval_ms != 0) {
@@ -67,6 +78,8 @@ int topic_echo_main(int argc, char* argv[]) {
               return;  // rate throttle
             }
           }
+
+          ++count;
 
           // convert to JSON and print
           std::string json_raw;
@@ -112,7 +125,34 @@ int topic_echo_main(int argc, char* argv[]) {
     std::cout << std::endl;
   }
 
-  node.Run();
+  bool can_run = true;
+  while (can_run) {
+    using std::chrono_literals::operator""ms;
+    can_run = node.RunFor(100ms);
+
+    if (max_total_count != 0) {
+      const size_t total_message_count = std::accumulate(topic_counts.begin(), topic_counts.end(), 0);
+      if (total_message_count >= max_total_count) {
+        trellis::core::Log::Info("Received {} total messages. Exiting.", total_message_count);
+        break;
+      }
+    }
+
+    if (max_per_topic_message_count != 0) {
+      bool all_counts_satisfied{true};
+      for (const auto& count : topic_counts) {
+        if (count < max_per_topic_message_count) {
+          all_counts_satisfied = false;
+          break;
+        }
+      }
+
+      if (all_counts_satisfied) {
+        trellis::core::Log::Info("Received at least {} messages on each topic. Exiting.", max_per_topic_message_count);
+        break;
+      }
+    }
+  }
   return 0;
 }
 
