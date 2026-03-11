@@ -25,6 +25,7 @@ namespace {
 
 bool sim_clock_enabled_{false};
 TimePoint simulated_now_{};
+TimePoint::duration cached_sim_offset_{};
 
 }  // namespace
 
@@ -87,7 +88,10 @@ google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp
   return TimePointToTimestampImpl(tp);
 }
 
-void EnableSimulatedClock() { sim_clock_enabled_ = true; }
+void EnableSimulatedClock() {
+  sim_clock_enabled_ = true;
+  cached_sim_offset_ = std::chrono::system_clock::now().time_since_epoch() - simulated_now_.time_since_epoch();
+}
 
 void DisableSimulatedClock() { sim_clock_enabled_ = false; }
 
@@ -98,11 +102,15 @@ void SetSimulatedTime(const TimePoint& now) {
     throw std::runtime_error("Attempt to set simulated time while sim_clock_enabled_ = false");
   }
   simulated_now_ = now;
+  cached_sim_offset_ = std::chrono::system_clock::now().time_since_epoch() - now.time_since_epoch();
 }
 
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration) { SetSimulatedTime(simulated_now_ + duration); }
 
 TimePoint::duration TimePointToSystemTimeOffset() {
+  if (sim_clock_enabled_) {
+    return cached_sim_offset_;
+  }
   return std::chrono::system_clock::now().time_since_epoch() - Now().time_since_epoch();
 }
 

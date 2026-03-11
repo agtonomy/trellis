@@ -109,6 +109,40 @@ TEST(TrellisTimeAPI, IncrementSimTime) {
   ASSERT_EQ(delta.count(), 1500);
 }
 
+TEST(TrellisTimeAPI, CachedSimTimeOffsetIsStable) {
+  const TimePoint tp{std::chrono::milliseconds(1000)};
+  SetSimulatedTime(tp);
+
+  const auto offset1 = TimePointToSystemTimeOffset();
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  const auto offset2 = TimePointToSystemTimeOffset();
+
+  ASSERT_EQ(offset1.count(), offset2.count());
+}
+
+TEST(TrellisTimeAPI, CachedSimTimeOffsetUpdatesOnSetSimTime) {
+  SetSimulatedTime(TimePoint{std::chrono::seconds(100)});
+  const auto offset1 = TimePointToSystemTimeOffset();
+
+  SetSimulatedTime(TimePoint{std::chrono::seconds(200)});
+  const auto offset2 = TimePointToSystemTimeOffset();
+
+  const auto diff_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(offset1 - offset2).count();
+  EXPECT_NEAR(diff_ns, std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(100)).count(),
+              std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(100)).count());
+}
+
+TEST(TrellisTimeAPI, TimePointToSystemTimeStableUnderSimClock) {
+  const TimePoint tp{std::chrono::milliseconds(5000)};
+  SetSimulatedTime(tp);
+
+  const auto sys1 = TimePointToSystemTime(tp);
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  const auto sys2 = TimePointToSystemTime(tp);
+
+  ASSERT_EQ(sys1.time_since_epoch().count(), sys2.time_since_epoch().count());
+}
+
 TEST(TrellisTimeAPI, ToSystemTimeConversion) {
   const TimePoint start(std::chrono::milliseconds(500));
   const TimePoint end(std::chrono::milliseconds(2500));
