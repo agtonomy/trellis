@@ -2,7 +2,8 @@
 
 WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &> /dev/null && pwd)"
 
-HOME_DIR="/home/trellis/trellis"
+HOME_DIR="/workspace"
+REPO_ROOT="$HOME_DIR/trellis"
 
 DOCKER_IMAGE="trellis-docker"
 
@@ -34,7 +35,7 @@ fi
 
 bazelrc="$HOME/.bazelrc"
 if [ -f "$bazelrc" ]; then
-  docker_args+=(-v "$bazelrc:/workspace/.bazelrc")
+  docker_args+=(-v "$bazelrc:$HOME_DIR/.bazelrc")
 fi
 
 docker run --rm \
@@ -42,8 +43,8 @@ docker run --rm \
   --ipc host \
   --pid host \
   -u trellis \
-  -v "$WORKSPACE_ROOT:$HOME_DIR" \
-  -v "$HOME/.cache:/home/trellis/.cache" \
+  -v "$WORKSPACE_ROOT:$REPO_ROOT" \
+  -v "$HOME/.cache:$HOME_DIR/.cache" \
   -v "/tmp:/tmp" \
   "${docker_args[@]}" \
   "$DOCKER_IMAGE:$tag" \
