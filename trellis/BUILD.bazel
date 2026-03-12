@@ -10,7 +10,8 @@ cc_library(
     ],
 )
 
-# Shared library with all symbols retained and available for dynamic linking
+# Shared library enabling trellis applications to be built in separate projects
+# with their own build systems (CMake, Make, etc.) by linking against libtrellis.so.
 cc_shared_library(
     name = "trellis_shared",
     shared_lib_name = "libtrellis.so",
@@ -27,7 +28,8 @@ pkg_tar(
     package_dir = "lib",
 )
 
-# Package trellis headers
+# Package trellis headers. When adding new modules to trellis, add the
+# corresponding :srcs filegroup here so external projects can include them.
 pkg_tar(
     name = "libtrellis_headers_tar",
     srcs = [
@@ -43,7 +45,9 @@ pkg_tar(
         "//trellis/network:srcs",
         "//trellis/utils/formatting:srcs",
         "//trellis/utils/mcap:srcs",
+        "//trellis/utils/metrics_pub:srcs",
         "//trellis/utils/protobuf:srcs",
+        "//trellis/utils/umask_guard:srcs",
     ],
     package_dir = "include/trellis",
     strip_prefix = "/trellis",
@@ -73,12 +77,15 @@ pkg_tar(
     strip_prefix = "/external/yaml-cpp/include",
 )
 
-# Package generated protobuf headers (includes .pb.h and .pb.cc files)
+# Package generated protobuf headers. When adding new proto targets to trellis,
+# add the corresponding cc_proto_library here so external projects get the
+# generated .pb.h files.
 pkg_tar(
     name = "proto_headers_tar",
     srcs = [
         "//trellis/core:core_proto",
         "//trellis/core/discovery/pb:cc_proto",
+        "//trellis/utils/metrics_pub:cc_generic_metrics",
     ],
     package_dir = "include",
     strip_prefix = "/_virtual_includes",

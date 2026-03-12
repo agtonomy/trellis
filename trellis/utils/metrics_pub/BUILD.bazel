@@ -13,6 +13,18 @@ cc_proto_library(
     deps = [":generic_metrics_proto"],
 )
 
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        [
+            "**/*.hpp",
+            "**/*.h",
+        ],
+        exclude = ["**/test/**"],
+    ),
+    visibility = ["//trellis:__pkg__"],
+)
+
 cc_library(
     name = "metrics_pub",
     srcs = [
