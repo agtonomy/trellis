@@ -183,6 +183,12 @@ cc_library(
 )
 
 cc_library(
+    name = "core_type_tuple",
+    hdrs = ["type_tuple.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "core_message_consumer",
     hdrs = [
         "message_consumer.hpp",
@@ -192,6 +198,7 @@ cc_library(
         ":core_node",
         ":core_stamped_message",
         ":core_subscriber",
+        ":core_type_tuple",
         "//trellis/containers",
     ],
 )
@@ -221,6 +228,18 @@ cc_library(
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc/shm:shm_writer",
         "//trellis/core/statistics:frequency_calculator",
+    ],
+)
+
+cc_library(
+    name = "core_outbox",
+    hdrs = ["outbox.hpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_constraints",
+        ":core_node",
+        ":core_publisher",
+        ":core_type_tuple",
     ],
 )
 

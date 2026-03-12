@@ -28,6 +28,7 @@
 #include "trellis/core/node.hpp"
 #include "trellis/core/stamped_message.hpp"
 #include "trellis/core/subscriber.hpp"
+#include "trellis/core/type_tuple.hpp"
 
 namespace trellis::core {
 
@@ -55,22 +56,6 @@ auto MakeIdentityConverters() {
 
 }  // namespace detail
 
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
-           constraints::_IsConverter<ConverterT, SerializableT, MsgT>
-struct TypeTuple {
-  using SerializableType = SerializableT;
-  using MsgType = MsgT;
-  using ConverterType = ConverterT;
-};
-
-template <typename T>
-concept _IsTypeTuple = requires {
-  typename T::SerializableType;
-  typename T::MsgType;
-  typename T::ConverterType;
-};
-
 /**
  * MessageConsumer a class to manage consumption of inbound messages from an arbitrary number of subscribers.
  *
@@ -95,7 +80,7 @@ concept _IsTypeTuple = requires {
  * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
  * @tparam Types variadic list of `TypeTuple` structs
  */
-template <size_t FIFO_DEPTH, _IsTypeTuple... Types>
+template <size_t FIFO_DEPTH, _IsReceiverTypeTuple... Types>
 class MessageConsumer {
  public:
   /**
