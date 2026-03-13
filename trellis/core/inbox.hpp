@@ -161,6 +161,7 @@ class Inbox {
   struct InboxReturnType<R> {
     using type = std::vector<StampedMessage<typename R::MessageType>>;
     using owning_type = std::vector<OwningStampedMessage<typename R::MessageType>>;
+    using bare_type = std::vector<typename R::MessageType>;
   };
 
   /// @brief Defines what a Latest or Loopback receive type will return in GetMessages.
@@ -169,6 +170,7 @@ class Inbox {
   struct InboxReturnType<R> {
     using type = std::optional<StampedMessage<typename R::MessageType>>;
     using owning_type = std::optional<OwningStampedMessage<typename R::MessageType>>;
+    using bare_type = std::optional<typename R::MessageType>;
   };
 
   /// @brief A convenient helper for InboxReturnType.
@@ -225,6 +227,27 @@ class Inbox {
           [&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); }, receivers_));
     });
     return future.get();  // Blocks until the promise is fulfilled.
+  }
+
+  /// @brief A convenient helper for InboxReturnType.
+  template <IsReceiveType R>
+  using InboxBareReturnType_t = typename InboxReturnType<R>::bare_type;
+
+  /// @brief The return type for GetBareMessages.
+  using BareMessages = std::tuple<InboxBareReturnType_t<ReceiveTypes>...>;
+
+  /**
+   * @brief Gets the bare messages for each topic that are not expired (past the corresponding timeout) according to the
+   * receive type.
+   *
+   * The note regarding the lifetime of the messages in GetMessages applies here.
+   *
+   * @param time the current time at which to check the inbox
+   * @return Bare messages for each topic.
+   */
+  BareMessages GetBareMessages(const time::TimePoint& time) const {
+    return std::apply([&time](const auto&... receivers) { return std::make_tuple(ReceiveBare(time, receivers)...); },
+                      receivers_);
   }
 
   /**
@@ -449,86 +472,132 @@ class Inbox {
     return MakeReceivers(node, topics, timeouts, converters, std::make_index_sequence<sizeof...(ReceiveTypes)>{});
   }
 
-  /// @brief Message return generation for receiving the latest message.
+  // --- Latest ---
+
+  /// @brief Returns false if the latest message is absent or expired, and true otherwise.
+  template <IsLatestReceiveType R>
+  static bool IsLatestValid(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (receiver.latest->message == nullptr) return false;                   // No message received yet.
+    if (receiver.latest->timestamp < time - receiver.timeout) return false;  // Message too old.
+    return true;
+  }
+
   template <IsLatestReceiveType R>
   static InboxReturnType_t<R> Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
-    if (receiver.latest->message == nullptr) return std::nullopt;                   // No message received yet.
-    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    if (!IsLatestValid(time, receiver)) return std::nullopt;
     return StampedMessage<typename R::MessageType>{*receiver.latest};
   }
 
-  /// @brief Message return generation for receiving a copy of the latest message.
   template <IsLatestReceiveType R>
   static InboxOwningReturnType_t<R> ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
-    if (receiver.latest->message == nullptr) return std::nullopt;                   // No message received yet.
-    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    if (!IsLatestValid(time, receiver)) return std::nullopt;
     return {{.timestamp = receiver.latest->timestamp, .message = *receiver.latest->message}};
   }
 
-  /// @brief Messages return generation for receiving the latest N messages.
-  template <IsNLatestReceiveType R>
-  static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
-    auto ret = InboxReturnType_t<R>{};
-    for (const auto& message : *receiver.buffer) {
-      if (message.timestamp < time - receiver.timeout) continue;  // Message too old.
-      ret.emplace_back(message);
+  template <IsLatestReceiveType R>
+  static InboxBareReturnType_t<R> ReceiveBare(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (!IsLatestValid(time, receiver)) return std::nullopt;
+    return *receiver.latest->message;
+  }
+
+  // --- NLatest ---
+
+  /// @brief Shared loop for all NLatest receive variants, applying @p project to each non-expired message.
+  template <IsNLatestReceiveType R, typename ProjectionT>
+  static auto NLatestWith(const time::TimePoint& time, const Receiver<R>& receiver, ProjectionT project) {
+    using Elem = std::invoke_result_t<ProjectionT, const StampedMessagePtr<typename R::MessageType>&>;
+    auto ret = std::vector<Elem>{};
+    for (const auto& stamped : *receiver.buffer) {
+      if (stamped.timestamp < time - receiver.timeout) continue;  // Message too old.
+      ret.emplace_back(project(stamped));
     }
     return ret;
   }
 
-  /// @brief Messages return generation for receiving a copy of the latest N messages.
+  template <IsNLatestReceiveType R>
+  static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
+    using MsgT = typename R::MessageType;
+    return NLatestWith(time, receiver, [](const StampedMessagePtr<MsgT>& s) { return StampedMessage<MsgT>{s}; });
+  }
+
   template <IsNLatestReceiveType R>
   static auto ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
-    auto ret = InboxOwningReturnType_t<R>{};
-    for (const auto& message : *receiver.buffer) {
-      if (message.timestamp < time - receiver.timeout) continue;  // Message too old.
-      ret.emplace_back(message.timestamp, *message.message);
-    }
-    return ret;
+    using MsgT = typename R::MessageType;
+    return NLatestWith(time, receiver, [](const StampedMessagePtr<MsgT>& s) {
+      return OwningStampedMessage<MsgT>{.timestamp = s.timestamp, .message = *s.message};
+    });
   }
 
-  /// @brief Messages return generation for receiving the all-latest messages.
+  template <IsNLatestReceiveType R>
+  static auto ReceiveBare(const time::TimePoint& time, const Receiver<R>& receiver) {
+    using MsgT = typename R::MessageType;
+    return NLatestWith(time, receiver, [](const StampedMessagePtr<MsgT>& s) { return *s.message; });
+  }
+
+  // --- AllLatest ---
+
+  /// @brief Removes messages from the front of the AllLatest buffer that have exceeded the timeout.
   template <IsAllLatestReceiveType R>
-  static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
-    // Clear out stale messages from the buffer. Single pops are very efficient in the ring buffer.
+  static void PruneStaleMessages(const time::TimePoint& time, const Receiver<R>& receiver) {
+    // Single pops are very efficient in the ring buffer.
     while (!receiver.buffer->empty() && receiver.buffer->begin()->first < time - receiver.timeout) {
       receiver.buffer->pop_front();
     }
+  }
 
+  template <IsAllLatestReceiveType R>
+  static auto Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
+    PruneStaleMessages(time, receiver);
     auto ret = InboxReturnType_t<R>{};
     ret.reserve(receiver.buffer->size());
     for (const auto& [buffer_time, message] : *receiver.buffer) ret.emplace_back(buffer_time, message);
     return ret;
   }
 
-  /// @brief Messages return generation for receiving a copy of the all-latest messages.
   template <IsAllLatestReceiveType R>
   static auto ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
-    // Clear out stale messages from the buffer. Single pops are very efficient in the ring buffer.
-    while (!receiver.buffer->empty() && receiver.buffer->begin()->first < time - receiver.timeout) {
-      receiver.buffer->pop_front();
-    }
-
+    PruneStaleMessages(time, receiver);
     auto ret = InboxOwningReturnType_t<R>{};
     ret.reserve(receiver.buffer->size());
     for (const auto& [buffer_time, message] : *receiver.buffer) ret.emplace_back(buffer_time, message);
     return ret;
   }
 
-  /// @brief Messages return generation for receiving the loopback messages.
+  template <IsAllLatestReceiveType R>
+  static auto ReceiveBare(const time::TimePoint& time, const Receiver<R>& receiver) {
+    PruneStaleMessages(time, receiver);
+    auto ret = InboxBareReturnType_t<R>{};
+    ret.reserve(receiver.buffer->size());
+    for (const auto& [buffer_time, message] : *receiver.buffer) ret.emplace_back(message);
+    return ret;
+  }
+
+  // --- Loopback ---
+
+  /// @brief Returns false if the latest loopback is absent or expired, and true otherwise.
+  template <IsLoopbackReceiveType R>
+  static bool IsLoopbackValid(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (!receiver.latest.has_value()) return false;                          // No message received yet.
+    if (receiver.latest->timestamp < time - receiver.timeout) return false;  // Message too old.
+    return true;
+  }
+
   template <IsLoopbackReceiveType R>
   static InboxReturnType_t<R> Receive(const time::TimePoint& time, const Receiver<R>& receiver) {
-    if (!receiver.latest.has_value()) return std::nullopt;
-    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    if (!IsLoopbackValid(time, receiver)) return std::nullopt;
     return StampedMessage<typename R::MessageType>{receiver.latest->timestamp, receiver.latest->message};
   }
 
-  /// @brief Messages return generation for receiving a copy of the loopback messages.
   template <IsLoopbackReceiveType R>
   static InboxOwningReturnType_t<R> ReceiveCopy(const time::TimePoint& time, const Receiver<R>& receiver) {
-    if (!receiver.latest.has_value()) return std::nullopt;
-    if (receiver.latest->timestamp < time - receiver.timeout) return std::nullopt;  // Message too old.
+    if (!IsLoopbackValid(time, receiver)) return std::nullopt;
     return {{.timestamp = receiver.latest->timestamp, .message = receiver.latest->message}};
+  }
+
+  template <IsLoopbackReceiveType R>
+  static InboxBareReturnType_t<R> ReceiveBare(const time::TimePoint& time, const Receiver<R>& receiver) {
+    if (!IsLoopbackValid(time, receiver)) return std::nullopt;
+    return receiver.latest->message;
   }
 
   EventLoop ev_;

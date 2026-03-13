@@ -151,6 +151,81 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
       << "Messages sent at receive time, so are still valid.";
 }
 
+TEST_F(TrellisFixture, InboxBareMessagesReceived) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
+
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  pub2->Send(MakeTestTwo("there"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetBareMessages(kT0), FieldsAre(Optional(TestIs("hello")), Optional(TestTwoIs("there"))))
+      << "Messages sent at receive time, so are still valid.";
+}
+
+TEST_F(TrellisFixture, InboxBareMessageTimeout) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+
+  const auto inbox = Inbox<Latest<test::Test>>{GetNode(), {"topic_1"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(Eq(std::nullopt))) << "Message has timed out.";
+}
+
+TEST_F(TrellisFixture, InboxNLatestBareMessages) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<NLatest<test::Test, 3>>{GetNode(), {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 2ms), FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
+      << "Both messages are within the timeout window.";
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(ElementsAre(TestIs("hello1"))))
+      << "Oldest message has timed out.";
+}
+
+TEST_F(TrellisFixture, InboxAllLatestBareMessages) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
+
+  const auto inbox = Inbox<AllLatest<test::Test>>{GetNode(), {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+  pub->Send(MakeTest("hello1"), kT0 + 1ms);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 2ms), FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
+      << "Both messages are within the timeout window.";
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(ElementsAre(TestIs("hello1"))))
+      << "Oldest message has timed out.";
+}
+
 TEST_F(TrellisFixture, InboxMessageTimeout) {
   StartRunnerThread();
 
@@ -439,6 +514,23 @@ TEST_F(TrellisFixture, InboxSimpleLoopbackTimeout) {
 
   ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
   ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(Eq(std::nullopt))) << "Message timed out.";
+}
+
+TEST_F(TrellisFixture, InboxBareLoopback) {
+  StartRunnerThread();
+
+  auto recv_cnt = int{};
+  const auto sub = GetNode().CreateSubscriber<test::Test>("topic", [&recv_cnt](auto, auto, auto) { ++recv_cnt; });
+
+  auto inbox = Inbox<Loopback<test::Test>>{GetNode(), {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+
+  inbox.Send(MakeTest("hello"), kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
+  ASSERT_THAT(inbox.GetBareMessages(kT0 + 100ms), FieldsAre(Optional(TestIs("hello")))) << "Message stored.";
 }
 
 namespace {
