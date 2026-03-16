@@ -378,23 +378,22 @@ TEST_F(TrellisFixture, ConvertingPubSub) {
   std::condition_variable count_cv;
   constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, decltype(&arbitrary::ToProto)>(
       "test_topic", arbitrary::ToProto);
-  auto sub =
-      GetNode().CreateSubscriber<test::Test, test::arbitrary::Test, std::function<decltype(arbitrary::FromProto)>>(
-          "test_topic",
-          [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
-                                                    std::unique_ptr<test::arbitrary::Test> msg) {
-            std::lock_guard<std::mutex> lock(count_mutex);
-            ASSERT_EQ(msg->id, receive_count);
-            ++receive_count;
+  auto sub = GetNode().CreateSubscriber<test::Test, test::arbitrary::Test, decltype(&arbitrary::FromProto)>(
+      "test_topic",
+      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                std::unique_ptr<test::arbitrary::Test> msg) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        ASSERT_EQ(msg->id, receive_count);
+        ++receive_count;
 
-            // Notify waiting thread when we've received all messages
-            if (receive_count == kExpectedMessages) {
-              count_cv.notify_one();
-            }
-          },
-          {}, {}, {}, arbitrary::FromProto);
+        // Notify waiting thread when we've received all messages
+        if (receive_count == kExpectedMessages) {
+          count_cv.notify_one();
+        }
+      },
+      {}, {}, {}, arbitrary::FromProto);
 
   StartRunnerThread();
   WaitForDiscovery();

@@ -75,7 +75,7 @@ auto MakeIdentityConverters() {
  * This class supports opt-in automatic conversion from protobuf messages to native C++ types. To use this feature,
  * callers must specify the serializable, native, and converter types as template parameters in the `TypeTuple`s. A
  * tuple of concrete converters is passed as a constructor argument. Free functions or functors can be used; the type of
- * a free function `Foo` can be deduced easily via `decltype(Foo)`.
+ * a free function `Foo` can be deduced easily via `decltype(&Foo)`.
  *
  * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
  * @tparam Types variadic list of `TypeTuple` structs

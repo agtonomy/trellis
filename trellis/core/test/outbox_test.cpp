@@ -130,12 +130,10 @@ TEST_F(TrellisFixture, OutboxStaleMessages) {
 TEST_F(TrellisFixture, ConvertingOutbox) {
   StartRunnerThread();
 
-  using FromConverterT = std::function<decltype(arbitrary::FromProto)>;
-  const auto inbox = Inbox<Latest<test::Test, arbitrary::Test, FromConverterT>>{
+  const auto inbox = Inbox<Latest<test::Test, arbitrary::Test, decltype(&arbitrary::FromProto)>>{
       GetNode(), {"topic_1"}, {100ms}, {arbitrary::FromProto}};
-  using ToConverterT = std::function<decltype(arbitrary::ToProto)>;
-  auto outbox =
-      Outbox<ImmediateSender<test::Test, arbitrary::Test, ToConverterT>>{GetNode(), {"topic_1", arbitrary::ToProto}};
+  auto outbox = Outbox<ImmediateSender<test::Test, arbitrary::Test, decltype(&arbitrary::ToProto)>>{
+      GetNode(), {"topic_1", arbitrary::ToProto}};
 
   WaitForDiscovery();
 

@@ -20,7 +20,6 @@
 #include <gmock/gmock.h>
 
 #include "trellis/core/test/test.hpp"
-#include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
 
 namespace trellis::core::test {
@@ -614,14 +613,14 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 TEST_F(TrellisFixture, ConvertingInbox) {
   StartRunnerThread();
 
-  auto pub = GetNode().CreatePublisher<test::Test, arbitrary::Test, std::function<decltype(arbitrary::ToProto)>>(
-      "topic_1", arbitrary::ToProto);
+  auto pub = GetNode().CreatePublisher<test::Test, arbitrary::Test, decltype(&arbitrary::ToProto)>("topic_1",
+                                                                                                   arbitrary::ToProto);
   auto pub2 = GetNode().CreatePublisher<test::TestTwo>("topic_2");
 
-  using ConverterT = std::function<decltype(arbitrary::FromProto)>;
-  auto inbox = Inbox<Latest<test::Test, arbitrary::Test, ConverterT>,
-                     NLatest<test::Test, 5, arbitrary::Test, ConverterT>, NLatest<TestTwo, 5>,
-                     AllLatest<test::Test, arbitrary::Test, ConverterT>, Loopback<test::Test, std::string, Serializer>>{
+  using FromT = decltype(&arbitrary::FromProto);
+  auto inbox = Inbox<Latest<test::Test, arbitrary::Test, FromT>, NLatest<test::Test, 5, arbitrary::Test, FromT>,
+                     NLatest<TestTwo, 5>, AllLatest<test::Test, arbitrary::Test, FromT>,
+                     Loopback<test::Test, std::string, Serializer>>{
       GetNode(),
       {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
       {100ms, 100ms, 100ms, 100ms, 100ms},

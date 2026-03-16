@@ -195,15 +195,13 @@ TEST_F(TrellisFixture, RoundTripConversionEachWithCallbacks) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  auto pub =
-      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::ToProto)>>(
-          "consumer_topic_1", test::arbitrary::ToProto);
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, decltype(&test::arbitrary::ToProto)>(
+      "consumer_topic_1", test::arbitrary::ToProto);
   auto pub2 = GetNode().CreatePublisher<test::TestTwo>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<
-      num_burst_messages,
-      TypeTuple<test::Test, test::arbitrary::Test, std::function<decltype(test::arbitrary::FromProto)>>,
-      TypeTuple<test::TestTwo>>
+  trellis::core::MessageConsumer<num_burst_messages,
+                                 TypeTuple<test::Test, test::arbitrary::Test, decltype(&test::arbitrary::FromProto)>,
+                                 TypeTuple<test::TestTwo>>
       inputs_{
           GetNode(),
           {{"consumer_topic_1", "consumer_topic_2"}},
@@ -243,8 +241,8 @@ TEST_F(TrellisFixture, ConvertingDuplicateMessageTypes) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  using ToT = std::function<decltype(test::arbitrary::ToProto)>;
-  using FromT = std::function<decltype(test::arbitrary::FromProto)>;
+  using ToT = decltype(&test::arbitrary::ToProto);
+  using FromT = decltype(&test::arbitrary::FromProto);
   auto pub =
       GetNode().CreatePublisher<test::Test, test::arbitrary::Test, ToT>("consumer_topic_1", test::arbitrary::ToProto);
   auto pub2 =

@@ -54,7 +54,7 @@ struct DynamicPublisherSchema {
  * This class supports opt-in automatic conversion from native C++ types to protobuf messages. To use this feature,
  * callers must specify the serializable, native, and converter types as template parameters. A concrete converter is
  * passed as a constructor argument. Free functions or functors can be used; the type of free function `Foo` can be
- * deduced easily via `decltype(Foo)`.
+ * deduced easily via `decltype(&Foo)`.
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
