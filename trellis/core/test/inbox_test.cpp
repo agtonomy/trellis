@@ -617,14 +617,23 @@ TEST_F(TrellisFixture, ConvertingInbox) {
                                                                                                    arbitrary::ToProto);
   auto pub2 = GetNode().CreatePublisher<test::TestTwo>("topic_2");
 
-  using FromT = decltype(&arbitrary::FromProto);
-  auto inbox = Inbox<Latest<test::Test, arbitrary::Test, FromT>, NLatest<test::Test, 5, arbitrary::Test, FromT>,
-                     NLatest<TestTwo, 5>, AllLatest<test::Test, arbitrary::Test, FromT>,
-                     Loopback<test::Test, std::string, Serializer>>{
-      GetNode(),
-      {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
-      {100ms, 100ms, 100ms, 100ms, 100ms},
-      {arbitrary::FromProto, arbitrary::FromProto, std::identity(), arbitrary::FromProto, Serializer{}}};
+  // Show case different supported conversion mechanisms.
+  using FunctionPointerT = decltype(&arbitrary::FromProto);
+
+  struct Functor {
+    arbitrary::Test operator()(const test::Test& proto) { return arbitrary::FromProto(proto); }
+  };
+
+  const auto from_proto_lambda = [](const test::Test& proto) { return arbitrary::FromProto(proto); };
+
+  auto inbox =
+      Inbox<Latest<test::Test, arbitrary::Test, FunctionPointerT>, NLatest<test::Test, 5, arbitrary::Test, Functor>,
+            NLatest<TestTwo, 5>, AllLatest<test::Test, arbitrary::Test, decltype(from_proto_lambda)>,
+            Loopback<test::Test, std::string, Serializer>>{
+          GetNode(),
+          {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
+          {100ms, 100ms, 100ms, 100ms, 100ms},
+          {arbitrary::FromProto, Functor{}, std::identity(), from_proto_lambda, Serializer{}}};
 
   WaitForDiscovery();
 
