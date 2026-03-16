@@ -24,6 +24,12 @@
 
 namespace trellis::core::constraints {
 
+template <typename T>
+concept _IsSerializable = requires(T t, const void* read_data, void* write_data, int size) {
+  { t.ParseFromArray(read_data, size) } -> std::same_as<bool>;
+  { t.SerializeToArray(write_data, size) } -> std::same_as<bool>;
+};
+
 template <typename FuncT, typename SourceT, typename DestT>
 concept _IsConverter = std::convertible_to<std::decay_t<std::invoke_result_t<FuncT, SourceT>>, DestT>;
 

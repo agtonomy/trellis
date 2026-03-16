@@ -36,7 +36,7 @@ namespace trellis::core {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+  requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct Latest {
   using SerializableType = SerializableT;
   using MessageType = MsgT;
@@ -54,7 +54,7 @@ struct Latest {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, size_t N, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+  requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct NLatest {
   using SerializableType = SerializableT;
   using MessageType = MsgT;
@@ -77,7 +77,7 @@ struct NLatest {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+  requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct AllLatest {
   using SerializableType = SerializableT;
   using MessageType = MsgT;
@@ -95,7 +95,7 @@ struct AllLatest {
  * Inbox only supports stateless functors (see example in unit tests).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsConverter<ConverterT, MsgT, SerializableT>
+  requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, MsgT, SerializableT>
 struct Loopback {
   using SerializableType = SerializableT;
   using MessageType = MsgT;

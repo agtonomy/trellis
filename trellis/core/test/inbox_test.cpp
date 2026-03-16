@@ -78,43 +78,48 @@ Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &Test
 
 }  // namespace
 
-static_assert(IsLatestReceiveType<Latest<int>>, "Test IsLatestReceiveType concept.");
-static_assert(!IsLatestReceiveType<int>, "Test IsLatestReceiveType concept, not satisfied by arbitrary type.");
-static_assert(!IsLatestReceiveType<NLatest<int, 7>>,
+static_assert(IsLatestReceiveType<Latest<test::Test>>, "Test IsLatestReceiveType concept.");
+static_assert(!IsLatestReceiveType<test::Test>, "Test IsLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsLatestReceiveType<NLatest<test::Test, 7>>,
               "Test IsLatestReceiveType concept, not satisfied by NLatest type.");
-static_assert(!IsLatestReceiveType<AllLatest<int>>,
+static_assert(!IsLatestReceiveType<AllLatest<test::Test>>,
               "Test IsLatestReceiveType concept, not satisfied by AllLatest type.");
-static_assert(!IsLatestReceiveType<Loopback<int>>, "Test IsLatestReceiveType concept, not satisfied by Loopback type.");
+static_assert(!IsLatestReceiveType<Loopback<test::Test>>,
+              "Test IsLatestReceiveType concept, not satisfied by Loopback type.");
 
-static_assert(IsNLatestReceiveType<NLatest<int, 7>>, "Test IsNLatestReceiveType concept.");
-static_assert(!IsNLatestReceiveType<int>, "Test IsNLatestReceiveType concept, not satisfied by arbitrary type.");
-static_assert(!IsNLatestReceiveType<Latest<int>>, "Test IsNLatestReceiveType concept, not satisfied by Latest type.");
-static_assert(!IsNLatestReceiveType<AllLatest<int>>,
+static_assert(IsNLatestReceiveType<NLatest<test::Test, 7>>, "Test IsNLatestReceiveType concept.");
+static_assert(!IsNLatestReceiveType<test::Test>, "Test IsNLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsNLatestReceiveType<Latest<test::Test>>,
+              "Test IsNLatestReceiveType concept, not satisfied by Latest type.");
+static_assert(!IsNLatestReceiveType<AllLatest<test::Test>>,
               "Test IsNLatestReceiveType concept, not satisfied by AllLatest type.");
-static_assert(!IsNLatestReceiveType<Loopback<int>>,
+static_assert(!IsNLatestReceiveType<Loopback<test::Test>>,
               "Test IsNLatestReceiveType concept, not satisfied by Loopback type.");
 
-static_assert(IsAllLatestReceiveType<AllLatest<int>>, "Test IsAllLatestReceiveType concept.");
-static_assert(!IsAllLatestReceiveType<int>, "Test IsAllLatestReceiveType concept, not satisfied by arbitrary type.");
-static_assert(!IsAllLatestReceiveType<Latest<int>>,
+static_assert(IsAllLatestReceiveType<AllLatest<test::Test>>, "Test IsAllLatestReceiveType concept.");
+static_assert(!IsAllLatestReceiveType<test::Test>,
+              "Test IsAllLatestReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsAllLatestReceiveType<Latest<test::Test>>,
               "Test IsAllLatestReceiveType concept, not satisfied by Latest type.");
-static_assert(!IsAllLatestReceiveType<NLatest<int, 7>>,
+static_assert(!IsAllLatestReceiveType<NLatest<test::Test, 7>>,
               "Test IsAllLatestReceiveType concept, not satisfied by NLatest type.");
-static_assert(!IsAllLatestReceiveType<Loopback<int>>,
+static_assert(!IsAllLatestReceiveType<Loopback<test::Test>>,
               "Test IsAllLatestReceiveType concept, not satisfied by Loopback type.");
 
-static_assert(IsLoopbackReceiveType<Loopback<int>>, "Test IsLoopbackReceiveType concept.");
-static_assert(!IsLoopbackReceiveType<int>, "Test IsLoopbackReceiveType concept, not satisfied by arbitrary type.");
-static_assert(!IsLoopbackReceiveType<Latest<int>>, "Test IsLoopbackReceiveType concept, not satisfied by Latest type.");
-static_assert(!IsLoopbackReceiveType<NLatest<int, 7>>,
+static_assert(IsLoopbackReceiveType<Loopback<test::Test>>, "Test IsLoopbackReceiveType concept.");
+static_assert(!IsLoopbackReceiveType<test::Test>,
+              "Test IsLoopbackReceiveType concept, not satisfied by arbitrary type.");
+static_assert(!IsLoopbackReceiveType<Latest<test::Test>>,
+              "Test IsLoopbackReceiveType concept, not satisfied by Latest type.");
+static_assert(!IsLoopbackReceiveType<NLatest<test::Test, 7>>,
               "Test IsLoopbackReceiveType concept, not satisfied by NLatest type.");
-static_assert(!IsLoopbackReceiveType<AllLatest<int>>,
+static_assert(!IsLoopbackReceiveType<AllLatest<test::Test>>,
               "Test IsLoopbackReceiveType concept, not satisfied by AllLatest type.");
 
-static_assert(IsReceiveType<Latest<int>>, "Test IsReceiveType concept, satisfied by Latest.");
-static_assert(IsReceiveType<NLatest<int, 7>>, "Test IsReceiveType concept, satisfied by NLatest.");
-static_assert(IsReceiveType<AllLatest<int>>, "Test IsReceiveType concept, satisfied by AllLatest.");
-static_assert(IsReceiveType<Loopback<int>>, "Test IsReceiveType concept, satisfied by Loopback.");
+static_assert(IsReceiveType<Latest<test::Test>>, "Test IsReceiveType concept, satisfied by Latest.");
+static_assert(IsReceiveType<NLatest<test::Test, 7>>, "Test IsReceiveType concept, satisfied by NLatest.");
+static_assert(IsReceiveType<AllLatest<test::Test>>, "Test IsReceiveType concept, satisfied by AllLatest.");
+static_assert(IsReceiveType<Loopback<test::Test>>, "Test IsReceiveType concept, satisfied by Loopback.");
 
 TEST_F(TrellisFixture, InboxNoMessages) {
   StartRunnerThread();

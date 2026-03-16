@@ -30,6 +30,7 @@ namespace trellis::core {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  requires constraints::_IsSerializable<SerializableT>
 struct TypeTuple {
   using SerializableType = SerializableT;
   using MsgType = MsgT;

@@ -51,8 +51,8 @@ namespace trellis::core {
  * @tparam ConverterT The converter type (a free function or functor).
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
-               constraints::_IsConverter<ConverterT, SerializableT, MsgT>
+  requires constraints::_IsSerializable<SerializableT> && (constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
+                                                           constraints::_IsConverter<ConverterT, SerializableT, MsgT>)
 class SubscriberImpl : public SubscriberBase,
                        public std::enable_shared_from_this<SubscriberImpl<SerializableT, MsgT, ConverterT>> {
  public:

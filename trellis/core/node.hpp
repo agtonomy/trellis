@@ -27,6 +27,7 @@
 
 #include "trellis/core/bind.hpp"
 #include "trellis/core/config.hpp"
+#include "trellis/core/constraints.hpp"
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/health.hpp"
 #include "trellis/core/ipc/named_resource_registry.hpp"
@@ -91,6 +92,7 @@ class Node {
    * @return a handle to a publisher instance
    */
   template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+    requires constraints::_IsSerializable<SerializableT>
   Publisher<SerializableT, MsgT, ConverterT> CreatePublisher(const std::string& topic,
                                                              ConverterT converter = {}) const {
     return std::make_shared<PublisherImpl<SerializableT, MsgT, ConverterT>>(
@@ -133,6 +135,7 @@ class Node {
    * @return a subscriber handle
    */
   template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+    requires constraints::_IsSerializable<SerializableT>
   Subscriber<SerializableT, MsgT, ConverterT> CreateSubscriber(
       std::string_view topic,
       typename trellis::core::SubscriberImpl<SerializableT, MsgT, ConverterT>::Callback callback,

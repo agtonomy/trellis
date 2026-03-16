@@ -70,7 +70,7 @@ concept _Sender = requires {
  * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to `std::identity`.
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
+  requires constraints::_IsSerializable<SerializableT> && _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
 class AsyncSender {
  public:
   using SerializableType = SerializableT;
@@ -125,7 +125,7 @@ class AsyncSender {
  * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to `std::identity`.
  */
 template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
+  requires constraints::_IsSerializable<SerializableT> && _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
 class ImmediateSender {
  public:
   using SerializableType = SerializableT;
