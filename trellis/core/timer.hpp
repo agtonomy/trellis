@@ -93,6 +93,19 @@ class TimerImpl {
    */
   virtual uint64_t GetOverrunCount() const = 0;
 
+  struct SchedLatencyStats {
+    int64_t max_us{0};
+    int64_t total_us{0};
+    double mean_us{0.0};
+    uint64_t count{0};
+  };
+
+  /**
+   * GetAndResetSchedLatencyStats returns scheduling latency stats (actual fire time minus expected expiry)
+   * observed since the last call, then resets the internal accumulators.
+   */
+  virtual SchedLatencyStats GetAndResetSchedLatencyStats() = 0;
+
  protected:
   /**
    * Construct a new timer and start it immediately
@@ -143,7 +156,8 @@ class OneShotTimerImpl : public TimerImpl {
   OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms);
 
   time::TimePoint GetExpiry() const override;
-  uint64_t GetOverrunCount() const override { return 0; };  // no overruns for one-shot timers
+  uint64_t GetOverrunCount() const override { return 0; }  // no overruns for one-shot timers
+  SchedLatencyStats GetAndResetSchedLatencyStats() override { return {}; }
   Type GetType() const override { return kOneShot; }
 
  protected:
@@ -163,6 +177,7 @@ class PeriodicTimerImpl : public TimerImpl {
   time::TimePoint GetExpiry() const override;
   Type GetType() const override { return kPeriodic; }
   uint64_t GetOverrunCount() const override { return overrun_count_.load(); }
+  SchedLatencyStats GetAndResetSchedLatencyStats() override;
 
  protected:
   void Reload() override;
@@ -170,6 +185,9 @@ class PeriodicTimerImpl : public TimerImpl {
 
  private:
   std::atomic<uint64_t> overrun_count_{0};
+  int64_t max_sched_latency_us_{0};
+  int64_t total_sched_latency_us_{0};
+  uint64_t sched_latency_count_{0};
 };
 
 using Timer = std::shared_ptr<TimerImpl>;

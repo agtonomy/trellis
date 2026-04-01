@@ -472,6 +472,12 @@ class Node {
   uint64_t GetTimerOverrunCount() const;
 
   /**
+   * GetAndResetTimerSchedLatencyStats returns aggregated scheduling latency stats across all periodic
+   * timers since the last call, then resets internal accumulators.
+   */
+  TimerImpl::SchedLatencyStats GetAndResetTimerSchedLatencyStats();
+
+  /**
    * Returns the name of the node
    *
    * @return The name of the node

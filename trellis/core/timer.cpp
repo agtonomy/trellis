@@ -139,9 +139,15 @@ void PeriodicTimerImpl::Reload() {
 }
 
 void PeriodicTimerImpl::OnFired(const time::TimePoint& fire_time) {
-  // Check if the callback execution time exceeded the timer interval
-  // by comparing callback start time against the previous expiry + interval
-  const auto next_expected_expiry = GetExpiry() + std::chrono::milliseconds(interval_ms_);
+  const auto expected = GetExpiry();
+  const auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(fire_time - expected).count();
+  if (latency_us > max_sched_latency_us_) {
+    max_sched_latency_us_ = latency_us;
+  }
+  total_sched_latency_us_ += latency_us;
+  ++sched_latency_count_;
+
+  const auto next_expected_expiry = expected + std::chrono::milliseconds(interval_ms_);
   if (fire_time > next_expected_expiry) {
     ++overrun_count_;
   }
@@ -155,6 +161,21 @@ time::TimePoint PeriodicTimerImpl::GetExpiry() const {
   } else {
     return timer_->expiry();
   }
+}
+
+PeriodicTimerImpl::SchedLatencyStats PeriodicTimerImpl::GetAndResetSchedLatencyStats() {
+  SchedLatencyStats stats{
+      .max_us = max_sched_latency_us_,
+      .total_us = total_sched_latency_us_,
+      .mean_us = sched_latency_count_ > 0
+                     ? static_cast<double>(total_sched_latency_us_) / static_cast<double>(sched_latency_count_)
+                     : 0.0,
+      .count = sched_latency_count_,
+  };
+  max_sched_latency_us_ = 0;
+  total_sched_latency_us_ = 0;
+  sched_latency_count_ = 0;
+  return stats;
 }
 
 }  // namespace core

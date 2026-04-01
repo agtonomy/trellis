@@ -59,6 +59,11 @@ Node::Node(std::string_view name, trellis::core::Config config)
             name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
         CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
           metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
+          const auto sched_stats = GetAndResetTimerSchedLatencyStats();
+          if (sched_stats.count > 0) {
+            metrics_->first.AddMeasurement(now, "timer_sched_latency_max_us", static_cast<double>(sched_stats.max_us));
+            metrics_->first.AddMeasurement(now, "timer_sched_latency_mean_us", sched_stats.mean_us);
+          }
 
           // Collect and publish subscriber latency stats
           for (const auto& weak_sub : subscribers_) {
@@ -162,6 +167,23 @@ uint64_t Node::GetTimerOverrunCount() const {
     }
   }
   return total;
+}
+
+TimerImpl::SchedLatencyStats Node::GetAndResetTimerSchedLatencyStats() {
+  TimerImpl::SchedLatencyStats combined{};
+  for (const auto& timer : timers_) {
+    if (auto shared_timer = timer.lock()) {
+      const auto stats = shared_timer->GetAndResetSchedLatencyStats();
+      if (stats.max_us > combined.max_us) {
+        combined.max_us = stats.max_us;
+      }
+      combined.total_us += stats.total_us;
+      combined.count += stats.count;
+    }
+  }
+  combined.mean_us =
+      combined.count > 0 ? static_cast<double>(combined.total_us) / static_cast<double>(combined.count) : 0.0;
+  return combined;
 }
 
 void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
