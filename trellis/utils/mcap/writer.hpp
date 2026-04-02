@@ -25,8 +25,15 @@
 #include "mcap/writer.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/subscriber.hpp"
+#include "trellis/core/timer.hpp"
+#include "trellis/utils/mcap/writer_subscriber_data.hpp"
 
 namespace trellis::utils::mcap {
+
+class WriterBase {
+ public:
+  virtual ~WriterBase() = default;
+};
 
 /**
  * @brief Log writer utility for subscribing to trellis topics and writing messages to an MCAP log file
@@ -35,7 +42,8 @@ namespace trellis::utils::mcap {
  * payload directly to disk and inform MCAP of the message schema at runtime.
  *
  */
-class Writer {
+template <typename MessageType, typename OutputMessageType = MessageType, typename Converter = NoopConverter>
+class WriterImpl : public WriterBase {
  public:
   /**
    * @brief Construct a new writer using the given node's event loop thread and discovery interface
@@ -46,9 +54,9 @@ class Writer {
    * @param options mcap writer options (optional) the default has some compression
    * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
    */
-  Writer(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
-         const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
-         std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+  WriterImpl(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
+             const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
+             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
 
   /**
    * @brief Construct a new writer using a self-managed thread running on the given event loop
@@ -62,28 +70,86 @@ class Writer {
    * @param options mcap writer options (optional) the default has some compression
    * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
    */
-  Writer(core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
-         const std::vector<std::string>& topics, std::string_view outfile,
-         const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
-         std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+  WriterImpl(core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
+             const std::vector<std::string>& topics, std::string_view outfile,
+             const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
+             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
 
-  ~Writer();
+  ~WriterImpl() override;
 
   // Forbid copy
-  Writer(const Writer&) = delete;
-  Writer& operator=(const Writer&) = delete;
+  WriterImpl(const WriterImpl&) = delete;
+  WriterImpl& operator=(const WriterImpl&) = delete;
 
-  Writer(Writer&&) = default;
-  Writer& operator=(Writer&&) = default;
+  WriterImpl(WriterImpl&&) = default;
+  WriterImpl& operator=(WriterImpl&&) = default;
 
  private:
   void Initialize(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
                   const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms);
   trellis::core::EventLoop loop_;
   core::discovery::DiscoveryPtr discovery_;
-  std::vector<core::SubscriberRaw> subscribers_;
+  std::vector<trellis::core::Subscriber<MessageType>> subscribers_;
   core::Timer flush_timer_;
 };
+
+template <typename MessageType, typename OutputMessageType, typename Converter>
+WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(core::Node& node,
+                                                                  const std::vector<std::string>& topics,
+                                                                  const std::string_view outfile,
+                                                                  const ::mcap::McapWriterOptions& options,
+                                                                  std::chrono::milliseconds flush_interval_ms)
+    : loop_{node.GetEventLoop()}, discovery_{node.GetDiscovery()} {
+  Initialize(node, topics, outfile, options, flush_interval_ms);
+}
+
+template <typename MessageType, typename OutputMessageType, typename Converter>
+WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(core::Node& node, core::EventLoop ev,
+                                                                  core::discovery::DiscoveryPtr discovery,
+                                                                  const std::vector<std::string>& topics,
+                                                                  const std::string_view outfile,
+                                                                  const ::mcap::McapWriterOptions& options,
+                                                                  std::chrono::milliseconds flush_interval_ms)
+    : loop_{ev}, discovery_{discovery} {
+  Initialize(node, topics, outfile, options, flush_interval_ms);
+}
+
+template <typename MessageType, typename OutputMessageType, typename Converter>
+WriterImpl<MessageType, OutputMessageType, Converter>::~WriterImpl() {
+  if (flush_timer_) {
+    flush_timer_->Stop();
+    flush_timer_->Fire();
+  }
+
+  // Clear subscribers explicitly
+  subscribers_.clear();
+}
+
+template <typename MessageType, typename OutputMessageType, typename Converter>
+void WriterImpl<MessageType, OutputMessageType, Converter>::Initialize(core::Node& node,
+                                                                       const std::vector<std::string>& topics,
+                                                                       const std::string_view outfile,
+                                                                       const ::mcap::McapWriterOptions& options,
+                                                                       std::chrono::milliseconds flush_interval_ms) {
+  const auto file_writer = FileWriter::MakeFileWriter(outfile, options);
+  for (const auto& topic : topics)
+    subscribers_.emplace_back(SubscriberData<MessageType, OutputMessageType, Converter>::CreateSubscriber(
+        node.GetConfig(), loop_, discovery_, topic, file_writer));
+
+  // Set up periodic flush timer if interval is greater than 0
+  if (flush_interval_ms.count() > 0) {
+    // Manually create timer so we use the provided event loop instead of the node's event loop
+    flush_timer_ = std::make_shared<core::PeriodicTimerImpl>(
+        loop_,
+        [file_writer](const core::time::TimePoint&) {  // flush the writer
+          const auto lock = std::lock_guard{file_writer->mutex};
+          file_writer->writer.closeLastChunk();
+        },
+        static_cast<unsigned>(flush_interval_ms.count()), 0);
+  }
+}
+
+typedef WriterImpl<google::protobuf::Message> Writer;
 
 }  // namespace trellis::utils::mcap
 
