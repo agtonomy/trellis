@@ -8,6 +8,23 @@ pkg_tar(
     strip_prefix = "__none__",
 )
 
+cc_library(
+    name = "trellis-cli-tui",
+    srcs = [
+        "topic/tui_components/ui_stream_publisher.cpp",
+        "topic/tui_components/ui_stream_publisher.hpp",
+        "topic/tui_components/ui_stream_subscriber.cpp",
+        "topic/tui_components/ui_stream_subscriber.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis",
+        "//trellis/core:core_proto_utils",
+        "//trellis/core/discovery",
+        "@ftxui//:component",
+    ],
+)
+
 cc_binary(
     name = "trellis-cli",
     srcs = [
@@ -28,15 +45,18 @@ cc_binary(
         "topic/topic_list_main.cpp",
         "topic/topic_main.cpp",
         "topic/topic_publish_main.cpp",
+        "topic/topic_stream_main.cpp",
     ],
     linkstatic = False,
     visibility = ["//visibility:public"],
     deps = [
+        ":trellis-cli-tui",
         "//trellis",
         "//trellis/core:core_proto_utils",
         "//trellis/core/discovery",
         "//trellis/utils/formatting:table",
         "@cxxopts",
+        "@ftxui//:component",
         "@json",
     ],
 )

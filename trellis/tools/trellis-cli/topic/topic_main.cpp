@@ -28,6 +28,7 @@ int topic_main(int argc, char* argv[]) {
       {"publish", {topic_publish_command_desc.data(), [argc, argv]() { return cli::topic_publish_main(argc, argv); }}},
       {"list", {topic_list_command_desc.data(), [argc, argv]() { return cli::topic_list_main(argc, argv); }}},
       {"echo", {topic_echo_command_desc.data(), [argc, argv]() { return cli::topic_echo_main(argc, argv); }}},
+      {"stream", {topic_stream_command_desc.data(), [argc, argv]() { return cli::topic_stream_main(argc, argv); }}},
   };
   if (subcommand.empty()) {
     std::cout << "Must specify a subcommand... " << std::endl;

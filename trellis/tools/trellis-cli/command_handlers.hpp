@@ -70,6 +70,7 @@ inline int RunCommand(const std::string command, const std::string subcommand, c
 int topic_main(int argc, char* argv[]);
 int topic_echo_main(int argc, char* argv[]);
 int topic_publish_main(int argc, char* argv[]);
+int topic_stream_main(int argc, char* argv[]);
 int topic_list_main(int argc, char* argv[]);
 
 // node subcommand

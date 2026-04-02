@@ -32,6 +32,7 @@ constexpr std::string_view root_command{"trellis-cli"};
 // Topic
 constexpr std::string_view topic_publish_command{"trellis-cli topic publish"};
 constexpr std::string_view topic_echo_command{"trellis-cli topic echo"};
+constexpr std::string_view topic_stream_command{"trellis-cli topic stream"};
 constexpr std::string_view topic_list_command{"trellis-cli topic list"};
 
 // Node
@@ -51,6 +52,7 @@ constexpr std::string_view health_info_command{"trellis-cli health info"};
 constexpr std::string_view topic_desc{"analyze pub/sub topics"};
 constexpr std::string_view topic_publish_command_desc{"publish messages to a given topic"};
 constexpr std::string_view topic_echo_command_desc{"echo messages from a given topic"};
+constexpr std::string_view topic_stream_command_desc{"create an interactive publication stream of messages"};
 constexpr std::string_view topic_list_command_desc{"list info about available topics"};
 
 // Node
