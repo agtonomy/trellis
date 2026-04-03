@@ -1,0 +1,36 @@
+name: Publish Trellis
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  publish_changes:
+    if: ${{ vars.TRELLIS_PUBLIC_REPO }}
+    runs-on: ubuntu-slim
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false # these credentials override the app access token if persisted
+
+      - name: Create GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.TRELLIS_APP_ID }}
+          private-key: ${{ secrets.TRELLIS_APP_PK }}
+          repositories: ${{ vars.TRELLIS_PUBLIC_REPO }}
+
+      - name: Publish Trellis
+        id: publish
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ vars.TRELLIS_PUBLIC_REPO }}
+          TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git remote add target "https://x-access-token:$TOKEN@github.com/$OWNER/$REPO.git"
+          git push target HEAD:${{ github.ref_name }}
