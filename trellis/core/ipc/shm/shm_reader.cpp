@@ -99,8 +99,10 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
       ++num_current_dropped_messages_;
     }
   } else {
-    throw std::runtime_error(
-        "Failed to take reader lock for buffer {}. There is contention with the writer. We must be falling behind!");
+    throw std::runtime_error(fmt::format(
+        "Failed to take reader lock for buffer {} at index {}. There is contention with the writer. We must be falling "
+        "behind!",
+        file.Handle(), buffer_index));
   }
 }
 

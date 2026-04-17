@@ -110,8 +110,8 @@ class SocketEvent {
   void StartReceive();
 
   trellis::core::EventLoop loop_;  ///< Event loop used for async I/O.
-  bool reader_;                    ///< True if this is a receiving endpoint.
-  std::string handle_;             ///< Name used to generate socket path.
+  const bool reader_;              ///< True if this is a receiving endpoint.
+  const std::string handle_;       ///< Name used to generate socket path.
 
   asio::local::datagram_protocol::socket socket_;      ///< ASIO socket for local domain datagrams.
   asio::local::datagram_protocol::endpoint endpoint_;  ///< Socket address.
