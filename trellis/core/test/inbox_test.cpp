@@ -650,4 +650,92 @@ TEST_F(TrellisFixture, ConvertingInbox) {
                                                     Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
 }
 
+TEST_F(TrellisFixture, InboxGetMessagesTemplatedSingle) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
+
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  pub2->Send(MakeTestTwo("there"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Only the selected type is returned when it is the first receive type.";
+
+  ASSERT_THAT(inbox.GetMessages<Latest<TestTwo>>(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestTwoIs("there")))))
+      << "Only the selected type is returned when it is the second receive type.";
+}
+
+TEST_F(TrellisFixture, InboxGetMessagesTemplatedReversed) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
+
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  pub2->Send(MakeTestTwo("there"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(
+      (inbox.GetMessages<Latest<TestTwo>, Latest<test::Test>>(kT0)),
+      FieldsAre(Optional(StampedMessageIs(kT0, TestTwoIs("there"))), Optional(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Selected order is preserved in the returned tuple, regardless of the ReceiveTypes order.";
+}
+
+TEST_F(TrellisFixture, InboxGetMessagesTemplatedMixedVariants) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
+
+  auto inbox = Inbox<Latest<test::Test>, NLatest<TestTwo, 3>, AllLatest<test::Test>, Loopback<TestTwo>>{
+      GetNode(), {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+  pub2->Send(MakeTestTwo("there"), kT0);
+  inbox.Send(MakeTestTwo("howdy"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT((inbox.GetMessages<NLatest<TestTwo, 3>, Loopback<TestTwo>>(kT0)),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0, TestTwoIs("there"))),
+                        Optional(StampedMessageIs(kT0, TestTwoIs("howdy")))))
+      << "Selection across mixed receive variants returns the matching subset in the given order.";
+
+  ASSERT_THAT(inbox.GetMessages<AllLatest<test::Test>>(kT0),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
+      << "Single AllLatest selection is returned even when another receive type shares the same MessageType.";
+}
+
+TEST_F(TrellisFixture, InboxGetMessagesTemplatedRespectsTimeout) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
+  auto pub2 = GetNode().CreatePublisher<TestTwo>("topic_2");
+
+  const auto inbox = Inbox<Latest<test::Test>, Latest<TestTwo>>{GetNode(), {"topic_1", "topic_2"}, {100ms, 100ms}};
+
+  WaitForDiscovery();
+
+  pub->Send(MakeTest("hello"), kT0);
+
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0 + 101ms), FieldsAre(Eq(std::nullopt)))
+      << "Selected message respects the configured timeout.";
+}
+
 }  // namespace trellis::core::test

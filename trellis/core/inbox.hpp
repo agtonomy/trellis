@@ -196,6 +196,39 @@ class Inbox {
                       receivers_);
   }
 
+  /**
+   * @brief Gets the index of the receiver for ReceiveType R in ReceiveTypes.
+   *
+   * @tparam R the receive type to find. Must appear exactly once in ReceiveTypes.
+   */
+  template <IsReceiveType R>
+  struct ReceiveTypeIndex {
+    static constexpr std::size_t value = []() {
+      constexpr std::array<bool, sizeof...(ReceiveTypes)> matches{{std::is_same_v<R, ReceiveTypes>...}};
+      // As we are in constant expression, we will get a compilation error not a runtime expectation.
+      if (std::ranges::count(matches, true) != 1) {
+        throw std::runtime_error("Expected exactly 1 match for the given receive type in the Inbox.");
+      }
+      return std::distance(matches.begin(), std::ranges::find(matches, true));
+    }();
+  };
+
+  /**
+   * @brief Gets the messages for only the subset of receive types supplied as template arguments.
+   *
+   * Semantics match the unfiltered GetMessages overload, but the returned tuple only contains entries for
+   * SelectedReceiveTypes, in the order supplied. Each SelectedReceiveTypes must appear exactly once in
+   * ReceiveTypes.
+   *
+   * @tparam SelectedReceiveTypes the receive types to return messages for.
+   * @param time the current time at which to check the inbox
+   * @return A tuple of messages for each selected receive type.
+   */
+  template <IsReceiveType... SelectedReceiveTypes>
+  std::tuple<InboxReturnType_t<SelectedReceiveTypes>...> GetMessages(const time::TimePoint& time) const {
+    return std::make_tuple(Receive(time, std::get<ReceiveTypeIndex<SelectedReceiveTypes>::value>(receivers_))...);
+  }
+
   /// @brief A convenient helper for InboxReturnType.
   template <IsReceiveType R>
   using InboxOwningReturnType_t = typename InboxReturnType<R>::owning_type;
