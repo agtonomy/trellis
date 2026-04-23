@@ -1,0 +1,2 @@
+# Intentionally empty. Workspace boundary marker for bzlmod; all dependency
+# declarations live in MODULE.bazel.

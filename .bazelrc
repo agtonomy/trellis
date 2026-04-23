@@ -1,3 +1,5 @@
+common --enable_bzlmod
+
 build --cxxopt=--std=c++20
 build --verbose_failures
 build --experimental_cc_shared_library

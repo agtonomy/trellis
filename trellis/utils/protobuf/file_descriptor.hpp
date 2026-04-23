@@ -46,10 +46,11 @@ inline google::protobuf::FileDescriptorSet GenerateFileDescriptorSetFromTopLevel
     const google::protobuf::FileDescriptor* next = to_add.front();
     to_add.pop();
     // Ensure that the proto type wasn't already added by checking our map
-    if (added.find(next->name()) == added.end()) {
+    std::string name{next->name()};
+    if (added.find(name) == added.end()) {
       next->CopyTo(fd_set.add_file());
     }
-    added.insert(next->name());
+    added.insert(std::move(name));
     // Iterate over all of the dependencies, and push them onto the queue
     for (int i = 0; i < next->dependency_count(); ++i) {
       const auto& dep = next->dependency(i);

@@ -1,0 +1,26 @@
+module(
+    name = "trellis",
+    version = "0.0.0",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "protobuf", version = "33.6", repo_name = "com_google_protobuf")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
+bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")
+bazel_dep(name = "fmt", version = "11.2.0.bcr.1")
+bazel_dep(name = "yaml-cpp", version = "0.9.0")
+bazel_dep(name = "cxxopts", version = "3.3.1")
+bazel_dep(name = "asio", version = "1.32.0")
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1", repo_name = "json")
+bazel_dep(name = "mcap", version = "2.0.2")
+bazel_dep(name = "lz4", version = "1.10.0.bcr.1")
+bazel_dep(name = "zstd", version = "1.5.7.bcr.1")
+bazel_dep(name = "eigen", version = "3.4.0.bcr.3")
+bazel_dep(name = "tclap", version = "1.2.5.bcr.1")
+bazel_dep(name = "ftxui", version = "6.1.9")
+
+non_bcr = use_extension("//third_party:non_bcr.bzl", "non_bcr")
+use_repo(non_bcr, "simpleini")

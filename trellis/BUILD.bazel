@@ -1,4 +1,5 @@
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load(":cc_hdrs.bzl", "cc_hdrs_filegroup")
 
 cc_library(
     name = "trellis",
@@ -53,28 +54,44 @@ pkg_tar(
     strip_prefix = "/trellis",
 )
 
+# Re-export hdrs from BCR cc_libraries as filegroups so pkg_tar can package them.
+cc_hdrs_filegroup(
+    name = "asio_headers",
+    deps = ["@asio"],
+)
+
+cc_hdrs_filegroup(
+    name = "fmt_headers",
+    deps = ["@fmt"],
+)
+
+cc_hdrs_filegroup(
+    name = "yaml_cpp_headers",
+    deps = ["@yaml-cpp"],
+)
+
 # Package asio headers
 pkg_tar(
     name = "asio_headers_tar",
-    srcs = ["@asio//:asio_headers"],
+    srcs = [":asio_headers"],
     package_dir = "include",
-    strip_prefix = "/external/asio/asio/include",
+    strip_prefix = "/external/asio~/asio/include",
 )
 
 # Package fmt headers
 pkg_tar(
     name = "fmt_headers_tar",
-    srcs = ["@fmt//:fmt_headers"],
+    srcs = [":fmt_headers"],
     package_dir = "include",
-    strip_prefix = "/external/fmt/include",
+    strip_prefix = "/external/fmt~/include",
 )
 
 # Package yaml-cpp headers
 pkg_tar(
     name = "yaml_cpp_headers_tar",
-    srcs = ["@yaml-cpp//:yaml_cpp_headers"],
+    srcs = [":yaml_cpp_headers"],
     package_dir = "include",
-    strip_prefix = "/external/yaml-cpp/include",
+    strip_prefix = "/external/yaml-cpp~/include",
 )
 
 # Package generated protobuf headers. When adding new proto targets to trellis,
@@ -91,7 +108,8 @@ pkg_tar(
     strip_prefix = "/_virtual_includes",
 )
 
-# Combine into final tarball
+# Combine into final tarball for external (non-Bazel) consumers such as the
+# isaac_sim extensions (simulation/isaacsim/).
 pkg_tar(
     name = "libtrellis_tarball",
     extension = "tar.gz",

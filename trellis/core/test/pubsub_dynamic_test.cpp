@@ -173,7 +173,7 @@ TEST_F(TrellisFixture, DynamicPublisherWithSchema) {
   auto pub = GetNode().CreateDynamicPublisher(
       "test_dynamic_pub_with_schema_topic",
       DynamicPublisherSchema{.tdesc = discovery::utils::GetProtoMessageDescription(test::Test{}),
-                             .tname = test::Test::descriptor()->full_name()});
+                             .tname = std::string{test::Test::descriptor()->full_name()}});
 
   // Create subscriber after publisher - unlike DynamicPublisher test, order doesn't matter
   auto sub = GetNode().CreateSubscriber<test::Test>(

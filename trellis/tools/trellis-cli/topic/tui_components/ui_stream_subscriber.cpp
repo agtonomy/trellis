@@ -204,7 +204,7 @@ void UIStreamSubscriber::UpdateSubscription(const std::string& sub_topic,
 
           for (int i = 0; i < field_count; i++) {
             const google::protobuf::FieldDescriptor* field = desc->field(i);
-            msg_headers.push_back(field->name());
+            msg_headers.emplace_back(field->name());
           }
           {
             std::lock_guard<std::mutex> guard{data_update_mutex_};

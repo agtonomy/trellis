@@ -18,6 +18,7 @@
 #include "trellis/core/discovery/utils.hpp"
 
 #include <sstream>
+#include <string_view>
 
 namespace trellis::core::discovery::utils {
 
@@ -30,7 +31,7 @@ namespace {
  * @param fname_ The filename to search for.
  * @return true If the file is found.
  */
-bool HasFile(const google::protobuf::FileDescriptorSet& fset_, const std::string& fname_) {
+bool HasFile(const google::protobuf::FileDescriptorSet& fset_, std::string_view fname_) {
   for (auto findex = 0; findex < fset_.file_size(); ++findex) {
     if (fset_.file(findex).name() == fname_) {
       return (true);
@@ -151,9 +152,8 @@ std::string GetArgv0() {
   return argv0;
 }
 
-Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc,
-                               const std::string& message_name, bool publisher, const std::string& memory_file_prefix,
-                               uint32_t buffer_count) {
+Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc, std::string_view message_name,
+                               bool publisher, const std::string& memory_file_prefix, uint32_t buffer_count) {
   Sample sample;
   sample.set_id(CalculateSampleId());
   sample.set_type(publisher ? discovery::publisher_registration : discovery::subscriber_registration);

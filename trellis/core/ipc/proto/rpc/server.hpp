@@ -59,7 +59,7 @@ class Server {
                       clients_.emplace_back(client);
                       ReceiveNextRequest(client);
                     }},
-        discovery_handle_{discovery_->RegisterServiceServer(PROTO_SERVICE_T::descriptor()->full_name(),
+        discovery_handle_{discovery_->RegisterServiceServer(std::string{PROTO_SERVICE_T::descriptor()->full_name()},
                                                             tcp_server_.GetPort(), methods_)} {}
 
   /**
@@ -93,7 +93,7 @@ class Server {
 
     for (int i = 0; i < service_descriptor->method_count(); ++i) {
       const google::protobuf::MethodDescriptor* method_descriptor = service_descriptor->method(i);
-      const std::string method_name = method_descriptor->name();
+      std::string method_name{method_descriptor->name()};
 
       const google::protobuf::Descriptor* input_desc = method_descriptor->input_type();
       const google::protobuf::Descriptor* output_desc = method_descriptor->output_type();
@@ -107,9 +107,9 @@ class Server {
           output_prototype ? discovery::utils::GetProtoMessageDescription(*output_prototype) : "";
 
       map.emplace(std::make_pair(method_name, MethodMetadata{.descriptor = method_descriptor,
-                                                             .input_type_name = input_desc->name(),
+                                                             .input_type_name = std::string{input_desc->name()},
                                                              .input_type_desc = std::move(input_type_desc),
-                                                             .output_type_name = output_desc->name(),
+                                                             .output_type_name = std::string{output_desc->name()},
                                                              .output_type_desc = std::move(output_type_desc)}));
     }
 

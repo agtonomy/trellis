@@ -25,6 +25,7 @@
 
 #include <fstream>
 #include <string>
+#include <string_view>
 
 #include "trellis/core/discovery/types.hpp"
 #include "trellis/core/ipc/proto/rpc/types.hpp"
@@ -43,7 +44,7 @@ namespace trellis::core::discovery::utils {
  * @return discovery::Sample The constructed discovery sample.
  */
 discovery::Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc,
-                                          const std::string& message_name, bool publisher,
+                                          std::string_view message_name, bool publisher,
                                           const std::string& memory_file_prefix, uint32_t buffer_count);
 
 /**
