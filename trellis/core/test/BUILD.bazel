@@ -29,6 +29,16 @@ cc_library(
 )
 
 cc_test(
+    name = "core_bind_test",
+    size = "small",
+    srcs = ["bind_test.cpp"],
+    deps = [
+        "//trellis/core:core_bind",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_message_consumer_test",
     srcs = ["message_consumer_test.cpp"],
     deps = [
