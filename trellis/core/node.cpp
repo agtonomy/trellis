@@ -157,6 +157,8 @@ trellis::core::HealthState Node::GetHealthState() const { return health_.GetHeal
 
 const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return health_.GetLastHealthStatus(); }
 
+const Health::HealthHistory& Node::GetHealthHistory() const { return health_.GetHealthHistory(); }
+
 void Node::AddSignalHandler(const SignalHandler& handler) { user_handler_ = handler; }
 
 uint64_t Node::GetTimerOverrunCount() const {

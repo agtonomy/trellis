@@ -356,6 +356,16 @@ class Node {
    */
   const trellis::core::HealthStatus& GetLastHealthStatus() const;
 
+  /**
+   * GetHealthHistory get the list of historical health updates published by this node.
+   *
+   * Useful for callers that need to inspect prior updates (e.g., check whether any update has been recorded before
+   * calling GetHealthState / GetLastHealthStatus, both of which throw on an empty history).
+   *
+   * @return const reference to the health history (oldest entry at front, newest at back)
+   */
+  const Health::HealthHistory& GetHealthHistory() const;
+
   /*
    * @brief run the application
    *
