@@ -425,11 +425,11 @@ class Node {
     } catch (const std::exception& e) {
       Log::Error("Unhandled std::exception: {}", e.what());
       ipc::NamedResourceRegistry::Get().UnlinkAll();
-      return 1;
+      return false;
     } catch (...) {
       Log::Error("Unhandled unknown exception occurred.");
       ipc::NamedResourceRegistry::Get().UnlinkAll();
-      return 1;
+      return false;
     }
   }
 
