@@ -15,6 +15,8 @@
  *
  */
 
+#include <cxxopts.hpp>
+
 #include "trellis/tools/trellis-cli/command_handlers.hpp"
 #include "trellis/tools/trellis-cli/constants.hpp"
 
@@ -37,5 +39,10 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
-  return cli::RunCommand(cli::root_command.data(), command, handlers);
+  try {
+    return cli::RunCommand(cli::root_command.data(), command, handlers);
+  } catch (const cxxopts::exceptions::exception& e) {
+    std::cerr << "error: " << e.what() << std::endl;
+    return 1;
+  }
 }
