@@ -665,11 +665,11 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedSingle) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
-      << "Only the selected type is returned when it is the first receive type.";
+  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0), Optional(StampedMessageIs(kT0, TestIs("hello"))))
+      << "A single selected type is returned unwrapped when it is the first receive type.";
 
-  ASSERT_THAT(inbox.GetMessages<Latest<TestTwo>>(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestTwoIs("there")))))
-      << "Only the selected type is returned when it is the second receive type.";
+  ASSERT_THAT(inbox.GetMessages<Latest<TestTwo>>(kT0), Optional(StampedMessageIs(kT0, TestTwoIs("there"))))
+      << "A single selected type is returned unwrapped when it is the second receive type.";
 }
 
 TEST_F(TrellisFixture, InboxGetMessagesTemplatedReversed) {
@@ -715,9 +715,9 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedMixedVariants) {
                         Optional(StampedMessageIs(kT0, TestTwoIs("howdy")))))
       << "Selection across mixed receive variants returns the matching subset in the given order.";
 
-  ASSERT_THAT(inbox.GetMessages<AllLatest<test::Test>>(kT0),
-              FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
-      << "Single AllLatest selection is returned even when another receive type shares the same MessageType.";
+  ASSERT_THAT(inbox.GetMessages<AllLatest<test::Test>>(kT0), ElementsAre(StampedMessageIs(kT0, TestIs("hello"))))
+      << "Single AllLatest selection is returned unwrapped even when another receive type shares the same "
+         "MessageType.";
 }
 
 TEST_F(TrellisFixture, InboxGetMessagesTemplatedRespectsTimeout) {
@@ -734,7 +734,7 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedRespectsTimeout) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0 + 101ms), FieldsAre(Eq(std::nullopt)))
+  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0 + 101ms), Eq(std::nullopt))
       << "Selected message respects the configured timeout.";
 }
 

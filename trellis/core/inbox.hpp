@@ -203,15 +203,32 @@ class Inbox {
    */
   template <IsReceiveType R>
   struct ReceiveTypeIndex {
-    static constexpr std::size_t value = []() {
-      constexpr std::array<bool, sizeof...(ReceiveTypes)> matches{{std::is_same_v<R, ReceiveTypes>...}};
-      // As we are in constant expression, we will get a compilation error not a runtime expectation.
-      if (std::ranges::count(matches, true) != 1) {
-        throw std::runtime_error("Expected exactly 1 match for the given receive type in the Inbox.");
-      }
-      return std::distance(matches.begin(), std::ranges::find(matches, true));
-    }();
+   private:
+    template <size_t... Is>
+    static constexpr std::size_t Find(std::index_sequence<Is...>) {
+      constexpr std::size_t matches((std::is_same_v<R, ReceiveTypes> + ...));
+      static_assert(matches == 1, "Expected exactly 1 match for the given receive type in the Inbox.");
+      return ((std::is_same_v<R, ReceiveTypes> ? Is : 0) + ...);
+    }
+
+   public:
+    static constexpr std::size_t value = Find(std::index_sequence_for<ReceiveTypes...>{});
   };
+
+  /**
+   * @brief Gets the messages for the single receive type supplied as a template argument.
+   *
+   * Semantics match the unfiltered GetMessages overload, but only the entry for SelectedReceiveType is
+   * returned. SelectedReceiveType must appear exactly once in ReceiveTypes.
+   *
+   * @tparam SelectedReceiveType the receive type to return messages for.
+   * @param time the current time at which to check the inbox
+   * @return The InboxReturnType_t for the selected receive type.
+   */
+  template <IsReceiveType SelectedReceiveType>
+  InboxReturnType_t<SelectedReceiveType> GetMessages(const time::TimePoint& time) const {
+    return Receive(time, std::get<ReceiveTypeIndex<SelectedReceiveType>::value>(receivers_));
+  }
 
   /**
    * @brief Gets the messages for only the subset of receive types supplied as template arguments.
@@ -225,6 +242,7 @@ class Inbox {
    * @return A tuple of messages for each selected receive type.
    */
   template <IsReceiveType... SelectedReceiveTypes>
+    requires(sizeof...(SelectedReceiveTypes) > 1)
   std::tuple<InboxReturnType_t<SelectedReceiveTypes>...> GetMessages(const time::TimePoint& time) const {
     return std::make_tuple(Receive(time, std::get<ReceiveTypeIndex<SelectedReceiveTypes>::value>(receivers_))...);
   }
