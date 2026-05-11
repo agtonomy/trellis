@@ -28,6 +28,7 @@
 #include "trellis/core/bind.hpp"
 #include "trellis/core/config.hpp"
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/crash_counter.hpp"
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/health.hpp"
 #include "trellis/core/ipc/named_resource_registry.hpp"
@@ -424,10 +425,12 @@ class Node {
       return ShouldRun();
     } catch (const std::exception& e) {
       Log::Error("Unhandled std::exception: {}", e.what());
+      crash_counter_.MarkUncleanExit();
       ipc::NamedResourceRegistry::Get().UnlinkAll();
       return false;
     } catch (...) {
       Log::Error("Unhandled unknown exception occurred.");
+      crash_counter_.MarkUncleanExit();
       ipc::NamedResourceRegistry::Get().UnlinkAll();
       return false;
     }
@@ -494,6 +497,23 @@ class Node {
    */
   inline const std::string& GetName() const { return name_; }
 
+  /**
+   * GetUncleanExitCount returns the number of consecutive unclean exits leading
+   * up to this start. Zero on a clean start. Callers may forward this to
+   * whatever metrics or logging pipeline they prefer.
+   */
+  int GetUncleanExitCount() const { return crash_counter_.UncleanExitCount(); }
+
+  /**
+   * MarkUncleanExit flags this run as having ended abnormally so the next
+   * start counts it as a crash. Use this from catch handlers that swallow an
+   * exception upstream of Node (e.g. around a manual RunFor loop) before
+   * letting the Node destruct normally. Idempotent. Destruction during stack
+   * unwinding is already auto-detected, so this is only required when the
+   * exception has been caught before the Node falls out of scope.
+   */
+  void MarkUncleanExit() { crash_counter_.MarkUncleanExit(); }
+
  private:
   // Helper to determine if we should not be running anymore
   bool ShouldRun();
@@ -503,6 +523,10 @@ class Node {
 
   // The active configuration
   trellis::core::Config config_;
+
+  // Detects unclean exits across runs of this node. Declared early so its
+  // lifetime brackets the event loop and other members.
+  CrashCounter crash_counter_;
 
   // The event loop handle used for asynchronous operations
   EventLoop ev_loop_;

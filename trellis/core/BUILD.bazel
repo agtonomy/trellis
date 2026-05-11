@@ -5,6 +5,7 @@ cc_library(
         ":core_bind",
         ":core_config",
         ":core_constraints",
+        ":core_crash_counter",
         ":core_error_code",
         ":core_event_loop",
         ":core_health",
@@ -19,6 +20,20 @@ cc_library(
         ":core_subscriber",
         ":core_time",
         ":core_transforms",
+    ],
+)
+
+cc_library(
+    name = "core_crash_counter",
+    srcs = [
+        "crash_counter.cpp",
+    ],
+    hdrs = [
+        "crash_counter.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_logging",
     ],
 )
 
@@ -146,6 +161,7 @@ cc_library(
     deps = [
         ":core_bind",
         ":core_config",
+        ":core_crash_counter",
         ":core_event_loop",
         ":core_health",
         ":core_proto_utils",

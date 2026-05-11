@@ -25,6 +25,7 @@ using namespace trellis::core;
 Node::Node(std::string_view name, trellis::core::Config config)
     : name_{name},
       config_{std::move(config)},
+      crash_counter_{config_.AsIfExists<std::string>("trellis.crash_counter.marker_dir", "/tmp/trellis"), name_},
       ev_loop_{},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
@@ -34,6 +35,10 @@ Node::Node(std::string_view name, trellis::core::Config config)
                 return CreateTimer(interval_ms, cb);
               }} {
   Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
+  const int unclean_exits = crash_counter_.UncleanExitCount();
+  if (unclean_exits > 0) {
+    Log::Error("{} starting after {} consecutive unclean exit(s)", name_, unclean_exits);
+  }
   // Handle signals explicitly, allowing the user to supply their own handler
   signal_set_.async_wait([this](const trellis::core::error_code& error, int signal_number) {
     if (!error) {
@@ -59,6 +64,7 @@ Node::Node(std::string_view name, trellis::core::Config config)
             name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
         CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
           metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
+          metrics_->first.AddCounter(now, "unclean_exit_count", static_cast<int64_t>(GetUncleanExitCount()));
           const auto sched_stats = GetAndResetTimerSchedLatencyStats();
           if (sched_stats.count > 0) {
             metrics_->first.AddMeasurement(now, "timer_sched_latency_max_us", static_cast<double>(sched_stats.max_us));
@@ -96,10 +102,12 @@ int Node::Run() {
     }
   } catch (const std::exception& e) {
     Log::Error("Unhandled std::exception: {}", e.what());
+    crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
     return 1;
   } catch (...) {
     Log::Error("Unhandled unknown exception occurred.");
+    crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
     return 1;
   }
@@ -117,10 +125,12 @@ bool Node::RunN(const unsigned n) {
     return ShouldRun();
   } catch (const std::exception& e) {
     Log::Error("Unhandled std::exception: {}", e.what());
+    crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
     return false;
   } catch (...) {
     Log::Error("Unhandled unknown exception occurred.");
+    crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
     return false;
   }
