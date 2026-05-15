@@ -18,7 +18,10 @@
 #ifndef TRELLIS_CORE_CRASH_COUNTER_HPP_
 #define TRELLIS_CORE_CRASH_COUNTER_HPP_
 
+#include <sys/types.h>
+
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -30,7 +33,7 @@ namespace core {
  * and exposes a count of consecutive unclean exits.
  *
  * Construct as a member of (or alongside) a Node so its lifetime brackets the
- * event loop. A marker file at /tmp/trellis/<node_name>_crash_counter is
+ * event loop. A marker file at <marker_dir>/<node_name>_crash_counter is
  * consulted on construction: if present, the previous run did not reach the
  * destructor and is treated as a crash; the counter is incremented and
  * rewritten. Clean destruction deletes the marker so the next start sees zero.
@@ -40,12 +43,22 @@ namespace core {
  * exceptions upstream and then let the counter destruct normally must invoke
  * MarkUncleanExit() so the marker is preserved across the next start.
  *
+ * The marker directory may be shared with other Trellis IPC artifacts (e.g.
+ * SHM event sockets). To keep it usable by processes running under different
+ * UIDs on the same host, creation is wrapped in a umask(000) guard, matching
+ * the IPC socket binding path. When uid/gid are supplied and the process is
+ * root, the directory and marker file are created owned by that uid/gid as
+ * well. Without this, the first writer to create the directory silently
+ * dictates which UIDs can later write into it, leading to EACCES on UDS bind
+ * for subsequent processes.
+ *
  * Assumes at most one instance of a given node name per host. Concurrent
  * instances would corrupt the on-disk count; enforce uniqueness upstream.
  */
 class CrashCounter {
  public:
-  explicit CrashCounter(std::string_view marker_dir, std::string_view node_name);
+  CrashCounter(std::string_view marker_dir, std::string_view node_name, std::optional<uid_t> uid = std::nullopt,
+               std::optional<gid_t> gid = std::nullopt);
   ~CrashCounter();
 
   CrashCounter(const CrashCounter&) = delete;
@@ -68,6 +81,8 @@ class CrashCounter {
 
  private:
   std::filesystem::path marker_path_;
+  std::optional<uid_t> uid_;
+  std::optional<gid_t> gid_;
   int unclean_exit_count_{0};
   bool mark_unclean_{false};
 };

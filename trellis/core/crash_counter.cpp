@@ -24,6 +24,7 @@
 #include <system_error>
 
 #include "trellis/core/logging.hpp"
+#include "trellis/utils/umask_guard/umask_guard.hpp"
 
 namespace trellis {
 namespace core {
@@ -62,8 +63,14 @@ bool WriteCounterAtomic(const std::filesystem::path& path, int value) {
 
 }  // namespace
 
-CrashCounter::CrashCounter(std::string_view marker_dir, std::string_view node_name)
-    : marker_path_{MarkerPath(marker_dir, node_name)} {
+CrashCounter::CrashCounter(std::string_view marker_dir, std::string_view node_name, std::optional<uid_t> uid,
+                           std::optional<gid_t> gid)
+    : marker_path_{MarkerPath(marker_dir, node_name)}, uid_{uid}, gid_{gid} {
+  // umask(000) so the dir is created world-writable (0777) and the marker file
+  // world-rw (0666). The marker dir is shared with IPC sockets that may be
+  // bound by other UIDs; otherwise the first writer locks everyone else out.
+  trellis::utils::UmaskGuard guard(000, uid_, gid_);
+
   std::error_code ec;
   std::filesystem::create_directories(marker_path_.parent_path(), ec);
   if (ec) {
@@ -91,6 +98,7 @@ CrashCounter::CrashCounter(std::string_view marker_dir, std::string_view node_na
 
 CrashCounter::~CrashCounter() {
   if (mark_unclean_ || std::uncaught_exceptions() > 0) return;
+  trellis::utils::UmaskGuard guard(000, uid_, gid_);
   std::error_code ec;
   std::filesystem::remove(marker_path_, ec);
   if (ec) {

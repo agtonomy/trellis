@@ -20,12 +20,16 @@
 #include <queue>
 #include <thread>
 
+#include "trellis/core/ipc/utils.hpp"
+
 using namespace trellis::core;
 
 Node::Node(std::string_view name, trellis::core::Config config)
     : name_{name},
       config_{std::move(config)},
-      crash_counter_{config_.AsIfExists<std::string>("trellis.crash_counter.marker_dir", "/tmp/trellis"), name_},
+      crash_counter_{config_.AsIfExists<std::string>("trellis.crash_counter.marker_dir", "/tmp/trellis"), name_,
+                     trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
+                     trellis::core::ipc::utils::GetUidGidFromConfig(config_).second},
       ev_loop_{},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),

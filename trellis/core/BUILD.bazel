@@ -34,6 +34,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_logging",
+        "//trellis/utils/umask_guard",
     ],
 )
 
@@ -168,6 +169,7 @@ cc_library(
         ":core_publisher",
         ":core_subscriber",
         "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc:utils",
         "//trellis/core/ipc/proto/rpc:client",
         "//trellis/core/ipc/proto/rpc:server",
         "//trellis/utils/metrics_pub",
