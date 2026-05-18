@@ -19,6 +19,7 @@
 #define TRELLIS_CORE_MESSAGE_TYPE_TUPLE_HPP_
 
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/converters.hpp"
 
 namespace trellis::core {
 
@@ -27,9 +28,12 @@ namespace trellis::core {
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
- * @tparam ConverterT The converter type (a free function or functor).
+ * @tparam ConverterT The converter type (a free function or functor). Defaults to a receiver-direction ADL converter
+ * that calls unqualified `FromProto(s)`; pass an explicit type for sender-direction tuples (M → S) or for stateful
+ * converters.
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
   requires constraints::_IsSerializable<SerializableT>
 struct TypeTuple {
   using SerializableType = SerializableT;
@@ -54,7 +58,7 @@ concept _IsTypeTuple = requires {
 template <typename T>
 concept _IsReceiverTypeTuple =
     _IsTypeTuple<T> &&
-    (constraints::_IsDynamic<typename T::SerializableType, typename T::MsgType, typename T::ConverterType> ||
+    (constraints::_IsDynamic<typename T::SerializableType, typename T::MsgType> ||
      constraints::_IsConverter<typename T::ConverterType, typename T::SerializableType, typename T::MsgType>);
 
 /**

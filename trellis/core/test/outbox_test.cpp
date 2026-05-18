@@ -130,14 +130,13 @@ TEST_F(TrellisFixture, OutboxStaleMessages) {
 TEST_F(TrellisFixture, ConvertingOutbox) {
   StartRunnerThread();
 
-  const auto inbox = Inbox<Latest<test::Test, arbitrary::Test, decltype(&arbitrary::FromProto)>>{
-      GetNode(), {"topic_1"}, {100ms}, {arbitrary::FromProto}};
-  auto outbox = Outbox<ImmediateSender<test::Test, arbitrary::Test, decltype(&arbitrary::ToProto)>>{
-      GetNode(), {"topic_1", arbitrary::ToProto}};
+  // No explicit ConverterT for either side. Inbox finds FromProto via ADL; ImmediateSender finds ToProto via ADL.
+  const auto inbox = Inbox<Latest<test::Test, arbitrary::Test>>{GetNode(), {"topic_1"}, {100ms}};
+  auto outbox = Outbox<ImmediateSender<test::Test, arbitrary::Test>>{GetNode(), {"topic_1"}};
 
   WaitForDiscovery();
 
-  const std::string msg = "wow automatic conversions are convenient";
+  const std::string msg = "wow ADL conversions are convenient";
 
   outbox.UpdateMsgs({arbitrary::Test{.msg = msg}});
 

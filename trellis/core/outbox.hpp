@@ -21,6 +21,7 @@
 #include <optional>
 
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/converters.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/publisher.hpp"
 #include "trellis/core/type_tuple.hpp"
@@ -65,11 +66,19 @@ concept _Sender = requires {
  * at which messages are computed (i.e., when the outbound messages need to be rate limited). The consumer will only
  * receive the latest value and must be able to tolerate up to one full timer period of latency.
  *
+ * This class supports opt-in automatic conversion from native C++ types to protobuf messages. Callers may specify a
+ * native message type that is convertible to the serializable type. By default, ADL is used to find a `ToProto`
+ * function that performs the conversion from the native type to the serializable type. Alternately, the caller may
+ * specify the converter type and provide a concrete converter to the constructor. Free functions or functors can be
+ * used; the type of free function `Foo` can be deduced easily via `decltype(&Foo)`.
+ *
  * @tparam SerializableT Wire-format (protobuf) type passed to the publisher.
  * @tparam MsgT          Native C++ message type. Defaults to `SerializableT` (no conversion).
- * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to `std::identity`.
+ * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to an ADL-based `ToProto` converter; never invoked
+ *                       when `MsgT == SerializableT`.
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
   requires constraints::_IsSerializable<SerializableT> && _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
 class AsyncSender {
  public:
@@ -120,11 +129,19 @@ class AsyncSender {
  *
  * Use this sender when the publish rate is controlled externally (e.g., by a timer or event).
  *
+ * This class supports opt-in automatic conversion from native C++ types to protobuf messages. Callers may specify a
+ * native message type that is convertible to the serializable type. By default, ADL is used to find a `ToProto`
+ * function that performs the conversion from the native type to the serializable type. Alternately, the caller may
+ * specify the converter type and provide a concrete converter to the constructor. Free functions or functors can be
+ * used; the type of free function `Foo` can be deduced easily via `decltype(&Foo)`.
+ *
  * @tparam SerializableT Wire-format (protobuf) type passed to the publisher.
  * @tparam MsgT          Native C++ message type. Defaults to `SerializableT` (no conversion).
- * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to `std::identity`.
+ * @tparam ConverterT    Callable `MsgT → SerializableT`. Defaults to an ADL-based `ToProto` converter; never invoked
+ *                       when `MsgT == SerializableT`.
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
   requires constraints::_IsSerializable<SerializableT> && _IsSenderTypeTuple<TypeTuple<SerializableT, MsgT, ConverterT>>
 class ImmediateSender {
  public:
@@ -169,9 +186,7 @@ class ImmediateSender {
  * Messages are dispatched to each sender via `UpdateMsgs`, which accepts a tuple of
  * `std::optional<MsgType>` — one per sender in the same order as the template parameters.
  *
- * Supports opt-in automatic conversion from a native C++ type to the wire-format protobuf type.
- * To enable conversion for a slot, instantiate the corresponding sender with three template
- * arguments: `SerializableT`, `MsgT`, and `ConverterT`.
+ * This class supports opt-in automatic conversion from native C++ types to protobuf messages via the senders.
  *
  * @tparam SenderType... One or more types satisfying the @ref _Sender concept.
  */

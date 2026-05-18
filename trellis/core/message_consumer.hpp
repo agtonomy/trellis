@@ -48,12 +48,6 @@ struct Index<T, std::tuple<U, Types...>> {
   static const std::size_t value = 1 + Index<T, std::tuple<Types...>>::value;
 };
 
-// Helper to make default converters
-template <class... T>
-auto MakeIdentityConverters() {
-  return std::make_tuple(((void)sizeof(T), std::identity())...);
-}
-
 }  // namespace detail
 
 /**
@@ -72,10 +66,11 @@ auto MakeIdentityConverters() {
  * For applications that only care about the most recent messages at each cycle of execution, they should use FIFO_DEPTH
  * of one. Also using Newest<>() with FIFO_DEPTH greater than one doesn't generally make sense to do.
  *
- * This class supports opt-in automatic conversion from protobuf messages to native C++ types. To use this feature,
- * callers must specify the serializable, native, and converter types as template parameters in the `TypeTuple`s. A
- * tuple of concrete converters is passed as a constructor argument. Free functions or functors can be used; the type of
- * a free function `Foo` can be deduced easily via `decltype(&Foo)`.
+ * This class supports opt-in automatic conversion from serializable types to native C++ types. Callers may specify a
+ * native message type that is convertible from the serializable type. By default, ADL is used to find a `FromProto`
+ * function that performs the conversion from the serializable type to the native type. Alternately, the caller may
+ * specify the converter type and provide a tuple of concrete converters to the constructor. Free functions or functors
+ * can be used; the type of free function `Foo` can be deduced easily via `decltype(&Foo)`.
  *
  * @tparam FIFO_DEPTH the maximum depth of the underlying FIFOs.
  * @tparam Types variadic list of `TypeTuple` structs
@@ -126,7 +121,7 @@ class MessageConsumer {
   MessageConsumer(Node& node, SingleTopicArray topics, UniversalUpdateCallback callback = {},
                   OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                   WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {},
-                  ConverterTuple converters = detail::MakeIdentityConverters<Types...>())
+                  ConverterTuple converters = ConverterTuple{})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callback, watchdog_timeouts_ms,
                         watchdog_callbacks, max_frequencies_hz, converters) {}
 
@@ -146,7 +141,7 @@ class MessageConsumer {
   MessageConsumer(Node& node, SingleTopicArray topics, NewMessageCallbacks callbacks,
                   OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                   WatchdogCallbacksArray watchdog_callbacks = {}, OptionalMaxFrequencyArray max_frequencies_hz = {},
-                  ConverterTuple converters = detail::MakeIdentityConverters<Types...>())
+                  ConverterTuple converters = ConverterTuple{})
       : MessageConsumer(node, CreateTopicsArrayFromSingleTopicArray(topics), callbacks, watchdog_timeouts_ms,
                         watchdog_callbacks, max_frequencies_hz, converters) {}
 
@@ -186,7 +181,7 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {},
-                           ConverterTuple converters = detail::MakeIdentityConverters<Types...>())
+                           ConverterTuple converters = ConverterTuple{})
       : topics_{topics},
         update_callback_{callback},
         new_message_callbacks_{},
@@ -213,7 +208,7 @@ class MessageConsumer {
                            OptionalWatchdogTimeoutsArray watchdog_timeouts_ms = {},
                            WatchdogCallbacksArray watchdog_callbacks = {},
                            OptionalMaxFrequencyArray max_frequencies_hz = {},
-                           ConverterTuple converters = detail::MakeIdentityConverters<Types...>())
+                           ConverterTuple converters = ConverterTuple{})
       : topics_{topics},
         update_callback_{},
         new_message_callbacks_{callbacks},

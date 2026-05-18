@@ -378,12 +378,12 @@ TEST_F(TrellisFixture, ConvertingPubSub) {
   std::condition_variable count_cv;
   constexpr unsigned kExpectedMessages = 10U;
 
-  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, decltype(&arbitrary::ToProto)>(
-      "test_topic", arbitrary::ToProto);
-  auto sub = GetNode().CreateSubscriber<test::Test, test::arbitrary::Test, decltype(&arbitrary::FromProto)>(
-      "test_topic",
-      [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
-                                                std::unique_ptr<test::arbitrary::Test> msg) {
+  // No explicit ConverterT/converter passed. CreatePublisher finds ToProto via ADL on arbitrary::Test, and
+  // CreateSubscriber finds FromProto via ADL on test::Test.
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test>("test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test, test::arbitrary::Test>(
+      "test_topic", [&receive_count, &count_mutex, &count_cv](const time::TimePoint&, const time::TimePoint&,
+                                                              std::unique_ptr<test::arbitrary::Test> msg) {
         std::lock_guard<std::mutex> lock(count_mutex);
         ASSERT_EQ(msg->id, receive_count);
         ++receive_count;
@@ -392,8 +392,7 @@ TEST_F(TrellisFixture, ConvertingPubSub) {
         if (receive_count == kExpectedMessages) {
           count_cv.notify_one();
         }
-      },
-      {}, {}, {}, arbitrary::FromProto);
+      });
 
   StartRunnerThread();
   WaitForDiscovery();

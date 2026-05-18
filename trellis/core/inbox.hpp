@@ -21,6 +21,7 @@
 #include "trellis/containers/dynamic_ring_buffer.hpp"
 #include "trellis/containers/ring_buffer.hpp"
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/converters.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/stamped_message.hpp"
 #include "trellis/core/subscriber.hpp"
@@ -33,9 +34,13 @@ namespace trellis::core {
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
- * @tparam ConverterT The converter type (a free function or functor).
+ * @tparam ConverterT The converter type (a free function or functor). Defaults to an ADL-based converter that calls
+ * an unqualified `FromProto(serializable)`, allowing users to customize conversion by declaring `FromProto` in the
+ * namespace of `SerializableT`. Pass an explicit type/value for stateful converters or when the source type lives in
+ * a namespace where ADL cannot reach (e.g., `std::`).
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
   requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct Latest {
   using SerializableType = SerializableT;
@@ -51,9 +56,13 @@ struct Latest {
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam N The max number of latest messages to return.
  * @tparam MsgT The message type (typically a native struct).
- * @tparam ConverterT The converter type (a free function or functor).
+ * @tparam ConverterT The converter type (a free function or functor). Defaults to an ADL-based converter that calls
+ * an unqualified `FromProto(serializable)`, allowing users to customize conversion by declaring `FromProto` in the
+ * namespace of `SerializableT`. Pass an explicit type/value for stateful converters or when the source type lives in
+ * a namespace where ADL cannot reach (e.g., `std::`).
  */
-template <typename SerializableT, size_t N, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, size_t N, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
   requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct NLatest {
   using SerializableType = SerializableT;
@@ -74,9 +83,13 @@ struct NLatest {
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
- * @tparam ConverterT The converter type (a free function or functor).
+ * @tparam ConverterT The converter type (a free function or functor). Defaults to an ADL-based converter that calls
+ * an unqualified `FromProto(serializable)`, allowing users to customize conversion by declaring `FromProto` in the
+ * namespace of `SerializableT`. Pass an explicit type/value for stateful converters or when the source type lives in
+ * a namespace where ADL cannot reach (e.g., `std::`).
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
   requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, SerializableT, MsgT>
 struct AllLatest {
   using SerializableType = SerializableT;
@@ -91,10 +104,13 @@ struct AllLatest {
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message) to convert to
  * @tparam MsgT The message type (typically a native struct)
- * @tparam ConverterT The converter type (a free function or functor).
- * Inbox only supports stateless functors (see example in unit tests).
+ * @tparam ConverterT The converter type (a free function or functor). Defaults to an ADL-based converter that calls
+ * an unqualified `FromProto(serializable)`, allowing users to customize conversion by declaring `FromProto` in the
+ * namespace of `SerializableT`. Pass an explicit type/value for stateful converters or when the source type lives in
+ * a namespace where ADL cannot reach (e.g., `std::`).
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
   requires constraints::_IsSerializable<SerializableT> && constraints::_IsConverter<ConverterT, MsgT, SerializableT>
 struct Loopback {
   using SerializableType = SerializableT;
@@ -130,6 +146,8 @@ concept IsReceiveType = requires {
 /**
  * @brief An inbox for getting the latest messages on various channels.
  *
+ * This class supports opt-in automatic conversion to native C++ types from protobuf messages via the receivers.
+ *
  * @tparam ReceiveTypes the message receive types which should be IsReceiveTypes, which are specializations of the
  * templates Latest, NLatest, AllLatest, or Loopback.
  */
@@ -149,7 +167,7 @@ class Inbox {
    * @param converters the converters that will be applied on reception of a message
    */
   Inbox(Node& node, const TopicArray& topics, const MessageTimeouts& timeouts,
-        const ConverterTuple& converters = std::make_tuple(((void)sizeof(ReceiveTypes), std::identity())...))
+        const ConverterTuple& converters = ConverterTuple{})
       : ev_{node.GetEventLoop()}, receivers_{MakeReceivers(node, topics, timeouts, converters)} {}
 
   template <typename R>

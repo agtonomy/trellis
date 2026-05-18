@@ -92,7 +92,8 @@ class Node {
    *
    * @return a handle to a publisher instance
    */
-  template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  template <typename SerializableT, typename MsgT = SerializableT,
+            typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
     requires constraints::_IsSerializable<SerializableT>
   Publisher<SerializableT, MsgT, ConverterT> CreatePublisher(const std::string& topic,
                                                              ConverterT converter = {}) const {
@@ -135,7 +136,8 @@ class Node {
    *
    * @return a subscriber handle
    */
-  template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+  template <typename SerializableT, typename MsgT = SerializableT,
+            typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
     requires constraints::_IsSerializable<SerializableT>
   Subscriber<SerializableT, MsgT, ConverterT> CreateSubscriber(
       std::string_view topic,
@@ -186,8 +188,9 @@ class Node {
    */
   DynamicPublisher CreateDynamicPublisher(const std::string& topic,
                                           std::optional<DynamicPublisherSchema> schema = std::nullopt) const {
+    using Converter = converters::DefaultToProto<google::protobuf::Message, google::protobuf::Message>;
     return std::make_shared<PublisherImpl<google::protobuf::Message>>(GetEventLoop(), topic, GetDiscovery(), config_,
-                                                                      std::identity{}, std::move(schema), GetName());
+                                                                      Converter{}, std::move(schema), GetName());
   }
 
   /**

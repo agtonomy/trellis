@@ -33,9 +33,13 @@ concept _IsSerializable = requires(T t, const void* read_data, void* write_data,
 template <typename FuncT, typename SourceT, typename DestT>
 concept _IsConverter = std::convertible_to<std::decay_t<std::invoke_result_t<FuncT, SourceT>>, DestT>;
 
-template <typename SerializableT, typename MsgT, typename ConverterT>
-concept _IsDynamic = std::same_as<SerializableT, google::protobuf::Message> && std::same_as<SerializableT, MsgT> &&
-                     std::same_as<ConverterT, std::identity>;
+// True for publishers/subscribers whose serializable and native message types are both the abstract
+// `google::protobuf::Message`. Used to gate the runtime-dynamic discovery and dispatch paths. The dynamic flow
+// (CreateDynamicPublisher / CreateDynamicSubscriber) always uses MsgT = SerializableT = Message; requiring both here
+// preserves that invariant defensively. ConverterT is intentionally not constrained because the default converter type
+// differs by direction (FromProto vs. ToProto), and the converter is never invoked on the dynamic path anyway.
+template <typename SerializableT, typename MsgT>
+concept _IsDynamic = std::same_as<SerializableT, google::protobuf::Message> && std::same_as<MsgT, SerializableT>;
 
 }  // namespace trellis::core::constraints
 

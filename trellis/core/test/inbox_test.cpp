@@ -74,6 +74,7 @@ Matcher<test::Test> TestIs(const std::string msg) { return Property("msg", &test
 Matcher<arbitrary::Test> ArbitraryTestIs(const std::string msg) { return Field(&arbitrary::Test::msg, msg); }
 
 Matcher<TestTwo> TestTwoIs(const std::string bar) { return Property("bar", &TestTwo::bar, Eq(bar)); }
+Matcher<arbitrary::TestTwo> ArbitraryTestTwoIs(const std::string bar) { return Field(&arbitrary::TestTwo::bar, bar); }
 
 }  // namespace
 
@@ -576,10 +577,7 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 
   auto inbox = Inbox<Latest<test::Test>, NLatest<TestTwo, 5>, AllLatest<test::Test>,
                      Loopback<test::Test, std::string, Serializer>>{
-      GetNode(),
-      {"topic_1", "topic_2", "topic_1", "loopback_topic"},
-      {100ms, 100ms, 100ms, 100ms},
-      {std::identity(), std::identity(), std::identity(), Serializer{}}};
+      GetNode(), {"topic_1", "topic_2", "topic_1", "loopback_topic"}, {100ms, 100ms, 100ms, 100ms}};
 
   WaitForDiscovery();
 
@@ -613,27 +611,28 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 TEST_F(TrellisFixture, ConvertingInbox) {
   StartRunnerThread();
 
-  auto pub = GetNode().CreatePublisher<test::Test, arbitrary::Test, decltype(&arbitrary::ToProto)>("topic_1",
-                                                                                                   arbitrary::ToProto);
+  auto pub = GetNode().CreatePublisher<test::Test, arbitrary::Test>("topic_1");
   auto pub2 = GetNode().CreatePublisher<test::TestTwo>("topic_2");
 
   // Show case different supported conversion mechanisms.
-  using FunctionPointerT = decltype(&arbitrary::FromProto);
+  using FunctionPointerT = arbitrary::Test (*)(const test::Test&);
+  constexpr FunctionPointerT from_proto_fp = &test::FromProto;
 
   struct Functor {
-    arbitrary::Test operator()(const test::Test& proto) { return arbitrary::FromProto(proto); }
+    arbitrary::Test operator()(const test::Test& proto) { return test::FromProto(proto); }
   };
 
-  const auto from_proto_lambda = [](const test::Test& proto) { return arbitrary::FromProto(proto); };
+  const auto from_proto_lambda = [](const test::Test& proto) { return test::FromProto(proto); };
 
-  auto inbox =
-      Inbox<Latest<test::Test, arbitrary::Test, FunctionPointerT>, NLatest<test::Test, 5, arbitrary::Test, Functor>,
-            NLatest<TestTwo, 5>, AllLatest<test::Test, arbitrary::Test, decltype(from_proto_lambda)>,
-            Loopback<test::Test, std::string, Serializer>>{
-          GetNode(),
-          {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
-          {100ms, 100ms, 100ms, 100ms, 100ms},
-          {arbitrary::FromProto, Functor{}, std::identity(), from_proto_lambda, Serializer{}}};
+  auto inbox = Inbox<Latest<test::Test, arbitrary::Test, FunctionPointerT>,                // function pointer
+                     NLatest<test::Test, 5, arbitrary::Test, Functor>,                     // functor
+                     NLatest<test::TestTwo, 5, arbitrary::TestTwo>,                        // ADL
+                     AllLatest<test::Test, arbitrary::Test, decltype(from_proto_lambda)>,  // lambda
+                     Loopback<test::Test, std::string, Serializer>>                        // functor
+      {GetNode(),
+       {"topic_1", "topic_1", "topic_2", "topic_1", "loopback_topic"},
+       {100ms, 100ms, 100ms, 100ms, 100ms},
+       {from_proto_fp, Functor{}, {}, from_proto_lambda, Serializer{}}};
 
   WaitForDiscovery();
 
@@ -643,11 +642,12 @@ TEST_F(TrellisFixture, ConvertingInbox) {
 
   WaitForSendReceive();
   inbox.GetMessagesCopy(kT0);
-  ASSERT_THAT(inbox.GetMessagesCopy(kT0), FieldsAre(Optional(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
-                                                    ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
-                                                    ElementsAre(OwningMessageIs(kT0 + 1ms, TestTwoIs("there"))),
-                                                    ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
-                                                    Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
+  ASSERT_THAT(inbox.GetMessagesCopy(kT0),
+              FieldsAre(Optional(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                        ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                        ElementsAre(OwningMessageIs(kT0 + 1ms, ArbitraryTestTwoIs("there"))),
+                        ElementsAre(OwningMessageIs(kT0, ArbitraryTestIs("hello"))),
+                        Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
 }
 
 TEST_F(TrellisFixture, InboxGetMessagesTemplatedSingle) {
@@ -718,6 +718,44 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedMixedVariants) {
   ASSERT_THAT(inbox.GetMessages<AllLatest<test::Test>>(kT0), ElementsAre(StampedMessageIs(kT0, TestIs("hello"))))
       << "Single AllLatest selection is returned unwrapped even when another receive type shares the same "
          "MessageType.";
+}
+
+TEST_F(TrellisFixture, InboxAdlDefaultFromProto) {
+  StartRunnerThread();
+
+  auto pub = GetNode().CreatePublisher<test::Test>("topic");
+
+  // No explicit ConverterT supplied. The default converter calls unqualified FromProto(s) and relies on ADL to
+  // resolve it to the FromProto declared in trellis::core::test alongside test::Test.
+  const auto inbox = Inbox<Latest<test::Test, arbitrary::Test>>{GetNode(), {"topic"}, {100ms}};
+
+  WaitForDiscovery();
+  pub->Send(MakeTest("adl works"), kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(inbox.GetMessages(kT0),
+              FieldsAre(Optional(StampedMessageIs<arbitrary::Test>(kT0, ArbitraryTestIs("adl works")))))
+      << "FromProto was discovered via ADL with no explicit converter passed.";
+}
+
+TEST_F(TrellisFixture, InboxAdlDefaultToProtoLoopback) {
+  StartRunnerThread();
+
+  auto recv = std::string{};
+  const auto sub =
+      GetNode().CreateSubscriber<test::Test>("loopback_topic", [&recv](auto, auto, auto msg) { recv = msg->msg(); });
+
+  // No explicit ConverterT for the Loopback. The default converter calls unqualified ToProto(m), resolved by ADL to
+  // arbitrary::ToProto.
+  auto inbox = Inbox<Loopback<test::Test, arbitrary::Test>>{GetNode(), {"loopback_topic"}, {100ms}};
+
+  WaitForDiscovery();
+  inbox.Send(arbitrary::Test{.id = 0, .msg = "loopback adl"}, kT0);
+  WaitForSendReceive();
+
+  ASSERT_THAT(recv, StrEq("loopback adl")) << "ToProto was discovered via ADL on the publish path.";
+  ASSERT_THAT(inbox.GetBareMessages(kT0), FieldsAre(Optional(ArbitraryTestIs("loopback adl"))))
+      << "The native message is also stored in the loopback receiver.";
 }
 
 TEST_F(TrellisFixture, InboxGetMessagesTemplatedRespectsTimeout) {

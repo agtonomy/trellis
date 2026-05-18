@@ -25,6 +25,7 @@
 #include <memory>
 
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/converters.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 #include "trellis/core/logging.hpp"
@@ -51,18 +52,20 @@ struct DynamicPublisherSchema {
  * This class handles the publication of protobuf messages over shared memory. It integrates
  * with the discovery system to broadcast presence and discover subscribers dynamically.
  *
- * This class supports opt-in automatic conversion from native C++ types to protobuf messages. To use this feature,
- * callers must specify the serializable, native, and converter types as template parameters. A concrete converter is
- * passed as a constructor argument. Free functions or functors can be used; the type of free function `Foo` can be
- * deduced easily via `decltype(&Foo)`.
+ * This class supports opt-in automatic conversion from native C++ types to protobuf messages. Callers may specify a
+ * native message type that is convertible to the serializable type. By default, ADL is used to find a `ToProto`
+ * function that performs the conversion from the native type to the serializable type. Alternately, the caller may
+ * specify the converter type and provide a concrete converter to the constructor. Free functions or functors can be
+ * used; the type of free function `Foo` can be deduced easily via `decltype(&Foo)`.
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
  * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsSerializable<SerializableT> && (constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
-                                                           constraints::_IsConverter<ConverterT, MsgT, SerializableT>)
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
+  requires constraints::_IsSerializable<SerializableT> &&
+           (constraints::_IsDynamic<SerializableT, MsgT> || constraints::_IsConverter<ConverterT, MsgT, SerializableT>)
 class PublisherImpl {
  public:
   static constexpr size_t kDefaultNumWriterBuffers = 5u;
@@ -102,7 +105,7 @@ class PublisherImpl {
                 0, config),
         discovery_{discovery},
         discovery_handle_{[&]() {
-          if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {
+          if constexpr (constraints::_IsDynamic<SerializableT, MsgT>) {
             if (schema.has_value()) {
               return discovery_->RegisterDynamicPublisher(topic, writer_.GetMemoryFilePrefix(),
                                                           writer_.GetBufferCount(), schema->tdesc, schema->tname);
@@ -155,7 +158,7 @@ class PublisherImpl {
     return SendInternal(now, [this, &msg](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
       bool success;
       size_t bytes_written;
-      if constexpr (std::is_same_v<ConverterT, std::identity>) {
+      if constexpr (std::is_same_v<MsgT, SerializableT>) {
         success = msg.SerializeToArray(write_info.data, write_info.size);
         bytes_written = success ? msg.ByteSizeLong() : 0;
       } else {
@@ -267,7 +270,7 @@ class PublisherImpl {
     if (event == discovery::Discovery::EventType::kNewRegistration) {
       // In the case of dynamic publishers, we have to learn our metadata from subscribers,
       // so we delay registration until we receive this data.
-      if constexpr (constraints::_IsDynamic<SerializableT, MsgT, ConverterT>) {
+      if constexpr (constraints::_IsDynamic<SerializableT, MsgT>) {
         if (discovery_handle_ == discovery::Discovery::kInvalidRegistrationHandle) {
           const auto& desc = sample.topic().tdatatype().desc();
           const auto& name = sample.topic().tdatatype().name();
@@ -311,7 +314,8 @@ class PublisherImpl {
 };
 
 // Type aliases for shared ownership and dynamic use
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultToProto<MsgT, SerializableT>>
 using Publisher = std::shared_ptr<PublisherImpl<SerializableT, MsgT, ConverterT>>;
 
 using DynamicPublisher = Publisher<google::protobuf::Message>;

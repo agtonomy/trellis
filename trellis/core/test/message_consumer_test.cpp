@@ -195,12 +195,12 @@ TEST_F(TrellisFixture, RoundTripConversionEachWithCallbacks) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test, decltype(&test::arbitrary::ToProto)>(
-      "consumer_topic_1", test::arbitrary::ToProto);
+  // ADL defaults: omit ConverterT template arg + converters ctor arg. PublisherImpl/MessageConsumer find
+  // test::FromProto / test::arbitrary::ToProto via ADL on the proto and native types respectively.
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test>("consumer_topic_1");
   auto pub2 = GetNode().CreatePublisher<test::TestTwo>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<num_burst_messages,
-                                 TypeTuple<test::Test, test::arbitrary::Test, decltype(&test::arbitrary::FromProto)>,
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test, test::arbitrary::Test>,
                                  TypeTuple<test::TestTwo>>
       inputs_{
           GetNode(),
@@ -216,7 +216,6 @@ TEST_F(TrellisFixture, RoundTripConversionEachWithCallbacks) {
              ASSERT_FLOAT_EQ(receive_count_2, msg.foo() / 2.0);
              ++receive_count_2;
            }},
-          {test::arbitrary::FromProto, std::identity()},
       };
   StartRunnerThread();
   WaitForDiscovery();
@@ -241,15 +240,13 @@ TEST_F(TrellisFixture, ConvertingDuplicateMessageTypes) {
   static unsigned receive_count_2{0};
   static constexpr unsigned num_burst_messages = 10U;
 
-  using ToT = decltype(&test::arbitrary::ToProto);
-  using FromT = decltype(&test::arbitrary::FromProto);
-  auto pub =
-      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, ToT>("consumer_topic_1", test::arbitrary::ToProto);
-  auto pub2 =
-      GetNode().CreatePublisher<test::Test, test::arbitrary::Test, ToT>("consumer_topic_2", test::arbitrary::ToProto);
+  // ADL defaults: omit ConverterT template arg + converters ctor arg. PublisherImpl/MessageConsumer find
+  // test::FromProto / test::arbitrary::ToProto via ADL on the proto and native types respectively.
+  auto pub = GetNode().CreatePublisher<test::Test, test::arbitrary::Test>("consumer_topic_1");
+  auto pub2 = GetNode().CreatePublisher<test::Test, test::arbitrary::Test>("consumer_topic_2");
 
-  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test, test::arbitrary::Test, FromT>,
-                                 TypeTuple<test::Test, test::arbitrary::Test, FromT>>
+  trellis::core::MessageConsumer<num_burst_messages, TypeTuple<test::Test, test::arbitrary::Test>,
+                                 TypeTuple<test::Test, test::arbitrary::Test>>
       inputs_{GetNode(),
               {{"consumer_topic_1", "consumer_topic_2"}},
               {[this](const std::string& topic, const test::arbitrary::Test& msg, const time::TimePoint&,
@@ -263,8 +260,7 @@ TEST_F(TrellisFixture, ConvertingDuplicateMessageTypes) {
                  ASSERT_EQ(topic, "consumer_topic_2");
                  ASSERT_EQ(receive_count_2, msg.id);
                  ++receive_count_2;
-               }}},
-              {test::arbitrary::FromProto, test::arbitrary::FromProto}};
+               }}}};
   StartRunnerThread();
   WaitForDiscovery();
 

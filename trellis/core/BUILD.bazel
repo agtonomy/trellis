@@ -204,6 +204,10 @@ cc_library(
     name = "core_type_tuple",
     hdrs = ["type_tuple.hpp"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":core_converters",
+        ":core_constraints",
+    ],
 )
 
 cc_library(
@@ -226,6 +230,7 @@ cc_library(
     hdrs = ["inbox.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_converters",
         ":core_constraints",
         ":core_node",
         ":core_stamped_message",
@@ -241,6 +246,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_converters",
         ":core_constraints",
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
@@ -254,6 +260,7 @@ cc_library(
     hdrs = ["outbox.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_converters",
         ":core_constraints",
         ":core_node",
         ":core_publisher",
@@ -269,6 +276,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_converters",
         ":core_constraints",
         ":core_logging",
         ":core_time",
@@ -364,5 +372,15 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "core_converters",
+    hdrs = [
+        "converters.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
     ],
 )

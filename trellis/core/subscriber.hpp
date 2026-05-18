@@ -23,6 +23,7 @@
 #include <ranges>
 
 #include "trellis/core/constraints.hpp"
+#include "trellis/core/converters.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
@@ -41,17 +42,19 @@ namespace trellis::core {
  * This class handles discovery of publishers, connecting to shared memory regions,
  * and deserializing received messages (both statically and dynamically typed).
  *
- * This class supports opt-in automatic conversion from protobuf messages to native C++ types. To use this feature,
- * callers must specify the serializable, native, and converter types as template parameters. A converter is passed as a
- * constructor argument. Free functions or functors can be used; the type of free function `Foo` can be deduced easily
- * via `decltype(&Foo)`.
+ * This class supports opt-in automatic conversion from serializable types to native C++ types. Callers may specify a
+ * native message type that is convertible from the serializable type. By default, ADL is used to find a `FromProto`
+ * function that performs the conversion from the serializable type to the native type. Alternately, the caller may
+ * specify the converter type and provide a concrete converter to the constructor. Free functions or functors can be
+ * used; the type of free function `Foo` can be deduced easily via `decltype(&Foo)`.
  *
  * @tparam SerializableT The serializable message type (typically a protobuf message).
  * @tparam MsgT The message type (typically a native struct).
  * @tparam ConverterT The converter type (a free function or functor).
  */
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
-  requires constraints::_IsSerializable<SerializableT> && (constraints::_IsDynamic<SerializableT, MsgT, ConverterT> ||
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
+  requires constraints::_IsSerializable<SerializableT> && (constraints::_IsDynamic<SerializableT, MsgT> ||
                                                            constraints::_IsConverter<ConverterT, SerializableT, MsgT>)
 class SubscriberImpl : public SubscriberBase,
                        public std::enable_shared_from_this<SubscriberImpl<SerializableT, MsgT, ConverterT>> {
@@ -379,7 +382,8 @@ class SubscriberImpl : public SubscriberBase,
 };
 
 /// @brief Alias for shared pointer to subscriber.
-template <typename SerializableT, typename MsgT = SerializableT, typename ConverterT = std::identity>
+template <typename SerializableT, typename MsgT = SerializableT,
+          typename ConverterT = converters::DefaultFromProto<SerializableT, MsgT>>
 using Subscriber = std::shared_ptr<SubscriberImpl<SerializableT, MsgT, ConverterT>>;
 
 /// @brief Dynamic message subscriber (protobuf::Message).
