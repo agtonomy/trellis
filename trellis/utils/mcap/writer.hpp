@@ -45,6 +45,10 @@ class WriterBase {
 template <typename MessageType, typename OutputMessageType = MessageType, typename Converter = NoopConverter>
 class WriterImpl : public WriterBase {
  public:
+  /// @brief A callback function for when the WriterImpl is destroyed that takes an mcap statistics object and the
+  /// vector of topic strings that was used for constructing the writer that the statistics came from
+  typedef std::function<void(const ::mcap::Statistics&, const std::vector<std::string>&)> OnDestroyedCallback;
+
   /**
    * @brief Construct a new writer using the given node's event loop thread and discovery interface
    *
@@ -53,10 +57,12 @@ class WriterImpl : public WriterBase {
    * @param outfile the path of the output mcap file
    * @param options mcap writer options (optional) the default has some compression
    * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
+   * @param on_destruction_callback optional callback invoked during destruction with the final mcap statistics
    */
   WriterImpl(core::Node& node, const std::vector<std::string>& topics, std::string_view outfile,
              const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
-             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0},
+             OnDestroyedCallback on_destruction_callback = nullptr);
 
   /**
    * @brief Construct a new writer using a self-managed thread running on the given event loop
@@ -69,11 +75,13 @@ class WriterImpl : public WriterBase {
    * @param outfile the path of the output mcap file
    * @param options mcap writer options (optional) the default has some compression
    * @param flush_interval_ms interval in milliseconds to periodically flush data to disk (0 means no periodic flush)
+   * @param on_destruction_callback optional callback invoked during destruction with the final mcap statistics
    */
   WriterImpl(core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
              const std::vector<std::string>& topics, std::string_view outfile,
              const ::mcap::McapWriterOptions& options = ::mcap::McapWriterOptions("protobuf"),
-             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0});
+             std::chrono::milliseconds flush_interval_ms = std::chrono::milliseconds{0},
+             OnDestroyedCallback on_destruction_callback = nullptr);
 
   ~WriterImpl() override;
 
@@ -85,12 +93,14 @@ class WriterImpl : public WriterBase {
   WriterImpl& operator=(WriterImpl&&) = default;
 
  private:
-  void Initialize(core::Node& node, const std::vector<std::string>& topics, const std::string_view outfile,
-                  const ::mcap::McapWriterOptions& options, std::chrono::milliseconds flush_interval_ms);
+  void Initialize(core::Node& node, std::chrono::milliseconds flush_interval_ms);
+  const std::vector<std::string> topics_;
   trellis::core::EventLoop loop_;
   core::discovery::DiscoveryPtr discovery_;
   std::vector<trellis::core::Subscriber<MessageType>> subscribers_;
+  std::shared_ptr<FileWriter> file_writer_;
   core::Timer flush_timer_;
+  OnDestroyedCallback on_destruction_callback_;
 };
 
 template <typename MessageType, typename OutputMessageType, typename Converter>
@@ -98,20 +108,22 @@ WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(core::Node& no
                                                                   const std::vector<std::string>& topics,
                                                                   const std::string_view outfile,
                                                                   const ::mcap::McapWriterOptions& options,
-                                                                  std::chrono::milliseconds flush_interval_ms)
-    : loop_{node.GetEventLoop()}, discovery_{node.GetDiscovery()} {
-  Initialize(node, topics, outfile, options, flush_interval_ms);
-}
+                                                                  std::chrono::milliseconds flush_interval_ms,
+                                                                  OnDestroyedCallback on_destruction_callback)
+    : WriterImpl(node, node.GetEventLoop(), node.GetDiscovery(), topics, outfile, options, flush_interval_ms,
+                 std::move(on_destruction_callback)) {}
 
 template <typename MessageType, typename OutputMessageType, typename Converter>
-WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(core::Node& node, core::EventLoop ev,
-                                                                  core::discovery::DiscoveryPtr discovery,
-                                                                  const std::vector<std::string>& topics,
-                                                                  const std::string_view outfile,
-                                                                  const ::mcap::McapWriterOptions& options,
-                                                                  std::chrono::milliseconds flush_interval_ms)
-    : loop_{ev}, discovery_{discovery} {
-  Initialize(node, topics, outfile, options, flush_interval_ms);
+WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(
+    core::Node& node, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
+    const std::vector<std::string>& topics, const std::string_view outfile, const ::mcap::McapWriterOptions& options,
+    std::chrono::milliseconds flush_interval_ms, OnDestroyedCallback on_destruction_callback)
+    : topics_{topics},
+      loop_{ev},
+      discovery_{discovery},
+      file_writer_{FileWriter::MakeFileWriter(outfile, options)},
+      on_destruction_callback_{std::move(on_destruction_callback)} {
+  Initialize(node, flush_interval_ms);
 }
 
 template <typename MessageType, typename OutputMessageType, typename Converter>
@@ -123,25 +135,26 @@ WriterImpl<MessageType, OutputMessageType, Converter>::~WriterImpl() {
 
   // Clear subscribers explicitly
   subscribers_.clear();
+
+  if (on_destruction_callback_ != nullptr) {
+    const auto lock = std::lock_guard{file_writer_->mutex};
+    on_destruction_callback_(file_writer_->writer.statistics(), topics_);
+  }
 }
 
 template <typename MessageType, typename OutputMessageType, typename Converter>
 void WriterImpl<MessageType, OutputMessageType, Converter>::Initialize(core::Node& node,
-                                                                       const std::vector<std::string>& topics,
-                                                                       const std::string_view outfile,
-                                                                       const ::mcap::McapWriterOptions& options,
                                                                        std::chrono::milliseconds flush_interval_ms) {
-  const auto file_writer = FileWriter::MakeFileWriter(outfile, options);
-  for (const auto& topic : topics)
+  for (const auto& topic : topics_)
     subscribers_.emplace_back(SubscriberData<MessageType, OutputMessageType, Converter>::CreateSubscriber(
-        node.GetConfig(), loop_, discovery_, topic, file_writer));
+        node.GetConfig(), loop_, discovery_, topic, file_writer_));
 
   // Set up periodic flush timer if interval is greater than 0
   if (flush_interval_ms.count() > 0) {
     // Manually create timer so we use the provided event loop instead of the node's event loop
     flush_timer_ = std::make_shared<core::PeriodicTimerImpl>(
         loop_,
-        [file_writer](const core::time::TimePoint&) {  // flush the writer
+        [file_writer = this->file_writer_](const core::time::TimePoint&) {  // flush the writer
           const auto lock = std::lock_guard{file_writer->mutex};
           file_writer->writer.closeLastChunk();
         },
