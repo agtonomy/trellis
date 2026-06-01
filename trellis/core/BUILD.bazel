@@ -33,6 +33,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_config",
         ":core_logging",
         "//trellis/utils/umask_guard",
     ],

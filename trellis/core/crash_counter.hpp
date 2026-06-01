@@ -28,6 +28,28 @@
 namespace trellis {
 namespace core {
 
+class Config;
+
+namespace crash_counter {
+
+/**
+ * Returns the unclean-exit count the next CrashCounter ctor would observe at
+ * the same marker_dir, without touching the marker. Intended for pre-Node
+ * startup decisions (e.g. crash backoff). A corrupt marker is reported as 1,
+ * matching the ctor's fallback so the peek result and the next constructed
+ * count agree.
+ */
+int PeekUncleanExitCount(std::string_view marker_dir, std::string_view node_name);
+
+/**
+ * As above, with the marker directory resolved from config. Uses the same
+ * key/default as CrashCounter(Config, ...), so the value matches what the
+ * Node will compute on construction.
+ */
+int PeekUncleanExitCount(const Config& config, std::string_view node_name);
+
+}  // namespace crash_counter
+
 /**
  * CrashCounter detects whether the previous run of a named node exited cleanly
  * and exposes a count of consecutive unclean exits.
@@ -59,6 +81,15 @@ class CrashCounter {
  public:
   CrashCounter(std::string_view marker_dir, std::string_view node_name, std::optional<uid_t> uid = std::nullopt,
                std::optional<gid_t> gid = std::nullopt);
+
+  /**
+   * Config-resolving overload: derives the marker directory from config using
+   * the same key/default as PeekUncleanExitCount(config, ...). Delegates to the
+   * string overload.
+   */
+  CrashCounter(const Config& config, std::string_view node_name, std::optional<uid_t> uid = std::nullopt,
+               std::optional<gid_t> gid = std::nullopt);
+
   ~CrashCounter();
 
   CrashCounter(const CrashCounter&) = delete;

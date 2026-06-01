@@ -25,6 +25,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "trellis/core/config.hpp"
+
 namespace {
 
 namespace fs = std::filesystem;
@@ -128,4 +130,67 @@ TEST_F(CrashCounterTest, MarkUncleanExitIsIdempotent) {
   }
   trellis::core::CrashCounter c2{kMarkerDir, kNodeName};
   EXPECT_EQ(c2.UncleanExitCount(), 1);
+}
+
+TEST_F(CrashCounterTest, PeekReturnsZeroWhenAbsent) {
+  EXPECT_EQ(trellis::core::crash_counter::PeekUncleanExitCount(kMarkerDir, kNodeName), 0);
+}
+
+TEST_F(CrashCounterTest, PeekCorruptReturnsOne) {
+  fs::create_directories(kMarkerDir);
+  std::ofstream(MarkerPath()) << "not a number";
+  EXPECT_EQ(trellis::core::crash_counter::PeekUncleanExitCount(kMarkerDir, kNodeName), 1);
+}
+
+TEST_F(CrashCounterTest, PeekMatchesConstructedCountAndLeavesMarkerUntouched) {
+  {
+    trellis::core::CrashCounter c{kMarkerDir, kNodeName};
+    c.MarkUncleanExit();
+  }
+  const auto read_marker = []() {
+    std::ifstream f(MarkerPath());
+    int v = -1;
+    f >> v;
+    return v;
+  };
+  const int before = read_marker();
+
+  const int peeked = trellis::core::crash_counter::PeekUncleanExitCount(kMarkerDir, kNodeName);
+
+  EXPECT_EQ(before, read_marker());
+
+  trellis::core::CrashCounter c2{kMarkerDir, kNodeName};
+  EXPECT_EQ(peeked, c2.UncleanExitCount());
+}
+
+TEST_F(CrashCounterTest, PeekFromConfigDefaultTargetsDefaultDir) {
+  {
+    trellis::core::CrashCounter c{kMarkerDir, kNodeName};
+    c.MarkUncleanExit();
+  }
+  EXPECT_EQ(trellis::core::crash_counter::PeekUncleanExitCount(trellis::core::Config{}, kNodeName), 1);
+}
+
+TEST_F(CrashCounterTest, PeekFromConfigReadsOverrideDir) {
+  constexpr std::string_view kOverrideDir = "/tmp/trellis_crash_counter_override_test";
+  std::error_code ec;
+  fs::remove_all(kOverrideDir, ec);
+  {
+    trellis::core::CrashCounter c{kOverrideDir, kNodeName};
+    c.MarkUncleanExit();
+  }
+  const trellis::core::Config config{
+      YAML::Load(fmt::format("trellis:\n  crash_counter:\n    marker_dir: {}\n", kOverrideDir))};
+  EXPECT_EQ(trellis::core::crash_counter::PeekUncleanExitCount(config, kNodeName), 1);
+  fs::remove_all(kOverrideDir, ec);
+}
+
+TEST_F(CrashCounterTest, ConstructFromConfigDefaultUsesDefaultDir) {
+  { trellis::core::CrashCounter c{trellis::core::Config{}, kNodeName}; }
+  EXPECT_FALSE(fs::exists(MarkerPath()));
+  {
+    trellis::core::CrashCounter c{trellis::core::Config{}, kNodeName};
+    c.MarkUncleanExit();
+  }
+  EXPECT_TRUE(fs::exists(MarkerPath()));
 }

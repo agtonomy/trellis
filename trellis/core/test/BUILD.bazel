@@ -157,6 +157,7 @@ cc_test(
     name = "core_crash_counter_test",
     srcs = ["crash_counter_test.cpp"],
     deps = [
+        "//trellis/core:core_config",
         "//trellis/core:core_crash_counter",
         "@com_google_googletest//:gtest_main",
     ],

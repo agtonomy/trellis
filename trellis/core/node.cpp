@@ -27,8 +27,7 @@ using namespace trellis::core;
 Node::Node(std::string_view name, trellis::core::Config config)
     : name_{name},
       config_{std::move(config)},
-      crash_counter_{config_.AsIfExists<std::string>("trellis.crash_counter.marker_dir", "/tmp/trellis"), name_,
-                     trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
+      crash_counter_{config_, name_, trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
                      trellis::core::ipc::utils::GetUidGidFromConfig(config_).second},
       ev_loop_{},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
@@ -68,7 +67,7 @@ Node::Node(std::string_view name, trellis::core::Config config)
             name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
         CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
           metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
-          metrics_->first.AddCounter(now, "unclean_exit_count", static_cast<int64_t>(GetUncleanExitCount()));
+          metrics_->first.AddMeasurement(now, "unclean_exit_count", static_cast<double>(GetUncleanExitCount()));
           const auto sched_stats = GetAndResetTimerSchedLatencyStats();
           if (sched_stats.count > 0) {
             metrics_->first.AddMeasurement(now, "timer_sched_latency_max_us", static_cast<double>(sched_stats.max_us));

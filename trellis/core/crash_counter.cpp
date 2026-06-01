@@ -23,6 +23,7 @@
 #include <string>
 #include <system_error>
 
+#include "trellis/core/config.hpp"
 #include "trellis/core/logging.hpp"
 #include "trellis/utils/umask_guard/umask_guard.hpp"
 
@@ -30,6 +31,13 @@ namespace trellis {
 namespace core {
 
 namespace {
+
+const std::string kDefaultMarkerDir = "/tmp/trellis";
+const std::string kMarkerDirConfigKey = "trellis.crash_counter.marker_dir";
+
+std::string MarkerDirFromConfig(const Config& config) {
+  return config.AsIfExists<std::string>(kMarkerDirConfigKey, kDefaultMarkerDir);
+}
 
 std::filesystem::path MarkerPath(std::string_view marker_dir, std::string_view node_name) {
   return std::filesystem::path(marker_dir) / (fmt::format("{}_crash_counter", node_name));
@@ -42,6 +50,16 @@ std::optional<int> ReadCounter(const std::filesystem::path& path) {
   f >> counter;
   if (f.fail()) return std::nullopt;
   return counter;
+}
+
+// Returns std::nullopt for a corrupt marker so callers can choose their own
+// fallback and logging (the ctor warns and writes 1; peek silently reports 1).
+std::optional<int> DeriveUncleanExitCount(const std::filesystem::path& path) {
+  std::error_code ec;
+  if (!std::filesystem::exists(path, ec)) return 0;
+  const auto counter_opt = ReadCounter(path);
+  if (!counter_opt.has_value()) return std::nullopt;
+  return counter_opt.value() + 1;
 }
 
 bool WriteCounterAtomic(const std::filesystem::path& path, int value) {
@@ -63,6 +81,18 @@ bool WriteCounterAtomic(const std::filesystem::path& path, int value) {
 
 }  // namespace
 
+namespace crash_counter {
+
+int PeekUncleanExitCount(std::string_view marker_dir, std::string_view node_name) {
+  return DeriveUncleanExitCount(MarkerPath(marker_dir, node_name)).value_or(1);
+}
+
+int PeekUncleanExitCount(const Config& config, std::string_view node_name) {
+  return PeekUncleanExitCount(MarkerDirFromConfig(config), node_name);
+}
+
+}  // namespace crash_counter
+
 CrashCounter::CrashCounter(std::string_view marker_dir, std::string_view node_name, std::optional<uid_t> uid,
                            std::optional<gid_t> gid)
     : marker_path_{MarkerPath(marker_dir, node_name)}, uid_{uid}, gid_{gid} {
@@ -78,23 +108,20 @@ CrashCounter::CrashCounter(std::string_view marker_dir, std::string_view node_na
     return;
   }
 
-  const bool marker_exists = std::filesystem::exists(marker_path_, ec);
-  if (marker_exists) {
-    auto counter_opt = ReadCounter(marker_path_);
-    if (counter_opt.has_value()) {
-      unclean_exit_count_ = counter_opt.value() + 1;
-    } else {
-      Log::Warn("CrashCounter: marker {} unreadable or unparseable; resetting count to 1", marker_path_.string());
-      unclean_exit_count_ = 1;
-    }
-  } else {
-    unclean_exit_count_ = 0;
+  const auto count_opt = DeriveUncleanExitCount(marker_path_);
+  if (!count_opt.has_value()) {
+    Log::Warn("CrashCounter: marker {} unreadable or unparseable; resetting count to 1", marker_path_.string());
   }
+  unclean_exit_count_ = count_opt.value_or(1);
 
   if (!WriteCounterAtomic(marker_path_, unclean_exit_count_)) {
     Log::Warn("CrashCounter: failed to write marker {}", marker_path_.string());
   }
 }
+
+CrashCounter::CrashCounter(const Config& config, std::string_view node_name, std::optional<uid_t> uid,
+                           std::optional<gid_t> gid)
+    : CrashCounter(MarkerDirFromConfig(config), node_name, uid, gid) {}
 
 CrashCounter::~CrashCounter() {
   if (mark_unclean_ || std::uncaught_exceptions() > 0) return;
