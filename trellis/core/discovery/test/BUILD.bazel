@@ -7,3 +7,12 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "descriptor_store_test",
+    srcs = ["descriptor_store_test.cpp"],
+    deps = [
+        "//trellis/core/discovery:descriptor_store",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

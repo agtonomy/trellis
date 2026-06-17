@@ -8,12 +8,31 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":descriptor_store",
         ":types",
         ":utils",
         "//trellis/core:core_config",
         "//trellis/core:core_event_loop",
         "//trellis/core:core_timer",
         "//trellis/network",
+        "@fmt",
+    ],
+)
+
+cc_library(
+    name = "descriptor_store",
+    srcs = [
+        "descriptor_store.cpp",
+    ],
+    hdrs = [
+        "descriptor_store.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//trellis/core:core_config",
+        "//trellis/core:core_logging",
+        "//trellis/core/ipc:utils",
+        "//trellis/utils/umask_guard",
         "@fmt",
     ],
 )
@@ -28,6 +47,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":descriptor_store",
         ":types",
         "//trellis/core/ipc/proto/rpc:types",
     ],
