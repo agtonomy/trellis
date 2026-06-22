@@ -20,6 +20,7 @@
 #include <fmt/core.h>
 
 #include <ranges>
+#include <utility>
 
 #include "trellis/core/logging.hpp"
 
@@ -129,6 +130,7 @@ Discovery::ConfigData::ConfigData(const trellis::core::Config& config)
 Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
     : node_name_{std::move(node_name)},
       config_{config},
+      store_{config},
       loop_{loop},
       udp_receiver_(config_.loopback_enabled
                         ? std::nullopt
@@ -155,6 +157,7 @@ void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
   PurgeStaleSamples(now, subscriber_samples_, subscriber_sample_callbacks_);
   PurgeStaleSamples(now, service_samples_, service_sample_callbacks_);
   PurgeStalePartialBuffers(now);
+  store_.Refresh();
   BroadcastSamples();
 }
 
@@ -527,6 +530,37 @@ std::string Discovery::GetSampleId(RegistrationHandle handle) {
   }
   auto& sample = it->second;
   return sample.id();
+}
+
+std::string Discovery::ResolveTopicDescriptor(const Sample& sample) const {
+  const auto& tdatatype = sample.topic().tdatatype();
+  if (!tdatatype.desc().empty()) {
+    return tdatatype.desc();
+  }
+  if (tdatatype.desc_hash().empty()) {
+    return "";
+  }
+  auto bytes = store_.Get(tdatatype.desc_hash());
+  if (!bytes.has_value()) {
+    Log::Warn("Discovery: failed to resolve descriptor hash '{}' for topic '{}'", tdatatype.desc_hash(),
+              sample.topic().tname());
+    return "";
+  }
+  return std::move(*bytes);
+}
+
+std::optional<std::pair<Sample, std::string>> Discovery::FindResolvableTopicSample(const std::string& topic) const {
+  for (auto& sample : GetPubSubSamples()) {
+    if (sample.topic().tname() != topic || sample.topic().tdatatype().name().empty()) {
+      continue;
+    }
+    std::string desc = ResolveTopicDescriptor(sample);
+    if (desc.empty()) {
+      continue;
+    }
+    return std::make_pair(std::move(sample), std::move(desc));
+  }
+  return std::nullopt;
 }
 
 const Discovery::ConfigData& Discovery::GetConfig() const { return config_; }

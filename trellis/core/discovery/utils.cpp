@@ -103,6 +103,23 @@ std::string CalculateSampleId() {
   return counter.str();
 }
 
+/**
+ * @brief Persist a descriptor to the store, recording its hash in `desc_hash`, or fall back to
+ * inlining the bytes in `desc` if the store could not persist them.
+ *
+ * The fallback keeps the schema propagating (peers prefer an inline `desc`/`req_desc`/`resp_desc`)
+ * rather than broadcasting a hash that no peer can resolve. A no-op for empty input.
+ */
+void PopulateDescriptor(DescriptorStore& store, const std::string& fdset_bytes, std::string* desc_hash,
+                        std::string* desc) {
+  const auto hash = store.Put(fdset_bytes);
+  if (hash.has_value()) {
+    *desc_hash = *hash;
+  } else if (!fdset_bytes.empty()) {
+    *desc = fdset_bytes;
+  }
+}
+
 }  // namespace
 
 std::string GetHostname() {
@@ -152,8 +169,9 @@ std::string GetArgv0() {
   return argv0;
 }
 
-Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc, std::string_view message_name,
-                               bool publisher, const std::string& memory_file_prefix, uint32_t buffer_count) {
+Sample CreateProtoPubSubSample(DescriptorStore& store, const std::string& topic, const std::string& message_desc,
+                               std::string_view message_name, bool publisher, const std::string& memory_file_prefix,
+                               uint32_t buffer_count) {
   Sample sample;
   sample.set_id(CalculateSampleId());
   sample.set_type(publisher ? discovery::publisher_registration : discovery::subscriber_registration);
@@ -162,9 +180,10 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
   sample.mutable_topic()->set_pname(GetExecutablePath());
   sample.mutable_topic()->set_uname(GetBaseName(sample.topic().pname()));
   sample.mutable_topic()->set_tname(topic);
-  sample.mutable_topic()->mutable_tdatatype()->set_name(message_name);
-  sample.mutable_topic()->mutable_tdatatype()->set_encoding("proto");
-  sample.mutable_topic()->mutable_tdatatype()->set_desc(message_desc);
+  auto* tdatatype = sample.mutable_topic()->mutable_tdatatype();
+  tdatatype->set_name(message_name);
+  tdatatype->set_encoding("proto");
+  PopulateDescriptor(store, message_desc, tdatatype->mutable_desc_hash(), tdatatype->mutable_desc());
 
   {
     auto* layer = sample.mutable_topic()->add_tlayer();
@@ -179,7 +198,7 @@ Sample CreateProtoPubSubSample(const std::string& topic, const std::string& mess
   return sample;
 }
 
-Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
+Sample CreateServiceServerSample(DescriptorStore& store, uint16_t port, const std::string& service_name,
                                  const ipc::proto::rpc::MethodsMap& methods) {
   Sample sample;
   sample.set_id(CalculateSampleId());
@@ -197,9 +216,9 @@ Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
     discovery::pb::Method* method = service.add_methods();
     method->set_mname(method_name);
     method->set_req_type(metadata.input_type_name);
-    method->set_req_desc(metadata.input_type_desc);
+    PopulateDescriptor(store, metadata.input_type_desc, method->mutable_req_desc_hash(), method->mutable_req_desc());
     method->set_resp_type(metadata.output_type_name);
-    method->set_resp_desc(metadata.output_type_desc);
+    PopulateDescriptor(store, metadata.output_type_desc, method->mutable_resp_desc_hash(), method->mutable_resp_desc());
     method->set_call_count(0);
   }
   return sample;

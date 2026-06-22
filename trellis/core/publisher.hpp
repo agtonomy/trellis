@@ -272,7 +272,7 @@ class PublisherImpl {
       // so we delay registration until we receive this data.
       if constexpr (constraints::_IsDynamic<SerializableT, MsgT>) {
         if (discovery_handle_ == discovery::Discovery::kInvalidRegistrationHandle) {
-          const auto& desc = sample.topic().tdatatype().desc();
+          const std::string desc = discovery_->ResolveTopicDescriptor(sample);
           const auto& name = sample.topic().tdatatype().name();
           const bool sample_has_schema = !desc.empty() && !name.empty();
           if (sample_has_schema) {

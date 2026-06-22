@@ -20,8 +20,10 @@
 
 #include <optional>
 #include <queue>
+#include <utility>
 
 #include "trellis/core/config.hpp"
+#include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/types.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -173,7 +175,8 @@ class Discovery {
   RegistrationHandle RegisterSubscriber(const std::string& topic) {
     MSG_T msg;
     const std::string tdesc = discovery::utils::GetProtoMessageDescription(msg);
-    return Register(utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), false, "", 0));
+    return Register(
+        utils::CreateProtoPubSubSample(store_, topic, tdesc, msg.GetDescriptor()->full_name(), false, "", 0));
   }
 
   /**
@@ -185,7 +188,7 @@ class Discovery {
    */
   template <class MSG_T, std::enable_if_t<std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
   RegistrationHandle RegisterSubscriber(const std::string& topic) {
-    return Register(utils::CreateProtoPubSubSample(topic, "", "", false, "", 0));
+    return Register(utils::CreateProtoPubSubSample(store_, topic, "", "", false, "", 0));
   }
 
   /**
@@ -202,14 +205,15 @@ class Discovery {
                                        uint32_t buffer_count) {
     MSG_T msg;
     const std::string tdesc = discovery::utils::GetProtoMessageDescription(msg);
-    return Register(utils::CreateProtoPubSubSample(topic, tdesc, msg.GetDescriptor()->full_name(), true,
+    return Register(utils::CreateProtoPubSubSample(store_, topic, tdesc, msg.GetDescriptor()->full_name(), true,
                                                    memory_file_prefix, buffer_count));
   }
 
   RegistrationHandle RegisterDynamicPublisher(const std::string& topic, const std::string& memory_file_prefix,
                                               uint32_t buffer_count, const std::string& tdesc,
                                               const std::string& full_name) {
-    return Register(utils::CreateProtoPubSubSample(topic, tdesc, full_name, true, memory_file_prefix, buffer_count));
+    return Register(
+        utils::CreateProtoPubSubSample(store_, topic, tdesc, full_name, true, memory_file_prefix, buffer_count));
   }
 
   /**
@@ -222,7 +226,7 @@ class Discovery {
    */
   RegistrationHandle RegisterServiceServer(std::string service_name, uint16_t port,
                                            const ipc::proto::rpc::MethodsMap& methods) {
-    return Register(utils::CreateServiceServerSample(port, service_name, methods));
+    return Register(utils::CreateServiceServerSample(store_, port, service_name, methods));
   }
 
   /**
@@ -237,8 +241,32 @@ class Discovery {
   template <class MSG_T, std::enable_if_t<std::is_same<MSG_T, google::protobuf::Message>::value>* = nullptr>
   RegistrationHandle RegisterPublisher(const std::string& topic, const std::string& memory_file_prefix,
                                        uint32_t buffer_count) {
-    return Register(utils::CreateProtoPubSubSample(topic, "", "", true, memory_file_prefix, buffer_count));
+    return Register(utils::CreateProtoPubSubSample(store_, topic, "", "", true, memory_file_prefix, buffer_count));
   }
+
+  /**
+   * @brief Resolve the descriptor bytes for a received topic sample.
+   *
+   * Prefers an inline `desc` if present (defensive fallback for a stray still-inlining binary or
+   * a future cross-host path), otherwise resolves `desc_hash` against the descriptor store. On a
+   * hash that fails to resolve, logs a warning and returns empty — the same observable outcome as a
+   * sample carrying no schema, which retries on the next broadcast.
+   *
+   * @param sample A received publisher/subscriber discovery sample.
+   * @return The serialized FileDescriptorSet bytes, or empty string if unavailable.
+   */
+  std::string ResolveTopicDescriptor(const Sample& sample) const;
+
+  /**
+   * @brief Find the first pub/sub sample for `topic` whose schema descriptor resolves.
+   *
+   * Skips samples for other topics, samples without a datatype name (e.g. dynamic subscribers), and
+   * samples whose descriptor cannot be resolved (see ResolveTopicDescriptor).
+   *
+   * @param topic The topic name to match.
+   * @return The matched sample paired with its resolved descriptor bytes, or std::nullopt if none.
+   */
+  std::optional<std::pair<Sample, std::string>> FindResolvableTopicSample(const std::string& topic) const;
 
   /**
    * @brief Get the current set of known publisher discovery samples
@@ -328,6 +356,7 @@ class Discovery {
 
   const std::string node_name_;                                          ///< This process's logical node name
   const ConfigData config_;                                              ///< Configuration data initialized from Config
+  DescriptorStore store_;                                                ///< Host-local content-addressed schema store
   trellis::core::EventLoop loop_;                                        ///< Event loop for deferred operations
   OptUdpReceiver udp_receiver_;                                          ///< Receives discovery broadcasts
   OptUdpSender udp_sender_;                                              ///< Sends discovery broadcasts

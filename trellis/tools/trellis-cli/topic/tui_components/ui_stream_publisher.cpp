@@ -154,23 +154,15 @@ std::string UIStreamPublisher::UpdatePublisher() {
   ClearPublisher();
   pub_ = node_.CreateDynamicPublisher(publication_info_.topic);
 
-  const auto pubsub_samples = node_.GetDiscovery()->GetPubSubSamples();
-
-  const auto it = std::find_if(pubsub_samples.begin(), pubsub_samples.end(),
-                               [&topic = publication_info_.topic](const auto& sample) {
-                                 // Find the first pub/sub msg that matches our topic of interest, but also has
-                                 // non-empty metadata. Dynamic subscribers will not have the `tdatatype` metadata
-                                 // populated, so we want to skip those samples
-                                 return sample.topic().tname() == topic && !sample.topic().tdatatype().name().empty() &&
-                                        !sample.topic().tdatatype().desc().empty();
-                               });
-
-  if (it == pubsub_samples.end()) {
+  const auto discovery = node_.GetDiscovery();
+  const auto match = discovery->FindResolvableTopicSample(publication_info_.topic);
+  if (!match.has_value()) {
     return fmt::format("Failed to discover topic {}", publication_info_.topic);
   }
+  const auto& [sample, desc] = *match;
 
-  cache_ = std::make_shared<ipc::proto::DynamicMessageCache>(it->topic().tdatatype().desc());
-  message_ = cache_->Create(it->topic().tdatatype().name());
+  cache_ = std::make_shared<ipc::proto::DynamicMessageCache>(desc);
+  message_ = cache_->Create(sample.topic().tdatatype().name());
 
   google::protobuf::util::JsonParseOptions json_options;
   json_options.ignore_unknown_fields = false;

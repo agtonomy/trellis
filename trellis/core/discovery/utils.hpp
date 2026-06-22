@@ -27,6 +27,7 @@
 #include <string>
 #include <string_view>
 
+#include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/types.hpp"
 #include "trellis/core/ipc/proto/rpc/types.hpp"
 
@@ -35,27 +36,35 @@ namespace trellis::core::discovery::utils {
 /**
  * @brief Create a discovery sample for a proto publisher or subscriber.
  *
+ * The descriptor bytes are persisted to the store and the sample carries only the resulting
+ * content hash (`desc_hash`), not the bytes themselves.
+ *
+ * @param store The descriptor store the FileDescriptorSet is persisted to.
  * @param topic The topic name.
- * @param message_desc The serialized message description (FileDescriptorSet).
+ * @param message_desc The serialized message description (FileDescriptorSet); may be empty.
  * @param message_name The name of the protobuf message type.
  * @param publisher True if creating for a publisher, false for subscriber.
  * @param memory_file_prefix Prefix for shared memory file names (publisher only).
  * @param buffer_count Number of buffers for shared memory (publisher only).
  * @return discovery::Sample The constructed discovery sample.
  */
-discovery::Sample CreateProtoPubSubSample(const std::string& topic, const std::string& message_desc,
-                                          std::string_view message_name, bool publisher,
-                                          const std::string& memory_file_prefix, uint32_t buffer_count);
+discovery::Sample CreateProtoPubSubSample(DescriptorStore& store, const std::string& topic,
+                                          const std::string& message_desc, std::string_view message_name,
+                                          bool publisher, const std::string& memory_file_prefix, uint32_t buffer_count);
 
 /**
  * @brief Create a discovery sample for a service server.
  *
+ * Each method's request/response descriptor bytes are persisted to the store and the sample
+ * carries only the resulting content-hash references.
+ *
+ * @param store The descriptor store the method descriptors are persisted to.
  * @param port The TCP port the service is available on.
  * @param service_name The name of the service.
  * @param methods the mapping of available methods to the associated metadata
  * @return discovery::Sample The constructed service discovery sample.
  */
-discovery::Sample CreateServiceServerSample(uint16_t port, const std::string& service_name,
+discovery::Sample CreateServiceServerSample(DescriptorStore& store, uint16_t port, const std::string& service_name,
                                             const ipc::proto::rpc::MethodsMap& methods);
 
 /**

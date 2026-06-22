@@ -3,6 +3,7 @@ cc_test(
     srcs = ["discovery_test.cpp"],
     deps = [
         "//trellis/core/discovery",
+        "//trellis/core/discovery:utils",
         "//trellis/core/test:test_proto",
         "@com_google_googletest//:gtest_main",
     ],

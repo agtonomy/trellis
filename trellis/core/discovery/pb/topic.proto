@@ -26,9 +26,10 @@ import "trellis/core/discovery/pb/layer.proto";
 package trellis.core.discovery.pb;
 
 message DataTypeInformation {
-  string name = 1;      // name of the datatype
-  string encoding = 2;  // encoding of the datatype (e.g. protobuf, flatbuffers, capnproto)
-  bytes desc = 3;       // descriptor information of the datatype (necessary for reflection)
+  string name = 1;       // name of the datatype
+  string encoding = 2;   // encoding of the datatype (e.g. protobuf, flatbuffers, capnproto)
+  bytes desc = 3;        // descriptor information of the datatype (necessary for reflection)
+  string desc_hash = 4;  // content hash of the descriptor in the host-local descriptor store
 }
 
 message Topic {

@@ -195,7 +195,7 @@ class SubscriberImpl : public SubscriberBase,
 
     if (dynamic_message_cache_ == nullptr) {
       // Dynamic publishers may not contain the appropriate metadata, so we must check for existence
-      const auto& desc = sample.topic().tdatatype().desc();
+      const std::string desc = discovery_->ResolveTopicDescriptor(sample);
       const auto& name = sample.topic().tdatatype().name();
       if (!desc.empty() && !name.empty()) {
         dynamic_message_cache_ = std::make_unique<ipc::proto::DynamicMessageCache>(desc);

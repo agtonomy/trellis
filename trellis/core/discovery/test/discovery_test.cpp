@@ -18,6 +18,10 @@
 #include "trellis/core/discovery/discovery.hpp"
 
 #include <gtest/gtest.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <filesystem>
 
 #include "trellis/core/test/test.pb.h"
 
@@ -249,6 +253,47 @@ TEST(DiscoveryTests, MultipleNodesSeparatePorts) {
     ASSERT_EQ(samples.size(), 1);
     ASSERT_EQ(samples[0].process().uname(), "test_node2");
   }
+}
+
+// A peer must be able to resolve a publisher's schema purely from the broadcast `desc_hash`, with no
+// inline descriptor bytes on the wire.
+TEST(DiscoveryTests, ResolveDescriptorViaHashAcrossPeers) {
+  // Isolate the descriptor store under a per-process dir so the test never touches the production
+  // default (/tmp/trellis/descriptors) or races a live node sharing it.
+  const auto descriptor_dir =
+      std::filesystem::temp_directory_path() / ("trellis_discovery_test_descriptors_" + std::to_string(::getpid()));
+  std::error_code ec;
+  std::filesystem::remove_all(descriptor_dir, ec);
+  const std::string config_yaml =
+      "trellis:\n"
+      "  discovery:\n"
+      "    interval: 10\n"
+      "    sample_timeout: 200\n"
+      "    port: 45678\n"
+      "    descriptor_dir: " +
+      descriptor_dir.string() + "\n";
+
+  auto ev = trellis::core::EventLoop();
+  Discovery publisher("pub_node", ev, trellis::core::Config(YAML::Load(config_yaml)));
+  Discovery subscriber("sub_node", ev, trellis::core::Config(YAML::Load(config_yaml)));
+
+  publisher.RegisterPublisher<test::Test>("/ref/topic", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(200));
+
+  const auto samples = subscriber.GetPubSamples();
+  const auto it = std::find_if(samples.begin(), samples.end(),
+                               [](const auto& sample) { return sample.topic().tname() == "/ref/topic"; });
+  ASSERT_NE(it, samples.end());
+
+  // The descriptor travels as a reference only; the inline byte field is never populated.
+  EXPECT_TRUE(it->topic().tdatatype().desc().empty());
+  EXPECT_FALSE(it->topic().tdatatype().desc_hash().empty());
+
+  const std::string resolved = subscriber.ResolveTopicDescriptor(*it);
+  EXPECT_FALSE(resolved.empty());
+  EXPECT_EQ(resolved, utils::GetProtoMessageDescription(test::Test{}.GetDescriptor()));
+
+  std::filesystem::remove_all(descriptor_dir, ec);
 }
 
 // test that loopback works

@@ -52,14 +52,17 @@ message Response  // server response
   int64 ret_state = 3;       // callback return state
 }
 
+// No consumer resolves a method's descriptors today (RPC clients are currently statically typed)
 message Method  // method
 {
-  string mname = 1;      // method name
-  string req_type = 2;   // request type
-  bytes req_desc = 3;    // request descriptor
-  string resp_type = 4;  // response type
-  bytes resp_desc = 5;   // response descriptor
-  int64 call_count = 6;  // call counter
+  string mname = 1;           // method name
+  string req_type = 2;        // request type
+  bytes req_desc = 3;         // request descriptor. populated if the descriptor store write failed
+  string resp_type = 4;       // response type
+  bytes resp_desc = 5;        // response descriptor. populated if the descriptor store write failed
+  int64 call_count = 6;       // call counter
+  string req_desc_hash = 7;   // content hash of the request descriptor in the descriptor store
+  string resp_desc_hash = 8;  // content hash of the response descriptor in the descriptor store
 }
 
 message Service  // service
