@@ -489,7 +489,7 @@ class Inbox {
     auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
         [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
-          buffer.push_back({msgtime, *msg});  // Copies the message out of the subscriber memory pool.
+          buffer.push_back({msgtime, std::move(*msg)});
         },
         {}, {}, {}, std::get<Index>(converters));
 
