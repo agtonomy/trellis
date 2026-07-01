@@ -21,6 +21,8 @@
 #include <fmt/core.h>
 
 #include <ranges>
+#include <type_traits>
+#include <variant>
 
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
@@ -180,6 +182,17 @@ class SubscriberImpl : public SubscriberBase,
  private:
   using SerializableTypePtr = std::unique_ptr<SerializableT>;
 
+  /// @brief True when this subscriber can parse into a reusable concrete member scratch: it converts a concrete
+  /// serializable type into a distinct MsgT. False for the pass-through case (SerializableT == MsgT, which hands its
+  /// owning pointer to the callback) and the dynamic subscriber (abstract google::protobuf::Message, which cannot be
+  /// held by value), neither of which can hold a reusable concrete scratch message.
+  static constexpr bool kCanUseScratch =
+      !std::same_as<SerializableT, MsgT> && !std::same_as<SerializableT, google::protobuf::Message>;
+
+  /// @brief Type of the reused intermediate parse buffer. A concrete SerializableT when we can use a scratch,
+  /// otherwise an empty std::monostate
+  using ConverterScratch = std::conditional_t<kCanUseScratch, SerializableT, std::monostate>;
+
   /**
    * @brief Handles discovery events for publishers.
    *
@@ -280,18 +293,30 @@ class SubscriberImpl : public SubscriberBase,
       }
     }
 
-    SerializableTypePtr msg = GetSerializableMessagePointer();
+    // owned_msg holds a per-message owning pointer; msg is a non-owning view of whatever object we parse into,
+    // wherever it lives. Both stay null/empty unless a parsed callback_ is registered.
+    SerializableTypePtr owned_msg;
+    SerializableT* msg = nullptr;
 
-    if (msg == nullptr) {
-      // We may hit this case if we're a dynamic subscriber and we don't yet have the message schema
-      return;
-    }
-
+    // Only materialize/parse a message when a parsed callback is registered. Raw subscribers forward the
+    // shared-memory bytes directly and need neither the message nor the schema.
     if (callback_) {
+      if constexpr (kCanUseScratch) {
+        // Converter subscribers parse into a reused scratch proto to avoid per msg allocs that are thrown away
+        msg = &serializable_scratch_;
+      } else {
+        // Normal proto and dynamic subscribers acquire a fresh pointer for the callback.
+        owned_msg = GetSerializableMessagePointer();
+        if (owned_msg == nullptr) {
+          // We may hit this case if we're a dynamic subscriber and we don't yet have the message schema
+          return;
+        }
+        msg = owned_msg.get();
+      }
+
       if (!msg->ParseFromArray(data, len)) {
         throw std::runtime_error(fmt::format("Failed to parse proto from shared memory from topic {} and writer_id {}",
                                              topic_, header.writer_id));
-        return;
       }
     }
 
@@ -307,7 +332,7 @@ class SubscriberImpl : public SubscriberBase,
 
     if (callback_) {
       if constexpr (std::same_as<SerializableT, MsgT>) {
-        callback_(receive_time, send_time, std::move(msg));
+        callback_(receive_time, send_time, std::move(owned_msg));
       } else {
         callback_(receive_time, send_time, std::make_unique<MsgT>(converter_(*msg)));
       }
@@ -379,6 +404,8 @@ class SubscriberImpl : public SubscriberBase,
   statistics::LatencyCalculator latency_calculator_;      ///< Latency calculation utility
   unsigned dropped_message_count_{0};                     ///< Total number of dropped messages detected
   ConverterT converter_;                                  ///< Function to convert to serialized message type
+  // no_unique_address makes sure in the std::monostate case, it occupies no extra space.
+  [[no_unique_address]] ConverterScratch serializable_scratch_{};  ///< Reused parse buffer for the converter path
 };
 
 /// @brief Alias for shared pointer to subscriber.

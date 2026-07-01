@@ -693,7 +693,7 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedReversed) {
       << "Selected order is preserved in the returned tuple, regardless of the ReceiveTypes order.";
 }
 
-TEST_F(TrellisFixture, InboxGetMessagesTemplatedMixedVariants) {
+TEST_F(TrellisFixture, InboxTemplatedMixedVariants) {
   StartRunnerThread();
 
   auto pub = GetNode().CreatePublisher<test::Test>("topic_1");
