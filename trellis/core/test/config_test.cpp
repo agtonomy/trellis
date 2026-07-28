@@ -21,21 +21,25 @@
 
 #include <fstream>
 
+#include "trellis/core/test/test_paths.hpp"
+
 namespace trellis::core {
 
 namespace {
 
+using test::DataPath;
+using test::TempPath;
 using testing::DoubleEq;
 using testing::Eq;
 using testing::StrEq;
 
-constexpr auto kBaseFilename = "trellis/core/test/test_base_config.yml";
-constexpr auto kOverlayFilename = "trellis/core/test/test_overlay_config.yml";
+constexpr auto kBaseFilename = "test_base_config.yml";
+constexpr auto kOverlayFilename = "test_overlay_config.yml";
 
 }  // namespace
 
 TEST(TrellisConfigAPI, OverlaySmokeTest) {
-  Config config(kBaseFilename);
+  Config config(DataPath(kBaseFilename));
 
   // First make sure we loaded the base configuration correctly
   ASSERT_EQ(config["root_key"]["option1"]["string_value"].as<std::string>(), "foo_bar");
@@ -47,7 +51,7 @@ TEST(TrellisConfigAPI, OverlaySmokeTest) {
   ASSERT_EQ(config["root_key"]["option1"]["integral_scalar"].as<int>(), 1);
 
   // Feed in another configuration tree as an overlay
-  config.OverlayFromFile(kOverlayFilename);
+  config.OverlayFromFile(DataPath(kOverlayFilename));
 
   // Make sure the overlay sits on top of the base configuration properly
   ASSERT_EQ(config["root_key"]["option1"]["string_value"].as<std::string>(), "updated_foo_bar");
@@ -60,12 +64,12 @@ TEST(TrellisConfigAPI, OverlaySmokeTest) {
 }
 
 TEST(WriteToFile, SimpleConfig) {
-  constexpr auto kWriteFilename = "trellis/core/test/test_base_config_written.yml";
+  const auto write_filename = TempPath("test_base_config_written.yml");
 
-  const auto config = Config{kBaseFilename};
-  config.WriteToFile(kWriteFilename);
+  const auto config = Config{DataPath(kBaseFilename)};
+  config.WriteToFile(write_filename);
 
-  const auto read_config = Config{kWriteFilename};
+  const auto read_config = Config{write_filename};
 
   const auto config_option = config["root_key"]["option1"];
   const auto read_config_option = read_config["root_key"]["option1"];
@@ -82,13 +86,13 @@ TEST(WriteToFile, SimpleConfig) {
 }
 
 TEST(WriteToFile, Overlaid) {
-  constexpr auto kWriteFilename = "trellis/core/test/test_base_config_written.yml";
+  const auto write_filename = TempPath("test_overlaid_config_written.yml");
 
-  auto config = Config{kBaseFilename};
-  config.OverlayFromFile(kOverlayFilename);
-  config.WriteToFile(kWriteFilename);
+  auto config = Config{DataPath(kBaseFilename)};
+  config.OverlayFromFile(DataPath(kOverlayFilename));
+  config.WriteToFile(write_filename);
 
-  const auto read_config = Config{kWriteFilename};
+  const auto read_config = Config{write_filename};
 
   const auto config_option = config["root_key"]["option1"];
   const auto read_config_option = read_config["root_key"]["option1"];
@@ -105,7 +109,7 @@ TEST(WriteToFile, Overlaid) {
 }
 
 TEST(TrellisConfigAPI, AsIfExistsTests) {
-  Config config(kBaseFilename);
+  Config config(DataPath(kBaseFilename));
 
   {
     // Key exists float

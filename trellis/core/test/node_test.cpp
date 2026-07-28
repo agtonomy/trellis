@@ -19,11 +19,12 @@
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/test/test_fixture.hpp"
+#include "trellis/core/test/test_paths.hpp"
 
 using namespace trellis::core;
 using namespace trellis::core::test;
 
-constexpr auto kBaseFilename = "trellis/core/test/test_base_config.yml";
+constexpr auto kBaseFilename = "test_base_config.yml";
 
 TEST_F(TrellisFixture, StartAndStopNode) {
   // Simply start the runner thread and then test that it will gracefully
@@ -36,7 +37,7 @@ TEST_F(TrellisFixture, StartAndStopNode) {
 }
 
 TEST(TrellisNode, Name) {
-  Config config(kBaseFilename);
+  Config config(DataPath(kBaseFilename));
   Node node("name", config);
   ASSERT_EQ("name", node.GetName());
 }
