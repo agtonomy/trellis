@@ -81,6 +81,18 @@ class TrellisFixture : public ::testing::Test {
     runner_thread_ = std::thread([this]() { node_->Run(); });
   }
 
+  /// @brief Stop the node and wait for the runner thread to finish the handler it is executing
+  ///
+  /// A timer's asio completion handler holds a raw pointer to the timer, and TimerImpl::Fire() reads members after the
+  /// user callback returns. Any test that lets a timer go out of scope while the loop may still be inside that timer's
+  /// handler must call this first, otherwise the handler resumes on a destroyed object.
+  void StopAndJoinRunnerThread() {
+    Stop();
+    if (runner_thread_.joinable()) {
+      runner_thread_.join();
+    }
+  }
+
   /// @brief Get a reference to the node for use in tests
   /// Note, should be called after SetUp() (in test body)
   trellis::core::Node& GetNode() { return *node_; }

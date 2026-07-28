@@ -82,6 +82,8 @@ TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
 
   auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // This timer is still armed, so join before it goes out of scope
+  StopAndJoinRunnerThread();
 
   // There may be a lot of jitter depending on system load, so we're not concerned with a precise count
   ASSERT_THAT(fire_count, testing::AllOf(testing::Gt(0), testing::Le(6)));
@@ -135,7 +137,9 @@ TEST_F(TrellisFixture, PeriodicTimerOverrunDetection) {
 
   // Wait enough time for several firings
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  timer->Stop();
+  // The callback sleeps for longer than the interval, so the loop is always inside this timer's handler here. Join
+  // before the timer goes out of scope, or the handler resumes on a destroyed timer.
+  StopAndJoinRunnerThread();
 
   // We should have detected overruns since callback takes longer than interval
   ASSERT_GT(timer->GetOverrunCount(), 0U);
