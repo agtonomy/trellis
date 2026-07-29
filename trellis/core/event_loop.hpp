@@ -19,9 +19,12 @@
 #define TRELLIS_CORE_EVENT_LOOP_HPP_
 
 #include <asio.hpp>
+#include <memory>
 
 namespace trellis {
 namespace core {
+
+class TimerRegistry;
 
 /**
  * @brief A proxy class for asio::io_context
@@ -29,6 +32,10 @@ namespace core {
  * The motivation for this class is to add a little bit more statefulness on top of the asio::io_context. The loop will
  * default to the stopped state, and transition to the running state if any of the Run methods are called. The loop will
  * stay in the running state indefinitely or until Stop() is explicitly called.
+ *
+ * The loop also carries the timer registry that every timer constructed against it registers with, so a component that
+ * only ever receives an event loop still gets its timers tracked. A default constructed loop carries no registry, which
+ * means its timers still fire but go untracked.
  *
  * Notes on thread-safety: The various Run() methods should only be called on the same thread as one another. The Stop()
  * method may be called from other threads.
@@ -40,6 +47,13 @@ class EventLoop {
   using IOContextPointer = std::shared_ptr<IOContext>;
 
   EventLoop() = default;
+
+  /**
+   * @brief Construct a loop that tracks its timers in the given registry
+   *
+   * @param registry the registry each timer constructed against this loop adds itself to; null means untracked
+   */
+  explicit EventLoop(std::shared_ptr<TimerRegistry> registry) : registry_{std::move(registry)} {}
 
   /**
    * @brief Proxy for asio::io_context::run()
@@ -123,10 +137,22 @@ class EventLoop {
    */
   IOContext& operator*() const { return *io_context_; }
 
+  /**
+   * @brief Return the registry that timers on this loop register themselves with
+   *
+   * Returned by value rather than by reference because loops are commonly obtained as a temporary (see
+   * Node::GetEventLoop()), and a reference into one of those would dangle.
+   *
+   * @return the registry, or nullptr if timers on this loop are untracked
+   */
+  std::shared_ptr<TimerRegistry> GetTimerRegistry() const { return registry_; }
+
  private:
   std::shared_ptr<std::atomic<State>> state_ = std::make_shared<std::atomic<State>>(State::kStopped);
   IOContextPointer io_context_ = std::make_shared<IOContext>();
   asio::executor_work_guard<typename IOContext::executor_type> work_guard_{asio::make_work_guard(*io_context_)};
+  // Shared across copies of this loop, just like the members above
+  std::shared_ptr<TimerRegistry> registry_{nullptr};
 };
 
 }  // namespace core

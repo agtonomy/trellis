@@ -72,6 +72,20 @@ cc_library(
 )
 
 cc_library(
+    name = "core_timer_registry",
+    srcs = [
+        "timer_registry.cpp",
+    ],
+    hdrs = [
+        "timer_registry.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@asio",
+    ],
+)
+
+cc_library(
     name = "core_proto_utils",
     hdrs = [
         "proto_utils.hpp",
@@ -94,6 +108,7 @@ cc_library(
         ":core_error_code",
         ":core_event_loop",
         ":core_time",
+        ":core_timer_registry",
         "@asio",
     ],
 )
@@ -169,6 +184,7 @@ cc_library(
         ":core_proto_utils",
         ":core_publisher",
         ":core_subscriber",
+        ":core_timer_registry",
         "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc:utils",
         "//trellis/core/ipc/proto/rpc:client",
@@ -206,8 +222,8 @@ cc_library(
     hdrs = ["type_tuple.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_converters",
         ":core_constraints",
+        ":core_converters",
     ],
 )
 
@@ -231,8 +247,8 @@ cc_library(
     hdrs = ["inbox.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_converters",
         ":core_constraints",
+        ":core_converters",
         ":core_node",
         ":core_stamped_message",
         "//trellis/containers:dynamic_ring_buffer",
@@ -247,8 +263,8 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_converters",
         ":core_constraints",
+        ":core_converters",
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc/shm:shm_writer",
@@ -261,8 +277,8 @@ cc_library(
     hdrs = ["outbox.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_converters",
         ":core_constraints",
+        ":core_converters",
         ":core_node",
         ":core_publisher",
         ":core_type_tuple",
@@ -277,8 +293,8 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        ":core_converters",
         ":core_constraints",
+        ":core_converters",
         ":core_logging",
         ":core_time",
         ":core_timer",

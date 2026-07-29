@@ -108,6 +108,16 @@ cc_test(
 )
 
 cc_test(
+    name = "core_timer_registry_test",
+    srcs = ["timer_registry_test.cpp"],
+    deps = [
+        ":test_fixture",
+        "//trellis/core:core_timer",
+        "//trellis/core:core_timer_registry",
+    ],
+)
+
+cc_test(
     name = "core_time_test",
     srcs = ["time_test.cpp"],
     deps = [
@@ -123,6 +133,7 @@ cc_test(
         ":test_fixture",
         ":test_proto",
         "//trellis/core:core_time",
+        "//trellis/core:core_timer",
         "@com_google_googletest//:gtest_main",
     ],
 )

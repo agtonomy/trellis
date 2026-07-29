@@ -66,10 +66,7 @@ class TrellisFixture : public ::testing::Test {
 
   void TearDown() override {
     time::DisableSimulatedClock();
-    Stop();
-    if (runner_thread_.joinable()) {
-      runner_thread_.join();
-    }
+    StopAndJoinRunnerThread();
     // Destroy the node to clean up all discovery state
     node_.reset();
   }

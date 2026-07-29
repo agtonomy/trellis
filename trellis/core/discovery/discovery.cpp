@@ -147,7 +147,7 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
                             loop, CreateNativeUDPSocket(0, config_.rcvbuf_size, config_.sndbuf_size))),
       management_timer_{std::make_shared<PeriodicTimerImpl>(
           loop, [this](const time::TimePoint& now) { Evaluate(now); }, config_.management_interval,
-          config_.management_interval)} {
+          config_.management_interval, TimerKind::kManagement)} {
   Register(utils::GetNodeProcessSample(node_name_));
 }
 

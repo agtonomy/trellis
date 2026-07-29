@@ -21,6 +21,7 @@
 #include <thread>
 
 #include "trellis/core/ipc/utils.hpp"
+#include "trellis/core/timer_registry.hpp"
 
 using namespace trellis::core;
 
@@ -29,7 +30,7 @@ Node::Node(std::string_view name, trellis::core::Config config)
       config_{std::move(config)},
       crash_counter_{config_, name_, trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
                      trellis::core::ipc::utils::GetUidGidFromConfig(config_).second},
-      ev_loop_{},
+      ev_loop_{std::make_shared<TimerRegistry>()},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
       health_{std::string(name), config_,
@@ -62,6 +63,9 @@ Node::Node(std::string_view name, trellis::core::Config config)
     const auto metrics_topic = config.AsIfExists<std::string>("trellis.metrics.topic", "/trellis/app/metrics");
     const auto metrics_interval_ms = config.AsIfExists<unsigned>("trellis.metrics.interval_ms", 60000);
 
+    // Deliberately an application timer rather than a management one. Publication being late is itself evidence that
+    // this node's loop is starving, which is what the timer metrics exist to surface, so this timer belongs in the
+    // figures rather than excluded from them -- and it was counted before the application/management split existed.
     metrics_.emplace(
         trellis::utils::metrics::MetricsPublisher(
             name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
@@ -176,26 +180,31 @@ void Node::AddSignalHandler(const SignalHandler& handler) { user_handler_ = hand
 
 uint64_t Node::GetTimerOverrunCount() const {
   uint64_t total = 0;
-  for (const auto& timer : timers_) {
-    if (auto shared_timer = timer.lock()) {
-      total += shared_timer->GetOverrunCount();
+  // ForEach holds the registry lock, so an entry cannot be erased partway through the walk and entry.timer stays a
+  // valid pointer. That is all the lock buys: it serializes entry lifetime, not a timer's internals, so the counters
+  // read here must be safe to read concurrently in their own right. Neither this nor the collection below runs a user
+  // callback, so the no-reentrancy contract holds.
+  ev_loop_.GetTimerRegistry()->ForEach([&total](const TimerRegistry::Entry& entry) {
+    if (entry.kind == TimerKind::kApplication) {
+      total += entry.timer->GetOverrunCount();
     }
-  }
+  });
   return total;
 }
 
 TimerImpl::SchedLatencyStats Node::GetAndResetTimerSchedLatencyStats() {
   TimerImpl::SchedLatencyStats combined{};
-  for (const auto& timer : timers_) {
-    if (auto shared_timer = timer.lock()) {
-      const auto stats = shared_timer->GetAndResetSchedLatencyStats();
-      if (stats.max_us > combined.max_us) {
-        combined.max_us = stats.max_us;
-      }
-      combined.total_us += stats.total_us;
-      combined.count += stats.count;
+  ev_loop_.GetTimerRegistry()->ForEach([&combined](const TimerRegistry::Entry& entry) {
+    if (entry.kind != TimerKind::kApplication) {
+      return;  // resetting a timer this node does not own would steal the samples from whoever does
     }
-  }
+    const auto stats = entry.timer->GetAndResetSchedLatencyStats();
+    if (stats.max_us > combined.max_us) {
+      combined.max_us = stats.max_us;
+    }
+    combined.total_us += stats.total_us;
+    combined.count += stats.count;
+  });
   combined.mean_us =
       combined.count > 0 ? static_cast<double>(combined.total_us) / static_cast<double>(combined.count) : 0.0;
   return combined;
@@ -207,32 +216,64 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
       auto existing_time = time::Now();
       bool reset_timers{false};
       if (new_time >= existing_time) {
-        if (!timers_.empty()) {
+        const auto registry = ev_loop_.GetTimerRegistry();
+        // Only timers the simulated clock drives belong here. Anything else is driven by asio and its expiry is a
+        // steady clock reading, so comparing it against simulated time would be comparing two unrelated epochs -- and
+        // since a non-simulated Reload() advances expiry by a single interval, catching such a timer up would spin once
+        // per interval across the gap between those epochs.
+        std::vector<TimerRegistry::Entry> entries;
+        for (const auto& entry : registry->GetEntries()) {
+          if (entry.timer->IsSimulationDriven()) {
+            entries.push_back(entry);
+          }
+        }
+        if (!entries.empty()) {
           if (time::TimePointToMilliseconds(existing_time) != 0) {
-            // Use a priority queue to store the timers we need to fire in order of nearest expiration
-            auto timer_comp = [](const Timer& a, const Timer& b) { return a->GetExpiry() > b->GetExpiry(); };
-            std::priority_queue<Timer, std::vector<Timer>, decltype(timer_comp)> expired_timers(timer_comp);
+            // A queued timer holds its expiry by value: pop() and push() re-heapify, which runs the comparator against
+            // other queued timers, and a callback fired below may have destroyed one of those. The comparator must
+            // therefore never dereference, and every dereference of a popped timer is guarded by its registration
+            // handle, which -- unlike an address -- the allocator cannot recycle onto a different timer.
+            struct QueuedTimer {
+              TimerImpl* timer{nullptr};
+              TimerRegistry::RegistrationHandle handle{TimerRegistry::kInvalidRegistrationHandle};
+              time::TimePoint expiry;
+            };
+            // Timers sharing an expiry fire in creation order. Handles are monotonic, so ordering on them gives that,
+            // and it keeps the sequence reproducible across runs -- entries arrive here in the registry map's iteration
+            // order, which is unspecified and shifts with its rehash history.
+            auto timer_comp = [](const QueuedTimer& a, const QueuedTimer& b) {
+              return a.expiry != b.expiry ? a.expiry > b.expiry : a.handle > b.handle;
+            };
+            std::priority_queue<QueuedTimer, std::vector<QueuedTimer>, decltype(timer_comp)> expired_timers(timer_comp);
 
             // First find all the non-cancelled timers that are expiring before our new_time
-            for (auto& timer : timers_) {
-              if (auto shared_timer = timer.lock()) {
-                if (!shared_timer->IsCancelled() && new_time >= shared_timer->GetExpiry()) {
-                  expired_timers.push(shared_timer);
-                }
+            for (const auto& entry : entries) {
+              const auto expiry = entry.timer->GetExpiry();
+              if (!entry.timer->IsCancelled() && new_time >= expiry) {
+                expired_timers.push(QueuedTimer{.timer = entry.timer, .handle = entry.handle, .expiry = expiry});
               }
             }
 
             // Step forward in time while firing the timers that are expiring until there are no more timers to fire
             while (!expired_timers.empty()) {
-              auto top = expired_timers.top();
+              const auto top = expired_timers.top();
               expired_timers.pop();
+              // An earlier callback may have destroyed this timer, which deregisters it
+              if (!registry->Contains(top.handle)) {
+                continue;
+              }
               // Move our simulated time up to the expiration time of this timer
-              time::SetSimulatedTime(top->GetExpiry());
-              top->Fire();  // Fire the timer (which updates the expiry time also)
+              time::SetSimulatedTime(top.expiry);
+              top.timer->Fire();  // Fire the timer (which updates the expiry time also)
 
+              // The callback we just ran may have destroyed this timer too
+              if (!registry->Contains(top.handle) || top.timer->GetType() == TimerImpl::Type::kOneShot) {
+                continue;
+              }
               // If our expiry time is still earlier than our new_time, put it back in the queue for another go
-              if (new_time >= top->GetExpiry() && top->GetType() != TimerImpl::Type::kOneShot) {
-                expired_timers.push(top);
+              const auto next_expiry = top.timer->GetExpiry();
+              if (new_time >= next_expiry) {
+                expired_timers.push(QueuedTimer{.timer = top.timer, .handle = top.handle, .expiry = next_expiry});
               }
             }
           } else {
@@ -241,12 +282,12 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
           }
         }
         time::SetSimulatedTime(new_time);
-        // If we need to reset timers, it needs to happen after the new time is updated
+        // If we need to reset timers, it needs to happen after the new time is updated. Reusing the entries read above
+        // is safe here because this branch is mutually exclusive with the one that fires callbacks, so nothing has run
+        // that could have destroyed a timer since.
         if (reset_timers) {
-          for (auto& timer : timers_) {
-            if (auto shared_timer = timer.lock()) {
-              shared_timer->Reset();
-            }
+          for (const auto& entry : entries) {
+            entry.timer->Reset();
           }
         }
       } else {

@@ -288,6 +288,18 @@ class Node {
 
   /** Generic interface for creating a new timer.
    *
+   * TimerType is expected to be OneShotTimerImpl or PeriodicTimerImpl. Those two register themselves with the loop's
+   * timer registry from their own constructors, which is only safe for a most-derived type; a subclass of either has to
+   * take that over itself (see TimerImpl::RegisterWithLoop).
+   *
+   * Timers made here are application timers (see TimerKind): their scheduling latency counts toward this node's timer
+   * metrics, and a simulated clock drives them if one was already active when they were built. That applies equally to
+   * the timers this class creates on the application's behalf -- health reporting, metrics publication and subscriber
+   * watchdogs all come through this factory. Each is paced by the application's own activity rather than by the passage
+   * of real time, and each is work this node's loop has to get to on time, so a delay is a signal about the application
+   * and belongs in its figures. Only timers that service the process no matter what it is processing are built as
+   * TimerKind::kManagement, and those are constructed directly against an event loop instead of through here.
+   *
    * @tparam TimerType The type of timer to create
    * @tparam Params The parameter types used to create the timer
    * @param params The parameters to the timer
@@ -295,9 +307,7 @@ class Node {
    */
   template <typename TimerType = PeriodicTimerImpl, typename... Params>
   std::shared_ptr<TimerType> CreateTimer(Params&&... params) {
-    auto timer = std::make_shared<TimerType>(GetEventLoop(), std::forward<Params>(params)...);
-    timers_.emplace_back(std::weak_ptr<TimerImpl>(timer));
-    return timer;
+    return std::make_shared<TimerType>(GetEventLoop(), std::forward<Params>(params)...);
   }
 
   /**
@@ -479,7 +489,10 @@ class Node {
   const trellis::core::Config& GetConfig() { return config_; }
 
   /**
-   * GetTimerOverrunCount returns the total number of timer overruns across all periodic timers
+   * GetTimerOverrunCount returns the total number of timer overruns across every application timer running on this
+   * node's event loop, whether it was created through this node or directly against the loop
+   *
+   * Timers tagged TimerKind::kManagement are excluded; see TimerKind for why.
    *
    * An overrun occurs when the callback execution time exceeds the timer interval.
    *
@@ -488,8 +501,16 @@ class Node {
   uint64_t GetTimerOverrunCount() const;
 
   /**
-   * GetAndResetTimerSchedLatencyStats returns aggregated scheduling latency stats across all periodic
-   * timers since the last call, then resets internal accumulators.
+   * GetAndResetTimerSchedLatencyStats returns aggregated scheduling latency stats across every application timer
+   * running on this node's event loop since the last call, then resets those timers' accumulators.
+   *
+   * Timers tagged TimerKind::kManagement are excluded, and their accumulators are left untouched so that whoever owns
+   * them still sees their samples; see TimerKind for why.
+   *
+   * Call this from the thread running this node's event loop, or while it is not running. Collecting from a timer
+   * callback, which is how this node's own metrics reach it, satisfies that.
+   *
+   * @throws std::runtime_error if called from another thread while the loop is running
    */
   TimerImpl::SchedLatencyStats GetAndResetTimerSchedLatencyStats();
 
@@ -548,9 +569,6 @@ class Node {
 
   // Track the first invocation of the event loop
   bool first_run_{true};
-
-  // A list of the timers that have been created
-  std::vector<std::weak_ptr<TimerImpl>> timers_;
 
   // A list of the subscribers that have been created (for metrics collection)
   std::vector<std::weak_ptr<SubscriberBase>> subscribers_;

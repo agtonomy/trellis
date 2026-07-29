@@ -237,7 +237,7 @@ class Client {
               request->timeout_fn();
             }
           },
-          pending_request_->timeout_ms);
+          pending_request_->timeout_ms, TimerKind::kManagement);
     }
 
     // Drain any stale data from the receive buffer immediately before sending.

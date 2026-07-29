@@ -158,7 +158,7 @@ void WriterImpl<MessageType, OutputMessageType, Converter>::Initialize(core::Nod
           const auto lock = std::lock_guard{file_writer->mutex};
           file_writer->writer.closeLastChunk();
         },
-        static_cast<unsigned>(flush_interval_ms.count()), 0);
+        static_cast<unsigned>(flush_interval_ms.count()), 0, core::TimerKind::kManagement);
   }
 }
 

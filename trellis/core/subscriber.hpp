@@ -118,7 +118,8 @@ class SubscriberImpl : public SubscriberBase,
               ReceivePublisher(event, sample);
             })},
         statistics_timer_{std::make_shared<PeriodicTimerImpl>(
-            loop, [this](const time::TimePoint& now) { UpdateStatistics(now); }, statistics_update_interval_ms_, 0)},
+            loop, [this](const time::TimePoint& now) { UpdateStatistics(now); }, statistics_update_interval_ms_, 0,
+            TimerKind::kManagement)},
         frequency_calculator_{statistics_update_interval_ms_},
         converter_{std::move(converter)} {}
 
