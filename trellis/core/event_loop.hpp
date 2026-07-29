@@ -21,6 +21,8 @@
 #include <asio.hpp>
 #include <memory>
 
+#include "trellis/core/timer_options.hpp"
+
 namespace trellis {
 namespace core {
 
@@ -49,11 +51,13 @@ class EventLoop {
   EventLoop() = default;
 
   /**
-   * @brief Construct a loop that tracks its timers in the given registry
+   * @brief Construct a loop that tracks its timers in the given registry and applies the given timer policy
    *
    * @param registry the registry each timer constructed against this loop adds itself to; null means untracked
+   * @param options the policy applied to every timer constructed against this loop
    */
-  explicit EventLoop(std::shared_ptr<TimerRegistry> registry) : registry_{std::move(registry)} {}
+  explicit EventLoop(std::shared_ptr<TimerRegistry> registry, TimerOptions options = {})
+      : registry_{std::move(registry)}, options_{options} {}
 
   /**
    * @brief Proxy for asio::io_context::run()
@@ -147,12 +151,24 @@ class EventLoop {
    */
   std::shared_ptr<TimerRegistry> GetTimerRegistry() const { return registry_; }
 
+  /**
+   * @brief Return the timer policy applying to timers constructed against this loop
+   *
+   * Returned by value for the same reason as the registry above.
+   *
+   * @return the timer policy, defaults if none was supplied when this loop was constructed
+   */
+  TimerOptions GetTimerOptions() const { return options_; }
+
  private:
   std::shared_ptr<std::atomic<State>> state_ = std::make_shared<std::atomic<State>>(State::kStopped);
   IOContextPointer io_context_ = std::make_shared<IOContext>();
   asio::executor_work_guard<typename IOContext::executor_type> work_guard_{asio::make_work_guard(*io_context_)};
-  // Shared across copies of this loop, just like the members above
-  std::shared_ptr<TimerRegistry> registry_{nullptr};
+  // Both are set once at construction and never mutated, so plain copying is correct. Const costs nothing here:
+  // work_guard_ already leaves this class copy-constructible but not assignable, which it has to be -- an
+  // assignment would leave the guard holding the io_context the loop no longer points at.
+  const std::shared_ptr<TimerRegistry> registry_{nullptr};
+  const TimerOptions options_{};
 };
 
 }  // namespace core

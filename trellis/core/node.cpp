@@ -21,6 +21,7 @@
 #include <thread>
 
 #include "trellis/core/ipc/utils.hpp"
+#include "trellis/core/timer_options_config.hpp"
 #include "trellis/core/timer_registry.hpp"
 
 using namespace trellis::core;
@@ -30,7 +31,7 @@ Node::Node(std::string_view name, trellis::core::Config config)
       config_{std::move(config)},
       crash_counter_{config_, name_, trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
                      trellis::core::ipc::utils::GetUidGidFromConfig(config_).second},
-      ev_loop_{std::make_shared<TimerRegistry>()},
+      ev_loop_{std::make_shared<TimerRegistry>(), TimerOptionsFromConfig(config_)},
       discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
       signal_set_(*ev_loop_, SIGTERM, SIGINT),
       health_{std::string(name), config_,
@@ -262,17 +263,28 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
               if (!registry->Contains(top.handle)) {
                 continue;
               }
-              // Move our simulated time up to the expiration time of this timer
+              // Move our simulated time up to the expiration time of this timer, so the callback sees the
+              // moment it was scheduled for, and tell the timer how far we are stepping to so its rearm can
+              // account for the slots between here and there.
+              //
+              // Note that advancing to each expiry in turn means no timer is ever dispatched late here, so
+              // passing the target is a deliberate choice rather than a measurement: a caller stepping well
+              // past a timer's expiry is treated as that timer having fallen behind. That is what lets a
+              // rearm policy mean the same thing in a replay as it does on a real clock. Only
+              // RearmPolicy::kSkipAligned acts on it; kCatchUp replays every slot either way.
               time::SetSimulatedTime(top.expiry);
-              top.timer->Fire();  // Fire the timer (which updates the expiry time also)
+              top.timer->Fire(new_time);  // Fire the timer (which updates the expiry time also)
 
               // The callback we just ran may have destroyed this timer too
               if (!registry->Contains(top.handle) || top.timer->GetType() == TimerImpl::Type::kOneShot) {
                 continue;
               }
-              // If our expiry time is still earlier than our new_time, put it back in the queue for another go
+              // If our expiry time is still earlier than our new_time, put it back in the queue for another go.
+              // The cancelled check matters as much as the expiry one: firing skips the rearm for a timer whose
+              // callback stopped it, and the rearm is the only thing that advances a periodic timer's expiry, so
+              // without it this re-queues the same timer against the same expiry forever.
               const auto next_expiry = top.timer->GetExpiry();
-              if (new_time >= next_expiry) {
+              if (!top.timer->IsCancelled() && new_time >= next_expiry) {
                 expired_timers.push(QueuedTimer{.timer = top.timer, .handle = top.handle, .expiry = next_expiry});
               }
             }

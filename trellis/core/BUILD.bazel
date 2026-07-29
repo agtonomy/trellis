@@ -67,7 +67,31 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_timer_options",
         "@asio",
+    ],
+)
+
+# Types only, no dependencies, so that carrying timer policy on an event loop does not pull the
+# configuration library into every timer, publisher and subscriber. Parsing lives in
+# core_timer_options_config.
+cc_library(
+    name = "core_timer_options",
+    hdrs = [
+        "timer_options.hpp",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "core_timer_options_config",
+    hdrs = [
+        "timer_options_config.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_config",
+        ":core_timer_options",
     ],
 )
 
@@ -108,6 +132,7 @@ cc_library(
         ":core_error_code",
         ":core_event_loop",
         ":core_time",
+        ":core_timer_options",
         ":core_timer_registry",
         "@asio",
     ],
@@ -184,6 +209,7 @@ cc_library(
         ":core_proto_utils",
         ":core_publisher",
         ":core_subscriber",
+        ":core_timer_options_config",
         ":core_timer_registry",
         "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc:utils",

@@ -19,10 +19,12 @@
 #define TRELLIS_CORE_TIMER_HPP
 
 #include <asio.hpp>
+#include <optional>
 
 #include "trellis/core/error_code.hpp"
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/time.hpp"
+#include "trellis/core/timer_options.hpp"
 #include "trellis/core/timer_registry.hpp"
 
 namespace trellis {
@@ -30,6 +32,25 @@ namespace core {
 
 /**
  * TimerImpl is the base class for one-shot and periodic timers
+ *
+ * A timer's expiry is held in whichever domain time::Now() reports, and which clock drives the timer is
+ * decided once, when it is constructed. That makes the simulated clock's enabled state part of a timer's
+ * construction contract:
+ *
+ * - Enabling or disabling the simulated clock while timers exist leaves those timers holding an expiry in
+ *   the previous domain. Node::UpdateSimulatedClock re-anchors every simulation-driven timer on its first
+ *   forward jump, which covers the usual case of enabling the clock during startup, but constructing
+ *   timers on one side of the switch and relying on them from the other is not supported.
+ * - IsSimulationDriven() is what keeps the two apart afterwards: a timer asio is driving is never stepped
+ *   by the simulated clock, because comparing its expiry against simulated time would span two unrelated
+ *   epochs.
+ * - A management timer keeps a real asio timer even under a simulated clock, so a process running one
+ *   clock still has timers on the other. The clock is chosen per timer, not per process.
+ *
+ * Reset(), Stop() and Fire() carry the same thread affinity as the asio timer underneath them: they belong on
+ * the thread running this timer's event loop, or on any thread while that loop is not running. They rewrite the
+ * expiry and the underlying deadline without synchronizing, so calling one from elsewhere races whatever the
+ * loop is doing with the same timer. Re-arming from another thread means posting the call onto the loop.
  */
 class TimerImpl {
  public:
@@ -71,14 +92,22 @@ class TimerImpl {
   /**
    * Fire fires the timer
    *
-   * Not needed to be called externally except if simulated time is active
+   * Not needed to be called externally except if simulated time is active.
+   *
+   * @param horizon how far ahead the caller has advanced, used to decide how many interval slots this
+   * timer has missed. Under a real clock that is simply now, which is the default. A caller stepping a
+   * simulated clock passes the time it is stepping to, which is ahead of the slot being fired -- the
+   * callback still receives its own slot time, but the rearm needs to know about the slots in between.
    */
-  void Fire();
+  void Fire(const time::TimePoint& horizon = time::Now());
 
   /**
-   * GetExpiry get the expiry time
+   * GetExpiry the time this timer is next due to fire
+   *
+   * Reported in whichever domain time::Now() is reporting, so it is comparable with time::Now() and with
+   * a simulated clock's readings, but not across a change of clock. See IsSimulationDriven().
    */
-  virtual time::TimePoint GetExpiry() const = 0;
+  time::TimePoint GetExpiry() const { return next_expiry_; }
 
   /**
    * GetType get the timer type
@@ -109,9 +138,13 @@ class TimerImpl {
   TimerKind GetKind() const { return kind_; }
 
   /**
-   * GetOverrunCount returns the number of times the callback execution time exceeded the timer interval
+   * GetOverrunCount returns the number of interval slots this timer has missed
    *
-   * @return the number of overruns
+   * A slot is missed when the timer is dispatched more than one interval after the expiry it was
+   * scheduled for. This measures dispatch lateness, not how long the callback takes: the fire time it
+   * is compared against is captured before the callback runs.
+   *
+   * @return the number of missed slots
    */
   virtual uint64_t GetOverrunCount() const = 0;
 
@@ -169,6 +202,16 @@ class TimerImpl {
   void RegisterWithLoop();
 
   /**
+   * ArmInitialExpiry set where a simulation-driven timer first comes due, and do nothing otherwise
+   *
+   * Called by the most-derived constructor for the same reason as RegisterWithLoop: how far out a timer
+   * starts is RestartDelayMs(), which does not exist until the derived subobject does. A subclass that
+   * forgets this call and is driven by the simulated clock starts due at the epoch, so it fires on the
+   * first advance.
+   */
+  void ArmInitialExpiry();
+
+  /**
    * DeregisterFromLoop remove this timer from its registry
    *
    * Called at the top of the most-derived destructor, before that subobject is gone, for the same reason: an entry that
@@ -179,9 +222,52 @@ class TimerImpl {
   static std::unique_ptr<asio::steady_timer> CreateSteadyTimer(EventLoop loop, unsigned delay_ms, TimerKind kind);
 
   /**
-   * Reload resets the timer expiry - implemented by child classes
+   * RestartDelayMs how long after now a restarted timer should next fire - implemented by child classes
+   *
+   * Reload() continues an existing schedule and Reset() begins a new one, which is a difference in what
+   * the caller is asking for rather than in the timer's state -- a timer being reset may equally have
+   * been stopped for a minute or be running normally. Reload() therefore anchors on the previous expiry
+   * so a running timer keeps its phase, and Reset() anchors on now, which is what this supplies.
+   *
+   * Anchoring a restart on the previous expiry instead breaks in both directions: a timer stopped long
+   * ago comes back with an expiry deep in the past and fires once per missed interval to catch up, and a
+   * timer reset more often than its interval has its expiry pushed steadily further out until it stops
+   * firing at all.
    */
-  virtual void Reload() = 0;
+  virtual unsigned RestartDelayMs() const = 0;
+
+  /**
+   * SetNextExpiry records when this timer is next due and mirrors that deadline onto the underlying asio
+   * timer, if one is driving it
+   *
+   * The expiry must be a reading from this timer's own clock; see NowInOwnDomain().
+   */
+  void SetNextExpiry(const time::TimePoint& expiry);
+
+  /**
+   * ClockDomainsAgree returns true if this timer's expiry is comparable with time::Now()
+   *
+   * False only for a timer asio is driving while a simulated clock is enabled: its expiry is a steady clock
+   * reading while time::Now() reports simulated time. Both are a time::TimePoint, so nothing catches the
+   * mistake at compile time.
+   */
+  bool ClockDomainsAgree() const { return IsSimulationDriven() || !time::IsSimulatedClockEnabled(); }
+
+  /**
+   * NowInOwnDomain the current time on the same clock as this timer's expiry
+   *
+   * Anything offsetting from or measuring against this timer's expiry starts here rather than at time::Now(),
+   * which is only the same reading while ClockDomainsAgree().
+   */
+  time::TimePoint NowInOwnDomain() const;
+
+  /**
+   * ClearFireState marks the timer as neither fired nor cancelled, ready to be armed again
+   */
+  void ClearFireState() {
+    did_fire_ = false;
+    cancelled_ = false;
+  }
 
   /**
    * ShouldFire returns true if the timer should fire - can be overridden
@@ -191,8 +277,12 @@ class TimerImpl {
   /**
    * OnFired is called after the timer fires - can be overridden
    * @param fire_time the current time captured immediately after firing and before executing the callback
+   * @param horizon how far ahead the caller has advanced; see Fire()
    */
-  virtual void OnFired(const time::TimePoint& fire_time) { (void)fire_time; }
+  virtual void OnFired(const time::TimePoint& fire_time, const time::TimePoint& horizon) {
+    (void)fire_time;
+    (void)horizon;
+  }
 
   EventLoop loop_;
   const Callback callback_;
@@ -200,7 +290,11 @@ class TimerImpl {
   const unsigned delay_ms_;
   const TimerKind kind_;
   std::unique_ptr<asio::steady_timer> timer_;
-  time::TimePoint last_fire_time_{time::Now()};
+  // When this timer is next due, on this timer's own clock. The single source of truth: timer_, when present,
+  // is the mechanism that wakes us at this deadline rather than where it is stored. Deliberately not atomic
+  // like the flags below -- it is only ever written from the loop thread, which is where the methods that
+  // touch it belong.
+  time::TimePoint next_expiry_{};
   std::atomic<bool> did_fire_{false};
   std::atomic<bool> cancelled_{false};
   TimerRegistry::RegistrationHandle registration_{TimerRegistry::kInvalidRegistrationHandle};
@@ -211,16 +305,34 @@ class TimerImpl {
  */
 class OneShotTimerImpl : public TimerImpl {
  public:
+  /**
+   * Construct a one-shot timer and start it immediately
+   *
+   * @param loop the event loop used to process the timer
+   * @param callback the function to call when the timer expires
+   * @param delay_ms how long from now the timer should fire
+   * @param kind whether this is an application timer or one of trellis's own housekeeping timers
+   */
   OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms, TimerKind kind = TimerKind::kApplication);
+
   ~OneShotTimerImpl() override;
 
-  time::TimePoint GetExpiry() const override;
-  uint64_t GetOverrunCount() const override { return 0; }  // no overruns for one-shot timers
+  /**
+   * GetOverrunCount always zero: an overrun is a missed interval slot, and a one-shot has no interval
+   */
+  uint64_t GetOverrunCount() const override { return 0; }
+
+  /**
+   * GetAndResetSchedLatencyStats always empty, for the same reason as GetOverrunCount
+   */
   SchedLatencyStats GetAndResetSchedLatencyStats() override { return {}; }
+
+  /// GetType always kOneShot
   Type GetType() const override { return kOneShot; }
 
  protected:
-  void Reload() override;
+  // A one shot timer's whole schedule is its delay, so restarting means waiting that delay again
+  unsigned RestartDelayMs() const override { return delay_ms_; }
   bool ShouldFire() const override;
 };
 
@@ -229,23 +341,61 @@ class OneShotTimerImpl : public TimerImpl {
  */
 class PeriodicTimerImpl : public TimerImpl {
  public:
+  /**
+   * Construct a periodic timer and start it immediately
+   *
+   * @param loop the event loop used to process the timer
+   * @param callback the function to call each time the timer expires
+   * @param interval_ms the interval between callbacks
+   * @param delay_ms an initial delay before the first callback, separate from the interval (0 is immediate)
+   * @param kind whether this is an application timer or one of trellis's own housekeeping timers
+   * @param rearm_policy overrides the loop's policy for this timer alone; unset means use the loop's
+   */
   PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms = 0,
-                    TimerKind kind = TimerKind::kApplication);
-  // alternative argument list
+                    TimerKind kind = TimerKind::kApplication, std::optional<RearmPolicy> rearm_policy = std::nullopt);
+
+  /// As above, with the interval and callback swapped
   PeriodicTimerImpl(EventLoop loop, unsigned interval_ms, Callback callback, unsigned delay_ms = 0,
-                    TimerKind kind = TimerKind::kApplication);
+                    TimerKind kind = TimerKind::kApplication, std::optional<RearmPolicy> rearm_policy = std::nullopt);
+
   ~PeriodicTimerImpl() override;
 
-  time::TimePoint GetExpiry() const override;
+  /// GetType always kPeriodic
   Type GetType() const override { return kPeriodic; }
+
+  /**
+   * GetOverrunCount the number of interval slots missed since construction
+   *
+   * @see TimerImpl::GetOverrunCount, and RearmPolicy for how missed slots are counted under each policy
+   */
   uint64_t GetOverrunCount() const override { return overrun_count_.load(); }
+
   SchedLatencyStats GetAndResetSchedLatencyStats() override;
 
  protected:
-  void Reload() override;
-  void OnFired(const time::TimePoint& now) override;
+  // Not delay_ms_: that is the one-off offset before the first tick, and most periodic timers leave it at
+  // zero, so restarting on it would fire a spurious callback immediately every time
+  unsigned RestartDelayMs() const override { return interval_ms_; }
+  void OnFired(const time::TimePoint& fire_time, const time::TimePoint& horizon) override;
 
  private:
+  /**
+   * Reload places the next expiry one interval on from the last, or further under RearmPolicy::kSkipAligned
+   *
+   * Only a periodic timer has a schedule to continue, which is why this is not on TimerImpl. Contrast
+   * RestartDelayMs(), which serves Reset() and begins a new schedule rather than continuing this one.
+   *
+   * @param horizon how far ahead the caller has advanced; see Fire()
+   */
+  void Reload(const time::TimePoint& horizon);
+
+  // Resolved once at construction: the timer's own override if it has one, otherwise its loop's policy
+  const RearmPolicy rearm_policy_;
+  // How many missed slots the most recent Reload() decided this dispatch answers for, which depends on the
+  // policy: every slot dropped under kSkipAligned, or just this one under kCatchUp, whose remaining slots
+  // arrive as their own dispatches. A member rather than a return value so OnFired can read it without
+  // Reload having to report through a signature shared with nothing else.
+  uint64_t slots_accounted_{0};
   std::atomic<uint64_t> overrun_count_{0};
 
   // Written as the timer fires and read and reset by the collector. Deliberately unsynchronized: both run on the loop

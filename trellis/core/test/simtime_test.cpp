@@ -318,3 +318,36 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksOneShotTimersOnce) {
   ASSERT_EQ(timer2_ticks, 2);
   ASSERT_EQ(timer3_ticks, 2);
 }
+
+TEST(TrellisSimulatedClock, SkipAlignedDropsMissedSlotsUnderASimulatedClock) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time
+
+  trellis::core::Node node("test_simtime", {});
+
+  const unsigned interval_ms{10u};
+  unsigned ticks{0};
+  auto timer = node.CreateTimer(
+      interval_ms, [&ticks](const trellis::core::time::TimePoint&) { ++ticks; }, 0u,
+      trellis::core::TimerKind::kApplication, trellis::core::RearmPolicy::kSkipAligned);
+
+  // The first update only re-anchors the timers, so step once to get onto a known grid
+  trellis::core::time::TimePoint time{trellis::core::time::Now() + std::chrono::milliseconds(1000)};
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();
+  ASSERT_EQ(ticks, 0);
+
+  const auto expiry_before = timer->GetExpiry();
+
+  // Jump ten intervals in one step. Every one of those slots came due, but the policy asks for the missed
+  // ones to be dropped rather than replayed, so exactly one callback should run.
+  time += std::chrono::milliseconds(interval_ms * 10);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();
+
+  ASSERT_EQ(ticks, 1);
+  // Landed on the first slot past the jump, still on the original phase grid
+  ASSERT_EQ(timer->GetExpiry(), expiry_before + std::chrono::milliseconds(interval_ms * 10));
+  // The nine slots that were dropped are still counted as missed
+  ASSERT_EQ(timer->GetOverrunCount(), 9U);
+}

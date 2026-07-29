@@ -108,6 +108,19 @@ cc_test(
 )
 
 cc_test(
+    name = "core_timer_rearm_test",
+    srcs = ["timer_rearm_test.cpp"],
+    deps = [
+        "//trellis/core:core_config",
+        "//trellis/core:core_node",
+        "//trellis/core:core_timer",
+        "//trellis/core:core_timer_options",
+        "//trellis/core:core_timer_options_config",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_timer_registry_test",
     srcs = ["timer_registry_test.cpp"],
     deps = [

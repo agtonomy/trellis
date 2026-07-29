@@ -477,7 +477,13 @@ class Node {
   /**
    * UpdateSimulatedClock update the simulated clock
    *
-   * Updates the simulated clock based on the given time, and immediately runs any timers that are due
+   * Updates the simulated clock based on the given time, and immediately runs any timers that are due, in
+   * expiry order, advancing the clock to each timer's own expiry before firing it so callbacks observe the
+   * moment they were scheduled for.
+   *
+   * Only simulation-driven timers are stepped; see TimerImpl. The first forward jump re-anchors them
+   * instead of firing them, which is what makes enabling the clock after a node has been constructed work.
+   * How many times a timer that has fallen behind fires is its rearm policy's decision; see RearmPolicy.
    */
   void UpdateSimulatedClock(const time::TimePoint& new_time);
 

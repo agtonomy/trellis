@@ -32,7 +32,25 @@ TimerImpl::TimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, un
       interval_ms_{interval_ms},
       delay_ms_(delay_ms),
       kind_{kind},
-      timer_{CreateSteadyTimer(loop, delay_ms, kind)} {}
+      timer_{CreateSteadyTimer(loop, delay_ms, kind)} {
+  // An asio-driven timer already carries the deadline CreateSteadyTimer gave it, so take it from there. A
+  // simulation-driven timer has no such deadline and is armed separately by ArmInitialExpiry().
+  if (timer_ != nullptr) {
+    next_expiry_ = timer_->expiry();
+  }
+}
+
+void TimerImpl::ArmInitialExpiry() {
+  if (!IsSimulationDriven()) {
+    return;
+  }
+  // Deliberately asymmetric with the asio case, which starts at its initial delay and so is usually due
+  // immediately. A simulation-driven timer only moves when the clock is advanced explicitly, and starting it
+  // due would make anything constructed while the clock was already running fire on the very next advance no
+  // matter what wait it asked for. RestartDelayMs() is that wait -- the delay for a one shot, the interval for
+  // a periodic timer -- which is also why this cannot be done from the constructor above.
+  next_expiry_ = time::Now() + std::chrono::milliseconds(RestartDelayMs());
+}
 
 TimerImpl::~TimerImpl() { DeregisterFromLoop(); }
 
@@ -49,15 +67,29 @@ void TimerImpl::DeregisterFromLoop() {
   registration_ = TimerRegistry::kInvalidRegistrationHandle;
 }
 
+time::TimePoint TimerImpl::NowInOwnDomain() const {
+  return ClockDomainsAgree() ? time::Now() : asio::steady_timer::clock_type::now();
+}
+
 void TimerImpl::Reset() {
   Stop();
-  Reload();
+  SetNextExpiry(NowInOwnDomain() + std::chrono::milliseconds(RestartDelayMs()));
+  ClearFireState();
   KickOff();
+}
+
+void TimerImpl::SetNextExpiry(const time::TimePoint& expiry) {
+  next_expiry_ = expiry;
+  // A null check rather than !IsSimulationDriven(): here it guards the dereference, where the places asking
+  // IsSimulationDriven() are asking which clock they are on
+  if (timer_ != nullptr) {
+    timer_->expires_at(next_expiry_);  // mirror the deadline onto whatever will wake us
+  }
 }
 
 void TimerImpl::Stop() {
   cancelled_ = true;
-  if (!IsSimulationDriven()) {
+  if (timer_ != nullptr) {
     timer_->cancel();
   }
 }
@@ -65,7 +97,7 @@ void TimerImpl::Stop() {
 bool TimerImpl::Expired() const { return did_fire_.load() || cancelled_.load(); }
 
 void TimerImpl::KickOff() {
-  if (!IsSimulationDriven()) {
+  if (timer_ != nullptr) {
     timer_->async_wait([this](const trellis::core::error_code& e) {
       if (e) {
         return;
@@ -75,16 +107,20 @@ void TimerImpl::KickOff() {
   }
 }
 
-void TimerImpl::Fire() {
+void TimerImpl::Fire(const time::TimePoint& horizon) {
   if (!ShouldFire()) {
     return;
   }
+  // fire_time is the moment this callback belongs to; horizon is how far the caller is advancing overall. They
+  // are the same reading whenever a real clock drives the timer, and differ only while
+  // Node::UpdateSimulatedClock is stepping: it moves the clock to this timer's own expiry before firing, so the
+  // callback sees the slot it was scheduled for while the rearm still learns how many later slots the step
+  // passed over. Only RearmPolicy::kSkipAligned reads the horizon; everything else ignores it.
   const auto fire_time = time::Now();
-  last_fire_time_ = fire_time;  // used for sim time
   did_fire_ = true;
   callback_(fire_time);
   if (!cancelled_) {
-    OnFired(fire_time);
+    OnFired(fire_time, horizon);
   }
 }
 
@@ -106,91 +142,84 @@ std::chrono::milliseconds TimerImpl::GetTimeInterval() const { return std::chron
 
 OneShotTimerImpl::OneShotTimerImpl(EventLoop loop, Callback callback, unsigned delay_ms, TimerKind kind)
     : TimerImpl(loop, std::move(callback), 0, delay_ms, kind) {
+  ArmInitialExpiry();
   RegisterWithLoop();
   KickOff();
 }
 
 OneShotTimerImpl::~OneShotTimerImpl() { DeregisterFromLoop(); }
 
-void OneShotTimerImpl::Reload() {
-  if (!IsSimulationDriven()) {
-    // If we're reloading a one shot timer we simply reload to now + our delay time
-    timer_->expires_after(asio::chrono::milliseconds(delay_ms_));
-  } else {
-    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
-  }
-  did_fire_ = false;
-  cancelled_ = false;
-}
-
 bool OneShotTimerImpl::ShouldFire() const { return !did_fire_; }
-
-time::TimePoint OneShotTimerImpl::GetExpiry() const {
-  if (IsSimulationDriven()) {
-    return last_fire_time_ + std::chrono::milliseconds(delay_ms_);
-  } else {
-    return timer_->expiry();
-  }
-}
 
 // =============================================================================
 // PeriodicTimerImpl
 // =============================================================================
 
 PeriodicTimerImpl::PeriodicTimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms,
-                                     TimerKind kind)
-    : TimerImpl(loop, std::move(callback), interval_ms, delay_ms, kind) {
+                                     TimerKind kind, std::optional<RearmPolicy> rearm_policy)
+    : TimerImpl(loop, std::move(callback), interval_ms, delay_ms, kind),
+      rearm_policy_{rearm_policy.value_or(loop.GetTimerOptions().rearm_policy)} {
+  // Rejected rather than clamped: every rearm advances by a whole interval, so a zero interval leaves the
+  // expiry where it is and the timer either spins on a passed deadline or wedges the simulated clock's walk
+  if (interval_ms == 0) {
+    throw std::invalid_argument("Periodic timer interval must be greater than zero");
+  }
+  ArmInitialExpiry();
   RegisterWithLoop();
   KickOff();
 }
 
 PeriodicTimerImpl::PeriodicTimerImpl(EventLoop loop, unsigned interval_ms, Callback callback, unsigned delay_ms,
-                                     TimerKind kind)
-    : PeriodicTimerImpl(loop, std::move(callback), interval_ms, delay_ms, kind) {};
+                                     TimerKind kind, std::optional<RearmPolicy> rearm_policy)
+    : PeriodicTimerImpl(loop, std::move(callback), interval_ms, delay_ms, kind, rearm_policy) {};
 
 PeriodicTimerImpl::~PeriodicTimerImpl() { DeregisterFromLoop(); }
 
-void PeriodicTimerImpl::Reload() {
-  if (!IsSimulationDriven()) {
-    // We calculate the new expiration time based on the last expiration
-    // rather than "now" in order to avoid drift due to jitter error
-    timer_->expires_at(timer_->expiry() + asio::chrono::milliseconds(interval_ms_));
-  } else {
-    last_fire_time_ = time::Now();  // this essentially pushes out the expiry time
+void PeriodicTimerImpl::Reload(const time::TimePoint& horizon) {
+  const auto interval = std::chrono::milliseconds(interval_ms_);
+  const auto previous_expiry = GetExpiry();
+  // The caller's horizon is a time::Now() reading, which is this timer's own clock only while the two agree.
+  // When they do not, how far there is still to travel can only be measured on the clock this timer runs on.
+  const auto effective_horizon = ClockDomainsAgree() ? horizon : NowInOwnDomain();
+  const auto slots_behind = effective_horizon > previous_expiry ? (effective_horizon - previous_expiry) / interval : 0;
+
+  // Advance from the previous expiry rather than from now, so a timer dispatched with jitter keeps its
+  // phase instead of drifting
+  auto next = previous_expiry + interval;
+  if (rearm_policy_ == RearmPolicy::kSkipAligned && next <= effective_horizon) {
+    // Land on the first slot still ahead of us, staying on multiples of the interval so the timer keeps
+    // its phase. Computed rather than stepped: a multi-second stall on a fast timer would otherwise take
+    // thousands of iterations to walk forward.
+    next = previous_expiry + (slots_behind + 1) * interval;
   }
-  did_fire_ = false;
-  cancelled_ = false;
+
+  // kSkipAligned drops every slot it passed over, so it accounts for all of them here. kCatchUp replays them
+  // instead, so this dispatch accounts only for itself and the rest of the burst accounts for the others,
+  // which adds up to the same total. The two have to agree: the count leaves the process as a fleet metric,
+  // where a figure that meant something different per policy could not be compared between two apps.
+  slots_accounted_ =
+      rearm_policy_ == RearmPolicy::kSkipAligned ? static_cast<uint64_t>(slots_behind) : (slots_behind >= 1 ? 1u : 0u);
+  SetNextExpiry(next);
+  ClearFireState();
 }
 
-void PeriodicTimerImpl::OnFired(const time::TimePoint& fire_time) {
-  // A wall-clock timer under a simulated clock takes its expiry from the steady clock while fire_time comes from the
-  // simulated one. Subtracting across those domains yields a meaningless number, so skip the accounting rather than
+void PeriodicTimerImpl::OnFired(const time::TimePoint& fire_time, const time::TimePoint& horizon) {
+  // fire_time comes from time::Now(), so it is comparable with this timer's expiry only while the two clocks
+  // agree. Subtracting across domains yields a meaningless number, so skip the accounting rather than
   // accumulate garbage into stats a caller may read.
-  const bool comparable_clocks = IsSimulationDriven() || !time::IsSimulatedClockEnabled();
-  if (comparable_clocks) {
-    const auto expected = GetExpiry();
-    const auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(fire_time - expected).count();
+  if (ClockDomainsAgree()) {
+    const auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(fire_time - GetExpiry()).count();
     if (latency_us > max_sched_latency_us_) {
       max_sched_latency_us_ = latency_us;
     }
     total_sched_latency_us_ += latency_us;
     ++sched_latency_count_;
-
-    const auto next_expected_expiry = expected + std::chrono::milliseconds(interval_ms_);
-    if (fire_time > next_expected_expiry) {
-      ++overrun_count_;
-    }
   }
-  Reload();
+  Reload(horizon);
+  // Reload works out how many slots this dispatch is answering for, and does so on a clock it can trust, so
+  // unlike the latency figures above this needs no guard
+  overrun_count_ += slots_accounted_;
   KickOff();
-}
-
-time::TimePoint PeriodicTimerImpl::GetExpiry() const {
-  if (IsSimulationDriven()) {
-    return last_fire_time_ + std::chrono::milliseconds(interval_ms_);
-  } else {
-    return timer_->expiry();
-  }
 }
 
 PeriodicTimerImpl::SchedLatencyStats PeriodicTimerImpl::GetAndResetSchedLatencyStats() {
