@@ -102,22 +102,6 @@ class Node {
   }
 
   /**
-   * CreateZeroCopyPublisher create a new handle for a zero-copy publisher
-   *
-   * @tparam MSG_T the message type that will be published by this handle
-   * @param topic the topic name to publish to
-   *
-   * @return a handle to a publisher instance
-   *
-   * Note: A zero-copy publisher should only be used for larger payloads (i.e. in the megabytes)
-   */
-  template <typename MSG_T>
-  Publisher<MSG_T> CreateZeroCopyPublisher(const std::string& topic) const {
-    return std::make_shared<PublisherImpl<MSG_T>>(GetEventLoop(), topic, GetDiscovery(), config_, {}, std::nullopt,
-                                                  GetName());
-  }
-
-  /**
    * CreateSubscriber create a new handle for a subscriber
    *
    * @tparam SerializableT The serializable message type published by this handle
