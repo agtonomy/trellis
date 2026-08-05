@@ -206,6 +206,7 @@ cc_test(
     name = "core_health_monitor_test",
     srcs = ["health_monitor_test.cpp"],
     deps = [
+        "//trellis/core:core_health",
         "//trellis/core:core_health_monitor",
         "@com_google_googletest//:gtest_main",
     ],

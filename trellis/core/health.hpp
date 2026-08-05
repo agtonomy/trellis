@@ -42,7 +42,7 @@ class Health {
   using HealthPublisher = trellis::core::Publisher<trellis::core::HealthHistory>;
   using PublisherCreateFunction = std::function<HealthPublisher(const std::string&)>;
   using HealthHistory = std::deque<trellis::core::HealthStatus>;
-  using Code = uint32_t;
+  using Code = uint64_t;
 
   /**
    * Health construct the health object

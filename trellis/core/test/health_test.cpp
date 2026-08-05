@@ -19,6 +19,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 namespace {
 
 static const std::string kTestAppName = "health_test";
@@ -64,6 +66,20 @@ TEST(TrellisHealth, SingleUpdate) {
   ASSERT_EQ(health.GetLastHealthStatus().health_state(), trellis::core::HealthState::HEALTH_STATE_CRITICAL);
   ASSERT_EQ(health.GetLastHealthStatus().status_code(), 0x01);
   ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out");
+}
+
+// The status code is application-defined and opaque to trellis, so the whole width of Code has to survive the round
+// trip. A narrower Code or status_code field would truncate silently rather than fail.
+TEST(TrellisHealth, CodeWiderThanThirtyTwoBits) {
+  trellis::core::Health health{kTestAppName, trellis::core::Config(YAML::Load(kTestConfigString)),
+                               [this](const std::string& topic) { return test_publisher; },
+                               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; }};
+
+  constexpr trellis::core::Health::Code kWideCode = 0x1234'5678'9ABCULL;
+  static_assert(kWideCode > std::numeric_limits<uint32_t>::max());
+
+  health.Update(trellis::core::HealthState::HEALTH_STATE_CRITICAL, kWideCode, "Wide code");
+  ASSERT_EQ(health.GetLastHealthStatus().status_code(), kWideCode);
 }
 
 TEST(TrellisHealth, MultipleUpdates) {

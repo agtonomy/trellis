@@ -19,9 +19,11 @@
 
 #include <gtest/gtest.h>
 
+#include "trellis/core/health.hpp"
+
 namespace {
 
-void AddUpdate(trellis::core::HealthHistory& status, trellis::core::HealthState state, unsigned code,
+void AddUpdate(trellis::core::HealthHistory& status, trellis::core::HealthState state, trellis::core::Health::Code code,
                const std::string& description) {
   trellis::core::time::EnableSimulatedClock();
   trellis::core::HealthStatus update;
