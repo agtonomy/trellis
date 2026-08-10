@@ -24,6 +24,7 @@
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/health_history.pb.h"
+#include "trellis/core/health_status.hpp"
 #include "trellis/core/publisher.hpp"
 #include "trellis/core/timer.hpp"
 
@@ -42,7 +43,7 @@ class Health {
   using HealthPublisher = trellis::core::Publisher<trellis::core::HealthHistory>;
   using PublisherCreateFunction = std::function<HealthPublisher(const std::string&)>;
   using HealthHistory = std::deque<trellis::core::HealthStatus>;
-  using Code = uint64_t;
+  using Code = health::Code;
 
   /**
    * Health construct the health object
@@ -73,6 +74,15 @@ class Health {
    */
   void Update(const trellis::core::HealthState& state, const Code& code, const std::string& description,
               const bool compare_description = false);
+
+  /**
+   * Update submit a health update
+   *
+   * @param status the health status to report
+   * @param compare_description A flag signalling that the description should be used in the status comparison; defaults
+   * to false
+   */
+  void Update(const health::HealthStatus& status, const bool compare_description = false);
 
   /**
    * GetHealthState retrieve the health enumeration for the most recent update

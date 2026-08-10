@@ -24,6 +24,27 @@ namespace trellis {
 namespace core {
 
 namespace {
+
+// Mapped explicitly rather than cast so that the two enumerations can be reordered or extended independently without
+// silently mislabelling health state on the wire.
+trellis::core::HealthState ToProtoHealthState(const health::HealthState& state) {
+  switch (state) {
+    case health::HealthState::kUnspecified:
+      return trellis::core::HealthState::HEALTH_STATE_UNSPECIFIED;
+    case health::HealthState::kNormal:
+      return trellis::core::HealthState::HEALTH_STATE_NORMAL;
+    case health::HealthState::kDegraded:
+      return trellis::core::HealthState::HEALTH_STATE_DEGRADED;
+    case health::HealthState::kRecoverable:
+      return trellis::core::HealthState::HEALTH_STATE_RECOVERABLE;
+    case health::HealthState::kCritical:
+      return trellis::core::HealthState::HEALTH_STATE_CRITICAL;
+    case health::HealthState::kLost:
+      return trellis::core::HealthState::HEALTH_STATE_LOST;
+  }
+  return trellis::core::HealthState::HEALTH_STATE_UNSPECIFIED;
+}
+
 bool operator==(const trellis::core::HealthStatus& lhs, const trellis::core::HealthStatus& rhs) {
   if (lhs.health_state() != rhs.health_state()) {
     return false;
@@ -72,6 +93,10 @@ void Health::Update(const trellis::core::HealthState& state, const Code& code, c
   }
 
   publisher_->Send(CreateHealthHistoryMessage(name_, health_history_));
+}
+
+void Health::Update(const health::HealthStatus& status, const bool compare_description) {
+  Update(ToProtoHealthState(status.state), status.code, status.description, compare_description);
 }
 
 trellis::core::HealthState Health::GetHealthState() const {

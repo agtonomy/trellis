@@ -166,6 +166,10 @@ void Node::UpdateHealth(const trellis::core::HealthStatus& status, const bool co
   UpdateHealth(status.health_state(), status.status_code(), status.status_description(), compare_description);
 }
 
+void Node::UpdateHealth(const health::HealthStatus& status, const bool compare_description) {
+  health_.Update(status, compare_description);
+}
+
 void Node::UpdateHealth(trellis::core::HealthState state, Health::Code code, const std::string& description,
                         const bool compare_description) {
   health_.Update(state, code, description, compare_description);

@@ -336,6 +336,16 @@ cc_library(
 )
 
 cc_library(
+    name = "core_health_status",
+    hdrs = [
+        "health_status.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+    ],
+)
+
+cc_library(
     name = "core_health",
     srcs = [
         "health.cpp",
@@ -346,6 +356,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core_config",
+        ":core_health_status",
         ":core_logging",
         ":core_publisher",
         ":core_timer",

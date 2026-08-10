@@ -19,7 +19,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <limits>
+#include <utility>
 
 namespace {
 
@@ -80,6 +82,70 @@ TEST(TrellisHealth, CodeWiderThanThirtyTwoBits) {
 
   health.Update(trellis::core::HealthState::HEALTH_STATE_CRITICAL, kWideCode, "Wide code");
   ASSERT_EQ(health.GetLastHealthStatus().status_code(), kWideCode);
+}
+
+// Every HealthState enumerator must reach the wire as its proto counterpart. A reordered or mismapped entry would
+// report the wrong severity to the rest of the system while still looking like a successful update.
+TEST(TrellisHealth, HealthStatusOverloadMapsEveryState) {
+  trellis::core::Health health{kTestAppName, trellis::core::Config(YAML::Load(kTestConfigString)),
+                               [this](const std::string& topic) { return test_publisher; },
+                               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; }};
+
+  const std::array<std::pair<trellis::core::health::HealthState, trellis::core::HealthState>, 6> expected_mappings = {{
+      {trellis::core::health::HealthState::kUnspecified, trellis::core::HealthState::HEALTH_STATE_UNSPECIFIED},
+      {trellis::core::health::HealthState::kNormal, trellis::core::HealthState::HEALTH_STATE_NORMAL},
+      {trellis::core::health::HealthState::kDegraded, trellis::core::HealthState::HEALTH_STATE_DEGRADED},
+      {trellis::core::health::HealthState::kRecoverable, trellis::core::HealthState::HEALTH_STATE_RECOVERABLE},
+      {trellis::core::health::HealthState::kCritical, trellis::core::HealthState::HEALTH_STATE_CRITICAL},
+      {trellis::core::health::HealthState::kLost, trellis::core::HealthState::HEALTH_STATE_LOST},
+  }};
+
+  trellis::core::Health::Code code = 0;
+  for (const auto& [state, expected_proto_state] : expected_mappings) {
+    // Vary the code so consecutive updates are never treated as duplicates.
+    ++code;
+    health.Update(trellis::core::health::HealthStatus{.state = state, .code = code, .description = "mapping"});
+    ASSERT_EQ(health.GetLastHealthStatus().health_state(), expected_proto_state);
+    ASSERT_EQ(health.GetLastHealthStatus().status_code(), code);
+  }
+}
+
+TEST(TrellisHealth, HealthStatusOverloadCarriesCodeAndDescription) {
+  trellis::core::Health health{kTestAppName, trellis::core::Config(YAML::Load(kTestConfigString)),
+                               [this](const std::string& topic) { return test_publisher; },
+                               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; }};
+
+  constexpr trellis::core::Health::Code kWideCode = 0x1234'5678'9ABCULL;
+  static_assert(kWideCode > std::numeric_limits<uint32_t>::max());
+
+  health.Update(trellis::core::health::HealthStatus{
+      .state = trellis::core::health::HealthState::kCritical, .code = kWideCode, .description = "Inputs timed out"});
+
+  ASSERT_EQ(health.GetHealthHistory().size(), 1);
+  ASSERT_EQ(health.GetLastHealthStatus().health_state(), trellis::core::HealthState::HEALTH_STATE_CRITICAL);
+  ASSERT_EQ(health.GetLastHealthStatus().status_code(), kWideCode);
+  ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out");
+}
+
+// The overload must share the deduplication path with the enum-based Update rather than bypassing it.
+TEST(TrellisHealth, HealthStatusOverloadHonorsCompareDescription) {
+  trellis::core::Health health{kTestAppName, trellis::core::Config(YAML::Load(kTestConfigString)),
+                               [this](const std::string& topic) { return test_publisher; },
+                               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) { return nullptr; }};
+
+  const trellis::core::health::HealthStatus status{
+      .state = trellis::core::health::HealthState::kCritical, .code = 0x01, .description = "Inputs timed out"};
+  const trellis::core::health::HealthStatus restated{
+      .state = trellis::core::health::HealthState::kCritical, .code = 0x01, .description = "Inputs timed out again"};
+
+  health.Update(status);
+  health.Update(restated);
+  ASSERT_EQ(health.GetHealthHistory().size(), 1);
+  ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out");
+
+  health.Update(restated, true);
+  ASSERT_EQ(health.GetHealthHistory().size(), 2);
+  ASSERT_EQ(health.GetLastHealthStatus().status_description(), "Inputs timed out again");
 }
 
 TEST(TrellisHealth, MultipleUpdates) {
