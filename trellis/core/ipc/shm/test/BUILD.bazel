@@ -1,0 +1,8 @@
+cc_test(
+    name = "shm_file_test",
+    srcs = ["shm_file_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/shm:shm_file",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

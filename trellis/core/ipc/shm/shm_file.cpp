@@ -75,9 +75,7 @@ ShmFile::MapInfo Remap(const int& fd, const bool owner, const size_t requested_s
     map.size = requested_size;
     if (owner) {
       if (::ftruncate(fd, map.size) == -1) {
-        const int err = errno;  // capture before close
-        ::close(fd);
-        throw std::system_error(err, std::generic_category(), "ShmFile::Map ftruncate failed");
+        throw std::system_error(errno, std::generic_category(), "ShmFile::Map ftruncate failed");
       }
     }
 
@@ -101,7 +99,6 @@ ShmFile::MapInfo Map(const int fd, const bool owner, const size_t requested_size
   const int prot = owner ? PROT_READ | PROT_WRITE : PROT_READ;
   if (owner) {
     if (::ftruncate(fd, map.size) == -1) {
-      ::close(fd);
       throw std::system_error(errno, std::generic_category(), "ShmFile::Map ftruncate failed");
     }
   }
@@ -130,10 +127,20 @@ ShmFile::MapInfo Map(const int fd, const bool owner, const size_t requested_size
 
 ShmFile::ShmFile(const std::string& handle, const bool owner, const size_t requested_size,
                  const trellis::core::Config& config)
-    : handle_{handle},
-      owner_{owner},
-      fd_{CreateOrOpen(handle, owner, config)},
-      map_{fd_ >= 0 ? Map(fd_, owner, requested_size) : MapInfo{}} {
+    : handle_{handle}, owner_{owner}, fd_{CreateOrOpen(handle, owner, config)} {
+  if (fd_ >= 0) {
+    try {
+      map_ = Map(fd_, owner, requested_size);
+    } catch (...) {
+      // The destructor won't run when the constructor throws, so release the fd and the created segment here
+      if (owner_) {
+        ::shm_unlink(handle_.c_str());
+      }
+      ::close(fd_);
+      fd_ = -1;
+      throw;
+    }
+  }
   if (owner) {
     NamedResourceRegistry::Get().InsertShm(handle_);
   }
@@ -141,9 +148,13 @@ ShmFile::ShmFile(const std::string& handle, const bool owner, const size_t reque
 
 ShmFile::~ShmFile() {
   Unmap(map_);
-  // Ensure we don't unlink if we don't own the file descriptor such as if this object was moved
-  if (owner_ && fd_ >= 0) {
-    ::shm_unlink(handle_.c_str());
+  // Ensure we don't unlink or close if we don't own the file descriptor such as if this object was moved
+  if (fd_ >= 0) {
+    if (owner_) {
+      ::shm_unlink(handle_.c_str());
+    }
+    // MAP_SHARED mappings stay valid after close, so readers keep their memory
+    ::close(fd_);
   }
 }
 

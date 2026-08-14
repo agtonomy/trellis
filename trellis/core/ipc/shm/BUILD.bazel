@@ -17,6 +17,7 @@ cc_library(
     srcs = ["shm_file.cpp"],
     hdrs = ["shm_file.hpp"],
     linkopts = ["-lrt"],
+    visibility = ["//trellis/core/ipc/shm/test:__pkg__"],
     deps = [
         "//trellis/core:core_config",
         "//trellis/core:core_time",
