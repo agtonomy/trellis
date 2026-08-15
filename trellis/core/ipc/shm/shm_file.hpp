@@ -19,10 +19,12 @@
 #define TRELLIS_CORE_IPC_SHM_SHM_FILE_HPP_
 
 #include <array>
+#include <memory>
 #include <mutex>
 #include <string>
 
 #include "trellis/core/config.hpp"
+#include "trellis/core/ipc/shm/mapping.hpp"
 #include "trellis/core/time.hpp"
 
 namespace trellis::core::ipc::shm {
@@ -32,14 +34,6 @@ namespace trellis::core::ipc::shm {
  */
 class ShmFile {
  public:
-  /**
-   * @brief Holds address and size information about a memory-mapped region.
-   */
-  struct MapInfo {
-    void* addr{nullptr};  ///< Pointer to the mapped memory region.
-    size_t size{0};       ///< Size of the mapped region.
-  };
-
   /**
    * @brief Provides const access to the shared memory region for reading.
    */
@@ -112,7 +106,7 @@ class ShmFile {
    * @brief Checks if the shared memory region is currently mapped.
    * @return true if memory is mapped; false otherwise.
    */
-  bool Mapped() const { return map_.addr != nullptr; }
+  bool Mapped() const { return map_ != nullptr; }
 
   /**
    * @brief Checks if the shared memory file was properly initialized.
@@ -122,6 +116,9 @@ class ShmFile {
 
   /**
    * @brief Get the pointer and length to the shared memory buffer for the purpose of reading
+   *
+   * Remaps first if the writer has grown the region.
+   *
    * @return A ReadInfo structure containing the data pointer and size.
    */
   ReadInfo GetReadInfo();
@@ -149,8 +146,12 @@ class ShmFile {
                      uint64_t writer_id);
 
   /**
-   * @brief Resizes the shared memory region.
-   * @param requested_size New size for the shared memory.
+   * @brief Grows the shared memory region.
+   *
+   * Grow-only: shrinking throws. Truncating the file would SIGBUS pinned mappings and lagging readers whose mappings
+   * still cover the truncated pages.
+   *
+   * @param requested_size New size for the shared memory. Must not shrink the region.
    */
   void Resize(size_t requested_size);
 
@@ -179,12 +180,12 @@ class ShmFile {
    */
   SMemFileHeader& GetMutableFileHeader() const;
 
-  std::string handle_;      ///< Name/handle of the shared memory object.
-  bool owner_;              ///< True if this instance created the shared memory.
-  int fd_{-1};              ///< File descriptor backing the shared memory.
-  MapInfo map_;             ///< Memory mapping information.
-  unsigned send_count_{0};  ///< Number of times data has been sent.
-  std::mutex mutex_;        ///< Mutex for thread-safe access.
+  std::string handle_;            ///< Name/handle of the shared memory object.
+  bool owner_;                    ///< True if this instance created the shared memory.
+  int fd_{-1};                    ///< File descriptor backing the shared memory.
+  std::shared_ptr<Mapping> map_;  ///< Current memory mapping.
+  unsigned send_count_{0};        ///< Number of times data has been sent.
+  std::mutex mutex_;              ///< Mutex for thread-safe access.
 };
 
 }  // namespace trellis::core::ipc::shm

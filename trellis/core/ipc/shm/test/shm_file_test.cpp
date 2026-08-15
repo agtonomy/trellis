@@ -23,6 +23,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -89,6 +90,17 @@ TEST(ShmFile, MovedFromDoesNotCloseFd) {
     EXPECT_NE(moved.GetWriteInfo().data, nullptr);
   }
   EXPECT_EQ(CountOpenFds(), baseline);
+}
+
+TEST(ShmFile, ResizeShrinkThrows) {
+  const trellis::core::Config config;
+  ShmFile file(UniqueHandle("shrink"), true, kRequestedSize, config);
+  ASSERT_TRUE(file.IsInitialized());
+  EXPECT_THROW(file.Resize(kRequestedSize / 2), std::logic_error);
+  // A rejected shrink must leave the existing mapping intact and usable
+  auto write_info = file.GetWriteInfo();
+  EXPECT_NE(write_info.data, nullptr);
+  EXPECT_EQ(write_info.size, kRequestedSize);
 }
 
 TEST(ShmFile, ConstructionFailureReleasesFdAndSegment) {
