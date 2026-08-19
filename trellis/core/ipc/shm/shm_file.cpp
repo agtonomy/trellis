@@ -129,7 +129,6 @@ ShmFile::ShmFile(ShmFile&& other)
 }
 
 void ShmFile::Resize(const size_t requested_size) {
-  std::lock_guard lock(mutex_);
   if (map_ == nullptr) {
     throw std::runtime_error("ShmFile::Resize called while unmapped");
   }
@@ -145,7 +144,6 @@ void ShmFile::Resize(const size_t requested_size) {
 }
 
 ShmFile::ReadInfo ShmFile::GetReadInfo() {
-  std::lock_guard lock(mutex_);
   if (map_ == nullptr) {
     throw std::runtime_error("ShmFile::GetReadInfo called while unmapped");
   }
@@ -169,7 +167,6 @@ ShmFile::ReadInfo ShmFile::GetReadInfo() {
 }
 
 ShmFile::WriteInfo ShmFile::GetWriteInfo() {
-  std::lock_guard lock(mutex_);
   if (map_ == nullptr) {
     throw std::runtime_error("ShmFile::GetWriteInfo called while unmapped");
   }

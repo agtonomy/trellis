@@ -23,6 +23,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <mutex>
 
 #include "trellis/core/logging.hpp"
 

@@ -20,7 +20,6 @@
 
 #include <array>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "trellis/core/config.hpp"
@@ -31,6 +30,10 @@ namespace trellis::core::ipc::shm {
 
 /**
  * @brief Represents a shared memory mapped region backed by a named file.
+ *
+ * Not thread-safe by design. The modules that own a ShmFile are responsible for synchronizing access to it: the
+ * publisher's mutex on the writer side, the event loop on the reader side. ShmReadWriteLock excludes the peer process
+ * and says nothing about threads within this one.
  */
 class ShmFile {
  public:
@@ -185,7 +188,6 @@ class ShmFile {
   int fd_{-1};                    ///< File descriptor backing the shared memory.
   std::shared_ptr<Mapping> map_;  ///< Current memory mapping.
   unsigned send_count_{0};        ///< Number of times data has been sent.
-  std::mutex mutex_;              ///< Mutex for thread-safe access.
 };
 
 }  // namespace trellis::core::ipc::shm
