@@ -19,8 +19,4 @@ bazel_dep(name = "mcap", version = "2.0.2")
 bazel_dep(name = "lz4", version = "1.10.0.bcr.1")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1")
 bazel_dep(name = "eigen", version = "3.4.0.bcr.3")
-bazel_dep(name = "tclap", version = "1.2.5.bcr.1")
 bazel_dep(name = "ftxui", version = "6.1.9")
-
-non_bcr = use_extension("//third_party:non_bcr.bzl", "non_bcr")
-use_repo(non_bcr, "simpleini")

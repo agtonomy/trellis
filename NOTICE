@@ -17,11 +17,6 @@ under the License.
 
 This project depends on the following libraries:
 
-eCAL
-  - Copyright (C) 2016 - 2019 Continental Corporation
-  - URL: https://github.com/eclipse-ecal/ecal
-  - License: Apache License Version 2.0 - https://github.com/eclipse-ecal/ecal/blob/master/LICENSE.txt
-
 fmt
   - Copyright (c) 2012 - present, Victor Zverovich
   - URL: https://github.com/fmtlib/fmt
@@ -37,13 +32,6 @@ cxxopts
   - URL: https://github.com/jarro2783/cxxopts
   - License: MIT License - https://github.com/jarro2783/cxxopts/blob/master/LICENSE
 
-tclap
-  - Copyright (c) 2003 Michael E. Smoot
-  - Copyright (c) 2004 Daniel Aarno
-  - Copyright (c) 2017 Google Inc.
-  - URL: http://tclap.sourceforge.net
-  - License: MIT License - https://opensource.org/licenses/mit-license.php
-
 asio
   - Copyright © 2003-2018 Christopher M. Kohlhoff
   - URL: https://think-async.com
@@ -58,8 +46,3 @@ Google Protouf
   - Copyright 2008 Google Inc.
   - URL: https://developers.google.com/protocol-buffers
   - License: https://github.com/google/protobuf/blob/master/LICENSE
-
-SimpleIni
-  - Copyright (c) 2006-2013 Brodie Thiesfield
-  - URL: https://github.com/brofield/simpleini
-  - License: MIT License - https://github.com/brofield/simpleini/blob/master/LICENCE.txt

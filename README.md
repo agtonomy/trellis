@@ -71,27 +71,28 @@ Trellis is built on Google's [Bazel](https://bazel.build/) build system.
 
 ### Depending on trellis
 
-Add to your WORKSPACE file:
+Trellis uses [bzlmod](https://bazel.build/external/module) and declares all of its dependencies in
+`MODULE.bazel`. Because trellis is not published to the Bazel Central Registry, pin it to a commit
+with `git_override`. Add to your `MODULE.bazel` file:
 
 ```
-TRELLIS_COMMIT = "XXXX"
+bazel_dep(name = "trellis", version = "0.0.0")
 
-http_archive(
-    name = "com_github_agtonomy_trellis",
-    strip_prefix = "trellis-" + TRELLIS_COMMIT,
-    url = "https://github.com/agtonomy/trellis/archive/" + TRELLIS_COMMIT + ".tar.gz",
-    # Make sure to add the correct sha256 corresponding to this commit.
-    # sha256 = "blah",
+git_override(
+    module_name = "trellis",
+    commit = "XXXX",
+    remote = "https://github.com/agtonomy/trellis.git",
 )
+```
 
-load("@com_github_agtonomy_trellis//third_party:repositories.bzl", "trellis_deps")
+Then depend on trellis targets by label, for example `@trellis//trellis/core`. To develop against a
+local checkout instead of a pinned commit, replace the `git_override` with:
 
-trellis_deps()
-
-# Required transitive loader for protobuf dependencies.
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
-
-protobuf_deps()
+```
+local_path_override(
+    module_name = "trellis",
+    path = "path/to/trellis",
+)
 ```
 
 ## Examples
