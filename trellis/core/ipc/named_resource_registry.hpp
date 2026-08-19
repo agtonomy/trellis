@@ -21,6 +21,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <cstdlib>
+#include <exception>
 #include <queue>
 #include <string>
 
@@ -35,6 +37,10 @@ namespace trellis::core::ipc {
  * This is useful in cases where cleanup is needed after uncaught exceptions or software traps (SIGINT, SIGTERM, etc)
  *
  * It ensures that resources like `shm_open()` or `open()` with named paths are cleaned up properly.
+ *
+ * @note Constructing the singleton installs a process-wide `std::terminate` handler that calls `UnlinkAll`, so an
+ * abort cleans up too. Callers still have to invoke `UnlinkAll` on the paths they control; the handler is only a last
+ * resort. It cannot help when no handler runs at all, such as SIGKILL or a segfault.
  */
 class NamedResourceRegistry {
  public:
@@ -84,9 +90,19 @@ class NamedResourceRegistry {
 
  private:
   /**
-   * @brief Private constructor for singleton pattern.
+   * @brief Private constructor for singleton pattern. Installs the terminate handler described above.
    */
-  NamedResourceRegistry() = default;
+  NamedResourceRegistry() {
+    // std::terminate aborts without unwinding so destructors/catch blocks aren't run.
+    // This is insurance to prevent orphaning the pages behind the shm files.
+    static std::terminate_handler previous_handler = std::set_terminate([]() {
+      Get().UnlinkAll();
+      if (previous_handler != nullptr) {
+        previous_handler();
+      }
+      std::abort();
+    });
+  }
 
   std::queue<std::string> named_resources_;  ///< Queue of regular named resources for `unlink()`.
   std::queue<std::string> named_shm_;        ///< Queue of shared memory names for `shm_unlink()`.
