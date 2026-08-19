@@ -22,6 +22,7 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 
 #include "trellis/core/config.hpp"
 
@@ -41,6 +42,19 @@ class ShmReadWriteLock {
   struct NamedRwLock {
     pthread_rwlock_t rwlock;  ///< POSIX read-write lock stored in shared memory.
   };
+
+  /// Suffix for creating shm buffer lock files.
+  static constexpr std::string_view kLockSuffix = "_mtx";
+
+  /**
+   * @brief Builds the shm name of the lock that guards a given buffer.
+   *
+   * @param buffer_name The shm name of the buffer being guarded.
+   * @return The handle to construct the buffer's ShmReadWriteLock with.
+   */
+  static std::string GenerateLockName(std::string_view buffer_name) {
+    return std::string(buffer_name).append(kLockSuffix);
+  }
 
   /**
    * @brief Constructs a shared memory read-write lock.

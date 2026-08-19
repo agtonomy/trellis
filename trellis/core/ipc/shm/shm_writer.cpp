@@ -50,13 +50,14 @@ ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesCo
   ShmWriter::ReadWriteLocksContainer locks;
   for (const auto& file : files) {
     const auto& name = file.Handle();
-    locks.emplace(std::make_pair(name, ShmReadWriteLock(name + "_mtx", /* owner = */ true, config)));
+    locks.emplace(
+        std::make_pair(name, ShmReadWriteLock(ShmReadWriteLock::GenerateLockName(name), /* owner = */ true, config)));
   }
   return locks;
 }
 
 /**
- * @brief Removes all shm files that haves names starting with a prefix and are followed by a number. This is intended
+ * @brief Removes all shm files, buffers and their locks alike, whose names start with a prefix. This is intended
  * to be used when no files with that name prefix are being used.
  *
  * @param file_name_prefix The prefix for the files that will be deleted.
@@ -67,23 +68,33 @@ void RemoveSHMFiles(std::string_view file_name_prefix) {
   std::string filename_str;
   for (const auto& file : std::filesystem::directory_iterator("/dev/shm/")) {
     filename_str = file.path().filename().string();
-    // the find_first_not_of ensures that we aren't accidentally deleting files from different apps that have a
-    // common stem name with this app. For instance, if this app is named foo, this avoids deleting files from a
-    // different app named foo_4_thought.
-    if (filename_str.starts_with(file_name_prefix) &&
-        filename_str.substr(file_name_prefix.size(), std::string::npos).find_first_not_of("_0123456789") ==
-            std::string::npos) {
-      try {
-        if (::shm_unlink(file.path().string().c_str()) == 0 ||
-            std::filesystem::remove(file.path())) {  // if unlink fails, rm might succeed
-          unlinked.insert(filename_str);
-          continue;
-        }
-      } catch (const std::exception& ex) {
-        // all the un-removable files are collected into a single msg so that the log isn't flooded
-      }
-      failed_to_unlink.insert(filename_str);
+    // This check ensures that we aren't deleting files from other processes.
+    if (!filename_str.starts_with(file_name_prefix)) {
+      continue;
     }
+    std::string_view suffix{filename_str};
+    suffix.remove_prefix(file_name_prefix.size());
+    if (suffix.ends_with(ShmReadWriteLock::kLockSuffix)) {
+      suffix.remove_suffix(ShmReadWriteLock::kLockSuffix.size());
+    }
+    // Excluding files that consist of just the filename prefix or are prefixed with this file's name.
+    // For a process named foo, the expected file names follow the pattern foo_01234 and foo_01234_mtx.
+    // The following excludes unrelated shm files with name patterns like foo, foo_fighters_01234, and foo_4_thought.
+    if (suffix.empty() || suffix.find_first_not_of("_0123456789") != std::string_view::npos) {
+      continue;
+    }
+
+    try {
+      // shm_unlink takes a bare shm name, not a path; it prepends /dev/shm/ itself
+      if (::shm_unlink(filename_str.c_str()) == 0 ||
+          std::filesystem::remove(file.path())) {  // if unlink fails, rm might succeed
+        unlinked.insert(filename_str);
+        continue;
+      }
+    } catch (const std::exception& ex) {
+      // all the un-removable files are collected into a single msg so that the log isn't flooded
+    }
+    failed_to_unlink.insert(filename_str);
   }
 
   if (!unlinked.empty()) {

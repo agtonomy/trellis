@@ -36,8 +36,6 @@ std::string StripTrailingIndex(const std::string& input) {
   return input;
 }
 
-std::string GenerateMutexName(const std::string& name) { return name + "_mtx"; }
-
 std::string GenerateEventSocketName(const std::vector<std::string>& names, const std::string& reader_id) {
   const std::string socket_name =
       fmt::format("/tmp/trellis/{}_{}_evt.sock", StripTrailingIndex(names.at(0)), reader_id);
@@ -48,7 +46,7 @@ std::vector<ShmReadWriteLock> CreateReaderWriterLocks(const std::vector<std::str
                                                       const trellis::core::Config& config) {
   std::vector<ShmReadWriteLock> locks;
   for (const auto& name : names) {
-    locks.emplace_back(ShmReadWriteLock(GenerateMutexName(name), /* owner = */ false, config));
+    locks.emplace_back(ShmReadWriteLock(ShmReadWriteLock::GenerateLockName(name), /* owner = */ false, config));
   }
   return locks;
 }
