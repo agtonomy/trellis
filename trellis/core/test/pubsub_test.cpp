@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -601,4 +603,114 @@ TEST_F(TrellisFixture, EarlyStopSubscriber) {
   }
 
   ASSERT_EQ(receive_count, kExpectedReceivedCount);
+}
+
+TEST(PublisherBufferSize, SendThrowsWhenMessageExceedsMaxBufferSize) {
+  constexpr size_t kInitialBufferSize = 1024;
+  constexpr size_t kMaxBufferSize = 4096;
+  trellis::core::Node node("SendThrowsWhenMessageExceedsMaxBufferSize",
+                           trellis::core::Config(YAML::Load(fmt::format(R"(
+    trellis:
+      publisher:
+        attributes:
+          initial_buffer_size: {}
+          max_buffer_size: {}
+      discovery:
+        interval: 100
+        sample_timeout: 200
+        loopback_enabled: true
+    )",
+                                                                        kInitialBufferSize, kMaxBufferSize))));
+
+  auto pub = node.CreatePublisher<test::Test>("test_max_buffer_topic");
+
+  test::Test small_msg;
+  small_msg.set_id(0);
+  small_msg.set_msg("fits");
+  EXPECT_NO_THROW(pub->Send(small_msg));
+
+  test::Test big_msg;
+  big_msg.set_id(1);
+  big_msg.set_msg(std::string(kMaxBufferSize * 2, 'x'));
+  EXPECT_THROW(pub->Send(big_msg), std::runtime_error);
+
+  // The rejected message must not have disturbed the publisher: a message that fits still sends afterwards
+  EXPECT_NO_THROW(pub->Send(small_msg));
+}
+
+TEST(PublisherBufferSize, CreateThrowsWhenInitialBufferSizeExceedsMax) {
+  trellis::core::Node node("CreateThrowsWhenInitialBufferSizeExceedsMax", trellis::core::Config(YAML::Load(R"(
+    trellis:
+      publisher:
+        attributes:
+          initial_buffer_size: 4096
+          max_buffer_size: 1024
+      discovery:
+        interval: 100
+        sample_timeout: 200
+        loopback_enabled: true
+    )")));
+
+  EXPECT_THROW(node.CreatePublisher<test::Test>("test_initial_exceeds_max_topic"), std::invalid_argument);
+}
+
+TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
+  // Comfortably past the 10 KiB default initial_buffer_size so the slot has to grow
+  const std::string payload(64 * 1024, 'z');
+  size_t received_len{0};
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_sb_topic");
+  auto sub = GetNode().CreateRawSubscriber(
+      "test_sb_topic", [&received_len](const time::TimePoint&, const time::TimePoint&, const uint8_t*, size_t len) {
+        received_len = len;
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  pub->SendBytes(payload.data(), payload.size());
+
+  std::this_thread::sleep_for(kProcessEventsWaitTime);
+  ASSERT_EQ(received_len, payload.size());
+}
+
+TEST_F(TrellisFixture, SendAlternatesLargeAndSmallMessages) {
+  // The buffer only ever grows, so a small message following a large one must still round trip at its own length
+  const std::vector<size_t> payload_sizes{16, 64 * 1024, 16, 128 * 1024, 32};
+  std::vector<size_t> received_sizes;
+  std::mutex received_mutex;
+  std::condition_variable received_cv;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_alternating_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
+      "test_alternating_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(received_mutex);
+        received_sizes.push_back(msg->msg().size());
+        if (received_sizes.size() == payload_sizes.size()) {
+          received_cv.notify_one();
+        }
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  for (size_t size : payload_sizes) {
+    test::Test test_msg;
+    test_msg.set_id(0);
+    test_msg.set_msg(std::string(size, 'x'));
+    pub->Send(test_msg);
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(received_mutex);
+    const bool received_all = received_cv.wait_for(lock, kProcessEventsWaitTime, [&received_sizes, &payload_sizes]() {
+      return received_sizes.size() == payload_sizes.size();
+    });
+    ASSERT_TRUE(received_all) << "Received " << received_sizes.size() << "/" << payload_sizes.size();
+  }
+
+  EXPECT_EQ(received_sizes, payload_sizes);
 }

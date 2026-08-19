@@ -87,11 +87,61 @@ class ShmWriter {
    * This function unlocks the write lock and, if the write was successful, signals
    * subscribed readers with a socket event.
    *
+   * The write lock is released unconditionally. Stamping the headers can throw, and a throw leaves the buffer
+   * unlocked and unpublished rather than wedged, so readers are never blocked by a failed release.
+   *
    * @param now The timestamp of the write operation.
    * @param bytes_written Number of bytes written to the buffer.
    * @param success Whether the write was successful (used to determine if readers should be notified).
    */
   void ReleaseWriteAccess(const trellis::core::time::TimePoint& now, size_t bytes_written, bool success);
+
+  /**
+   * @brief Releases a buffer acquired with `GetWriteAccess` when the enclosing scope exits.
+   *
+   * A buffer that is never released holds its write lock forever, and every subsequent read of it fails. The
+   * destructor releases unconditionally, so a throw between acquire and release abandons the write instead of
+   * wedging the buffer. Call `Commit` after a completed write to publish it to readers; without it, release
+   * discards the write.
+   *
+   * Only construct this after `GetWriteAccess` returns a non-null `data` pointer.
+   */
+  class WriteAccessGuard {
+   public:
+    /**
+     * @param writer The writer whose currently held buffer this guard releases. Must outlive the guard.
+     * @param write_time The timestamp to associate with the write.
+     */
+    WriteAccessGuard(ShmWriter& writer, const trellis::core::time::TimePoint& write_time)
+        : writer_{writer}, write_time_{write_time} {}
+
+    /**
+     * @brief Releases the buffer, logging rather than propagating a failure.
+     *
+     * A destructor is implicitly `noexcept`, so anything escaping here would terminate the process. The write lock is
+     * already released by the time `ReleaseWriteAccess` can throw, so there is nothing left to recover.
+     */
+    ~WriteAccessGuard();
+
+    WriteAccessGuard(const WriteAccessGuard&) = delete;
+    WriteAccessGuard& operator=(const WriteAccessGuard&) = delete;
+
+    /**
+     * @brief Records a completed write so the release publishes it to readers.
+     *
+     * @param bytes_written Number of bytes written to the buffer.
+     */
+    void Commit(const size_t bytes_written) {
+      bytes_written_ = bytes_written;
+      success_ = true;
+    }
+
+   private:
+    ShmWriter& writer_;
+    const trellis::core::time::TimePoint write_time_;
+    size_t bytes_written_{0};
+    bool success_{false};
+  };
 
   /**
    * @brief Registers a reader by its process ID.

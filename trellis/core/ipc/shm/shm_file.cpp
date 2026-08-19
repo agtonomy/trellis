@@ -24,6 +24,7 @@
 #include <unistd.h>   /* For sysconf */
 
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <system_error>
 
@@ -61,13 +62,35 @@ int CreateOrOpen(const std::string& handle, const bool owner, const trellis::cor
   return rt;
 }
 
+/**
+ * @brief Rounds a total mapping size (headers included) up to whole pages.
+ *
+ * ftruncate and mmap back the mapping with whole pages regardless, and the mapping can only ever grow, so rounding up
+ * reclaims the tail of the last page instead of stranding it. Round the total, not the payload alone: the headers live
+ * in the mapping, and aligning the payload would spill into an extra page.
+ */
+size_t RoundUpToPageSize(const size_t size) {
+  static const size_t page_size = []() {
+    const long result = ::sysconf(_SC_PAGESIZE);
+    if (result < 0) {
+      throw std::system_error(errno, std::generic_category(), "sysconf(_SC_PAGESIZE) failed");
+    }
+    return static_cast<size_t>(result);
+  }();
+  if (size > std::numeric_limits<size_t>::max() - page_size + 1) {
+    throw std::overflow_error(fmt::format("RoundUpToPageSize size {} would overflow when rounded up", size));
+  }
+  return ((size + page_size - 1) / page_size) * page_size;
+}
+
 std::shared_ptr<Mapping> Map(const int fd, const bool owner, const size_t requested_size) {
   if (fd < 0) {
     throw std::runtime_error("Call to ShmFile::Map while fd is not open");
   }
   // As a non-owner the only amount of data that is guaranteed is the header. First we map that amount and use the
   // header metadata to determine how large of a region we need to remap.
-  const auto map_size = owner ? requested_size + ShmFile::kCombinedHeaderSize : ShmFile::kCombinedHeaderSize;
+  const auto map_size =
+      owner ? RoundUpToPageSize(requested_size + ShmFile::kCombinedHeaderSize) : ShmFile::kCombinedHeaderSize;
   auto map = std::make_shared<Mapping>(fd, owner, map_size);
 
   ShmFile::ShmHeader* header = static_cast<ShmFile::ShmHeader*>(map->Addr());
@@ -75,7 +98,7 @@ std::shared_ptr<Mapping> Map(const int fd, const bool owner, const size_t reques
     // As the owner, we will map the size requested
     header->header_size = sizeof(ShmFile::ShmHeader);
     header->cur_data_size = sizeof(ShmFile::SMemFileHeader);
-    header->max_data_size = requested_size;
+    header->max_data_size = map_size - ShmFile::kCombinedHeaderSize;
   } else {
     // Each process, whether owner or not, has to decide how large of a region of memory to map into the process'
     // address space. In the case of a non-owner (reader), we use the header metadata to know how much memory to map.
@@ -132,7 +155,7 @@ void ShmFile::Resize(const size_t requested_size) {
   if (map_ == nullptr) {
     throw std::runtime_error("ShmFile::Resize called while unmapped");
   }
-  const auto total_size = kCombinedHeaderSize + requested_size;
+  const auto total_size = RoundUpToPageSize(requested_size + kCombinedHeaderSize);
   if (total_size < map_->Size()) {
     throw std::logic_error(fmt::format(
         "ShmFile::Resize shrink from {} to {} bytes is not supported: pinned mappings rely on the file only growing",
@@ -140,7 +163,7 @@ void ShmFile::Resize(const size_t requested_size) {
   }
   map_ = std::make_shared<Mapping>(fd_, owner_, total_size);
   ShmFile::ShmHeader* header = static_cast<ShmFile::ShmHeader*>(map_->Addr());
-  header->max_data_size = requested_size;
+  header->max_data_size = total_size - kCombinedHeaderSize;
 }
 
 ShmFile::ReadInfo ShmFile::GetReadInfo() {

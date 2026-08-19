@@ -23,6 +23,7 @@
 
 #include <functional>
 #include <memory>
+#include <stdexcept>
 
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
@@ -97,8 +98,18 @@ class PublisherImpl {
                                                                      kDefaultNumWriterBuffers)},
         initial_buffer_size_{config.GetConfigAttributeForTopic<size_t>(
             topic, "initial_buffer_size", /* is_publisher = */ true, kDefaultInitialBufferSize)},
-        max_buffer_size_{config.GetConfigAttributeForTopic<size_t>(topic, "max_buffer_size", /* is_publisher = */ true,
-                                                                   kDefaultMaxBufferSize)},
+        // Initialized before the data members below so that we prevent leaking the discovery registrations in the event
+        // that we throw an exception
+        max_buffer_size_{[&]() {
+          const auto max_buffer_size = config.GetConfigAttributeForTopic<size_t>(
+              topic, "max_buffer_size", /* is_publisher = */ true, kDefaultMaxBufferSize);
+          if (initial_buffer_size_ > max_buffer_size) {
+            throw std::invalid_argument(
+                fmt::format("PublisherImpl initial_buffer_size {} exceeds max_buffer_size {} for topic {}",
+                            initial_buffer_size_, max_buffer_size, topic));
+          }
+          return max_buffer_size;
+        }()},
         statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
             topic, "statistics_update_interval_ms", true, kDefaultStatisticsUpdateIntervalMs)},
         writer_(application_name.empty() ? "trellis_publisher" : application_name, loop, ::getpid(), num_write_buffers_,
@@ -147,27 +158,25 @@ class PublisherImpl {
    * @brief Send a message at a specific timestamp.
    *
    * First converts from the message type to the serialized message type. Then, serializes the message to a shared
-   * memory buffer and publishes it. If the underlying shared memory buffer needs to be resized to accommodate the
-   * message, it will be done automatically.
+   * memory buffer and publishes it. The shared memory buffer is sized to the message before it is acquired, growing
+   * automatically if needed.
+   *
+   * @note At most one thread may send on a given publisher at a time. That thread need not be the node's event loop
+   * thread -- publishing from a dedicated worker thread is an established pattern -- but two concurrent senders race
+   * on the converter and on the send statistics.
    *
    * @param msg The message to send.
    * @param now The timestamp to associate with the message.
    * @return The timestamp used.
    */
   trellis::core::time::TimePoint Send(const MsgT& msg, const trellis::core::time::TimePoint& now) {
-    return SendInternal(now, [this, &msg](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
-      bool success;
-      size_t bytes_written;
-      if constexpr (std::is_same_v<MsgT, SerializableT>) {
-        success = msg.SerializeToArray(write_info.data, write_info.size);
-        bytes_written = success ? msg.ByteSizeLong() : 0;
-      } else {
-        const auto converted = converter_(msg);
-        success = converted.SerializeToArray(write_info.data, write_info.size);
-        bytes_written = success ? converted.ByteSizeLong() : 0;
-      }
-      return {success, bytes_written};
-    });
+    if constexpr (std::is_same_v<MsgT, SerializableT>) {
+      return SendSerializable(msg, now);
+    } else {
+      // The conversion runs before the shared memory slot is acquired, so user supplied converters never execute
+      // while holding a write lock that readers contend on
+      return SendSerializable(converter_(msg), now);
+    }
   }
 
   /**
@@ -176,18 +185,17 @@ class PublisherImpl {
    * @note Intended use case is for log replay, where the publishers don't need to know the message type and rely on
    * subscribers to properly deserialize the data.
    *
+   * @note Carries the same one-sender-at-a-time constraint as `Send`.
+   *
    * @param data Pointer to the raw bytes
    * @param size Size of the data in bytes
    * @param now The timestamp to associate with the message
    * @return The timestamp used
    */
   trellis::core::time::TimePoint SendBytes(const void* data, size_t size, const trellis::core::time::TimePoint& now) {
-    return SendInternal(now, [this, data, size](ipc::shm::ShmFile::WriteInfo& write_info) -> std::pair<bool, size_t> {
-      if (write_info.size < size) {
-        return {false, 0};  // Not enough space in the buffer
-      }
-      std::memcpy(write_info.data, data, size);  // Copy raw bytes into the shared memory buffer
-      return {true, size};
+    return SendInternal(now, size, [data, size](ipc::shm::ShmFile::WriteInfo& write_info) {
+      std::memcpy(write_info.data, data, size);
+      return true;
     });
   }
 
@@ -200,50 +208,68 @@ class PublisherImpl {
 
  private:
   /**
-   * @brief Internal send function
+   * @brief Serializes an already converted message into shared memory and publishes it.
    *
-   * Tries to write to the underlying memory buffer. If it fails, the memory will be resized to accommodate the message
-   *
+   * @param msg The message to serialize.
    * @param now The timestamp to associate with the message.
-   * @param write_fn Function that performs the actual write operation.
    * @return The timestamp used.
    */
-  using WriteFunc = std::function<std::pair<bool, size_t>(ipc::shm::ShmFile::WriteInfo&)>;
-  trellis::core::time::TimePoint SendInternal(const trellis::core::time::TimePoint& now, WriteFunc write_fn) {
+  trellis::core::time::TimePoint SendSerializable(const SerializableT& msg, const trellis::core::time::TimePoint& now) {
+    const size_t required_size = msg.ByteSizeLong();
+    return SendInternal(now, required_size, [&msg](ipc::shm::ShmFile::WriteInfo& write_info) {
+      return msg.SerializeToArray(write_info.data, write_info.size);
+    });
+  }
+
+  /**
+   * @brief Internal send function
+   *
+   * Grows the buffer to fit the message, acquires a shared memory slot exactly once, and writes into it.
+   *
+   * @param now The timestamp to associate with the message.
+   * @param required_size Exact number of bytes `write_fn` will write.
+   * @param write_fn Function that performs the actual write operation. Returns false if the write failed for a reason
+   * other than available space, which is fatal to the send.
+   * @return The timestamp used.
+   */
+  using WriteFunc = std::function<bool(ipc::shm::ShmFile::WriteInfo&)>;
+  trellis::core::time::TimePoint SendInternal(const trellis::core::time::TimePoint& now, const size_t required_size,
+                                              WriteFunc write_fn) {
     bool success{false};
     {  // Scope the mutex region to end before interacting with the discovery layer to avoid a potential deadlock
        // condition
       std::lock_guard guard(mutex_);
+      if (required_size > max_buffer_size_) {
+        throw std::runtime_error(
+            fmt::format("PublisherImpl::Send message of {} bytes for topic {} exceeds the max buffer size {}",
+                        required_size, topic_, max_buffer_size_));
+      }
+      // Ask for exactly what this message needs rather than growing by a geometric factor. The size is known here, so
+      // overshooting only inflates a mapping that `ShmFile::Resize` can never shrink back; Resize rounds up to whole
+      // pages on its own. `max` keeps the buffer monotonic, as Resize rejects shrinking.
+      buffer_size_ = std::max(buffer_size_, std::min(required_size, max_buffer_size_));
+
       ipc::shm::ShmFile::WriteInfo write_info = writer_.GetWriteAccess(buffer_size_);
       if (write_info.data == nullptr) {
+        // A null pointer means no slot was acquired, so there is no write lock to release here
         throw std::runtime_error("PublisherImpl::Send Failed to obtain write access!");
       }
+      ipc::shm::ShmWriter::WriteAccessGuard write_guard{writer_, now};
 
-      // Try to write; double the buffer size if necessary
-      size_t size_written = 0;
-      while (true) {
-        std::tie(success, size_written) = write_fn(write_info);
-        if (success) {
-          break;
-        }
-
-        if (buffer_size_ == max_buffer_size_) {
-          throw std::runtime_error(fmt::format(
-              "PublisherImpl::Send Failed to serialize to the max specified buffer size {}", max_buffer_size_));
-        }
-        buffer_size_ = std::min((buffer_size_ * 2), max_buffer_size_);
-        writer_.ReleaseWriteAccess(now, /* bytes_written = */ 0, /* success = */ false);
-        write_info = writer_.GetWriteAccess(buffer_size_);
-        if (write_info.size != buffer_size_) {
-          throw std::logic_error(
-              fmt::format("PublisherImpl::Send Failed to increase buffer size. Requested = {} actual = {}",
-                          buffer_size_, write_info.size));
-        }
+      if (write_info.size < required_size) {
+        throw std::logic_error(
+            fmt::format("PublisherImpl::Send buffer too small after acquiring write access. "
+                        "Required = {} actual = {}",
+                        required_size, write_info.size));
       }
 
-      // Release the shared memory write lock after writing
-      size_t bytes_written = size_written;
-      writer_.ReleaseWriteAccess(now, bytes_written, success);
+      success = write_fn(write_info);
+      if (!success) {
+        throw std::runtime_error(
+            fmt::format("PublisherImpl::Send failed to serialize {} bytes into a {} byte buffer for topic {}",
+                        required_size, write_info.size, topic_));
+      }
+      write_guard.Commit(required_size);
     }
 
     // Track message send statistics and update discovery
@@ -308,9 +334,11 @@ class PublisherImpl {
   discovery::Discovery::RegistrationHandle discovery_handle_;  ///< Publisher registration handle
   discovery::Discovery::CallbackHandle callback_handle_;       ///< Subscriber callback handle
   size_t buffer_size_{initial_buffer_size_};                   ///< Buffer size for message serialization
-  std::mutex mutex_;                                           ///< Mutex for thread safety
-  statistics::FrequencyCalculator frequency_calculator_;       ///< Frequency calculation utility
-  ConverterT converter_;                                       ///< Function to convert to serialized message type
+  /// Serializes the sender against ReceiveSubscriber, which mutates writer_ from the event loop thread. This does not
+  /// make concurrent sends safe: the converter and UpdateStatistics both run outside it.
+  std::mutex mutex_;
+  statistics::FrequencyCalculator frequency_calculator_;  ///< Frequency calculation utility
+  ConverterT converter_;                                  ///< Function to convert to serialized message type
 };
 
 // Type aliases for shared ownership and dynamic use

@@ -21,6 +21,7 @@
 #include <fmt/ranges.h>
 #include <sys/mman.h>
 
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -156,22 +157,33 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
 
 void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, const size_t bytes_written,
                                    const bool success) {
-  auto& file = files_[buffer_index_];
+  auto& file = files_.at(buffer_index_);
   auto& lock = locks_.at(file.Handle());
 
-  if (success) {
-    file.SetHeader(bytes_written);
-    ++sequence_;
-    file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
+  {  // The header writes can throw; the lock has to be released either way
+    ShmReadWriteLock::UnlockGuard guard{lock};
+    if (success) {
+      file.SetHeader(bytes_written);
+      ++sequence_;
+      file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
+    }
   }
-
-  lock.Unlock();
 
   if (success) {
     SignalWriteEvent(buffer_index_);
     if (++buffer_index_ >= files_.size()) {
       buffer_index_ = 0;
     }
+  }
+}
+
+ShmWriter::WriteAccessGuard::~WriteAccessGuard() {
+  try {
+    writer_.ReleaseWriteAccess(write_time_, bytes_written_, success_);
+  } catch (const std::exception& ex) {
+    trellis::core::Log::Error("ShmWriter::WriteAccessGuard failed to release write access: {}", ex.what());
+  } catch (...) {
+    trellis::core::Log::Error("ShmWriter::WriteAccessGuard failed to release write access: unknown exception");
   }
 }
 

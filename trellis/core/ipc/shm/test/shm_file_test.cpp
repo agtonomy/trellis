@@ -47,6 +47,8 @@ std::string UniqueHandle(const std::string& suffix) {
   return handle;
 }
 
+size_t PageSize() { return static_cast<size_t>(::sysconf(_SC_PAGESIZE)); }
+
 constexpr size_t kRequestedSize = 1024;
 
 }  // namespace
@@ -94,13 +96,33 @@ TEST(ShmFile, MovedFromDoesNotCloseFd) {
 
 TEST(ShmFile, ResizeShrinkThrows) {
   const trellis::core::Config config;
-  ShmFile file(UniqueHandle("shrink"), true, kRequestedSize, config);
+  // Mappings are page granular, so the shrink has to cross a page boundary to be a shrink at all
+  ShmFile file(UniqueHandle("shrink"), true, PageSize() * 4, config);
   ASSERT_TRUE(file.IsInitialized());
-  EXPECT_THROW(file.Resize(kRequestedSize / 2), std::logic_error);
+  const auto original_size = file.GetWriteInfo().size;
+  EXPECT_THROW(file.Resize(PageSize()), std::logic_error);
   // A rejected shrink must leave the existing mapping intact and usable
   auto write_info = file.GetWriteInfo();
   EXPECT_NE(write_info.data, nullptr);
-  EXPECT_EQ(write_info.size, kRequestedSize);
+  EXPECT_EQ(write_info.size, original_size);
+}
+
+TEST(ShmFile, WriteCapacityFillsWholePages) {
+  const trellis::core::Config config;
+  // One byte into a second page: the rest of that page must be reported as usable rather than stranded
+  const size_t requested = PageSize() + 1;
+  ShmFile file(UniqueHandle("page_round"), true, requested, config);
+  ASSERT_TRUE(file.IsInitialized());
+
+  const auto mapped = file.GetWriteInfo();
+  EXPECT_GE(mapped.size, requested);
+  EXPECT_EQ((mapped.size + ShmFile::kCombinedHeaderSize) % PageSize(), 0U);
+
+  const size_t grown_request = PageSize() * 2 + 1;
+  file.Resize(grown_request);
+  const auto grown = file.GetWriteInfo();
+  EXPECT_GE(grown.size, grown_request);
+  EXPECT_EQ((grown.size + ShmFile::kCombinedHeaderSize) % PageSize(), 0U);
 }
 
 TEST(ShmFile, ConstructionFailureReleasesFdAndSegment) {
