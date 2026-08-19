@@ -6,3 +6,12 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "shm_writer_test",
+    srcs = ["shm_writer_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/shm:shm_writer",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

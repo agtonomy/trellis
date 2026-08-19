@@ -72,6 +72,10 @@ class ShmWriter {
    * `ReleaseWriteAccess` is called. If the shared memory buffer is less than the given minimum size, it will be resized
    * automatically.
    *
+   * A call that throws, or that returns a null `data` pointer, holds no buffer: the write lock is released before the
+   * exception escapes, and the buffer stays available to a later call. Only a call that returns a non-null `data`
+   * pointer may be paired with `ReleaseWriteAccess`.
+   *
    * @param minimum_size Minimum size in bytes required for the write operation.
    * @return WriteInfo Struct containing pointer to buffer and available size.
    */

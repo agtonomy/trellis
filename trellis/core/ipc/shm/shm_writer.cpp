@@ -136,15 +136,22 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
     throw std::runtime_error("ShmWriter::GetWriteAccess - failed to obtain writer lock for every buffer!");
   }
   auto& file = files_[buffer_index_];
-  auto write_info = file.GetWriteInfo();
-  if (write_info.data == nullptr) {
-    throw std::logic_error("ShmWriter::GetWriteAccess got nullptr from write_info");
+  auto& lock = locks_.at(file.Handle());
+  try {
+    auto write_info = file.GetWriteInfo();
+    if (write_info.data == nullptr) {
+      throw std::logic_error("ShmWriter::GetWriteAccess got nullptr from write_info");
+    }
+    if (write_info.size < minimum_size) {
+      file.Resize(minimum_size);
+      write_info = file.GetWriteInfo();
+    }
+    return write_info;
+  } catch (...) {
+    // Release the lock here to prevent leaks before forwarding the exception.
+    lock.Unlock();
+    throw;
   }
-  if (write_info.size < minimum_size) {
-    file.Resize(minimum_size);
-    write_info = file.GetWriteInfo();
-  }
-  return write_info;
 }
 
 void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, const size_t bytes_written,
