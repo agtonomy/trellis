@@ -321,6 +321,18 @@ class SubscriberImpl : public SubscriberBase,
       }
     }
 
+    // Step the simulated clock forward to this message's send_time BEFORE recording receive_time and
+    // invoking callbacks. Under simulated time the clock is driven by inbound messages, so send_time is
+    // "now" at the instant of delivery. Advancing first means:
+    //   - receive_time == send_time, so latency is non-negative (rather than a message that appears to
+    //     arrive before it was sent),
+    //   - application logic calling time::Now() inside the callback observes the message's time, and
+    //   - any timers due up to send_time fire first, preserving event-time order.
+    // The subscriber runs on the event loop thread, so update_sim_fn_ steps the clock synchronously here
+    // (unlike Node::UpdateSimulatedClock, which defers to the loop for off-thread callers). This is a
+    // no-op outside simulated-time mode, leaving wall-clock behavior unchanged.
+    if (update_sim_fn_) update_sim_fn_(send_time);
+
     const auto receive_time = trellis::core::time::Now();
 
     // Track message receive statistics
@@ -338,7 +350,6 @@ class SubscriberImpl : public SubscriberBase,
         callback_(receive_time, send_time, std::make_unique<MsgT>(converter_(*msg)));
       }
     }
-    if (update_sim_fn_) update_sim_fn_(send_time);
   }
 
   /// @brief Creates a new message instance for statically typed messages.

@@ -319,6 +319,31 @@ TEST(TrellisSimulatedClock, UpdateSimulatedClockTicksOneShotTimersOnce) {
   ASSERT_EQ(timer3_ticks, 2);
 }
 
+TEST(TrellisSimulatedClock, ResetOnFirstJumpDoesNotReviveStoppedTimers) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time to 0
+
+  trellis::core::Node node("test_simtime_reset", {});
+
+  unsigned ticks{0};
+  auto timer = node.CreateTimer(1000u, [&ticks](const trellis::core::time::TimePoint&) { ++ticks; });
+
+  // Stop the timer before any time jump. The first jump from time 0 takes the reset branch, which must not
+  // revive an explicitly-stopped (expired) timer.
+  timer->Stop();
+
+  trellis::core::time::TimePoint time{trellis::core::time::Now() + std::chrono::milliseconds(1000)};
+  node.UpdateSimulatedClock(time);  // first jump -> reset branch
+  node.RunOnce();
+
+  // Advance well past several intervals; a correctly-skipped timer never fires.
+  time += std::chrono::milliseconds(5000);
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();
+
+  ASSERT_EQ(ticks, 0u);
+}
+
 TEST(TrellisSimulatedClock, SkipAlignedDropsMissedSlotsUnderASimulatedClock) {
   trellis::core::time::EnableSimulatedClock();
   trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time

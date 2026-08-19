@@ -152,6 +152,17 @@ cc_test(
 )
 
 cc_test(
+    name = "core_sim_clock_test",
+    srcs = ["sim_clock_test.cpp"],
+    deps = [
+        "//trellis/core:core_node",
+        "//trellis/core:core_proto",
+        "//trellis/core:core_time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_event_loop_test",
     srcs = ["event_loop_test.cpp"],
     deps = [

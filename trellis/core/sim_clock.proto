@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package trellis.core;
+
+// Published by the simulation engine (via Node::BroadcastSimulatedClock) to drive
+// simulated time across nodes in separate processes. The message send_time, which
+// the broadcast API sets equal to target_time, is the authoritative time signal:
+// receivers advance their clocks to send_time through the same subscriber trigger
+// every other topic uses. target_time is carried redundantly for self-documentation
+// and consistency checks. epoch is a monotonically increasing step counter owned
+// solely by the simulator.
+message SimClock {
+  uint64 epoch = 1;
+  google.protobuf.Timestamp target_time = 2;
+}

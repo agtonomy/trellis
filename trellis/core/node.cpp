@@ -17,16 +17,18 @@
 
 #include "trellis/core/node.hpp"
 
+#include <memory>
 #include <queue>
 #include <thread>
 
 #include "trellis/core/ipc/utils.hpp"
+#include "trellis/core/sim_controller.hpp"
 #include "trellis/core/timer_options_config.hpp"
 #include "trellis/core/timer_registry.hpp"
 
 using namespace trellis::core;
 
-Node::Node(std::string_view name, trellis::core::Config config)
+Node::Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role)
     : name_{name},
       config_{std::move(config)},
       crash_counter_{config_, name_, trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
@@ -39,6 +41,24 @@ Node::Node(std::string_view name, trellis::core::Config config)
               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
                 return CreateTimer(interval_ms, cb);
               }} {
+  // Resolve the simulated clock role. An explicit role (from the constructor argument) wins; otherwise it
+  // comes from config: ordinary application nodes are followers when trellis.simulated_clock.enabled is
+  // set, and disabled otherwise.
+  sim_clock_role_ =
+      role.value_or(config_.AsIfExists<bool>("trellis.simulated_clock.enabled", false) ? SimClockRole::kFollower
+                                                                                       : SimClockRole::kDisabled);
+
+  // Enable the simulated clock here, at the top of the constructor body, rather than earlier. This is
+  // deliberately after the initializer list has constructed discovery_ (whose management timer must
+  // remain a real wall-clock timer so discovery keeps broadcasting under sim), but before any health,
+  // metrics, or user timer is created so those observe sim mode and are driven by UpdateSimulatedClock.
+  // This ordering is why the role is fixed at construction rather than via a post-construction call, and it
+  // mirrors the long-standing convention of enabling the clock just after constructing a Node. Followers
+  // and publishers both enable the clock; only the SimController subscription (created below) differs.
+  if (sim_clock_role_ != SimClockRole::kDisabled) {
+    time::EnableSimulatedClock();
+  }
+
   Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
   const int unclean_exits = crash_counter_.UncleanExitCount();
   if (unclean_exits > 0) {
@@ -95,6 +115,13 @@ Node::Node(std::string_view name, trellis::core::Config config)
           metrics_->first.Publish(now);
         }));
   }
+
+  // Only a follower subscribes to the clock topic; a publisher generates time and must not also receive it.
+  if (sim_clock_role_ == SimClockRole::kFollower) {
+    const auto clock_topic = config_.AsIfExists<std::string>("trellis.simulated_clock.topic",
+                                                             std::string{SimController::kDefaultClockTopic});
+    sim_controller_ = std::make_unique<SimController>(*this, clock_topic);
+  }
 }
 
 Node::~Node() { Stop(); }
@@ -102,10 +129,19 @@ Node::~Node() { Stop(); }
 int Node::Run() {
   Log::Debug("{} node running...", name_);
   try {
-    while (ShouldRun()) {
-      ev_loop_.RunFor(std::chrono::milliseconds(500));
-      if (ev_loop_.Stopped()) {
-        break;  // the event loop was explicitly stopped
+    if (time::IsSimulatedClockEnabled()) {
+      // Under simulated time the node's application timers have no wall-clock deadline to poll for -- they
+      // fire only as the clock is stepped -- so the node is driven entirely by inbound messages (the sim
+      // clock channel and data topics). Block on event arrival until Stop() rather than waking every 500ms.
+      // Management timers (discovery, subscriber statistics) keep real asio deadlines and are serviced by
+      // this same loop; see TimerKind.
+      ev_loop_.Run();
+    } else {
+      while (ShouldRun()) {
+        ev_loop_.RunFor(std::chrono::milliseconds(500));
+        if (ev_loop_.Stopped()) {
+          break;  // the event loop was explicitly stopped
+        }
       }
     }
   } catch (const std::exception& e) {
@@ -216,100 +252,143 @@ TimerImpl::SchedLatencyStats Node::GetAndResetTimerSchedLatencyStats() {
 }
 
 void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
+  // Route the step onto the event loop for callers that are NOT the subscriber receive path (a publisher's
+  // BroadcastSimulatedClock self-advance, tests driving the clock, etc.). dispatch (rather than post) runs
+  // the step inline when the caller is already on the loop thread, so e.g. a publisher self-advancing from
+  // within the loop sees Now() reach new_time before this returns; when the caller is off the loop thread
+  // (tests/replay calling before RunOnce, or another thread) it queues like post, which is the safe choice
+  // since timers must not fire off the loop thread. Subscribers, always on the loop thread, call
+  // StepSimulatedClock directly to guarantee the synchronous advance before message delivery.
   if (time::IsSimulatedClockEnabled()) {
-    asio::post(*ev_loop_, [this, new_time]() {
-      auto existing_time = time::Now();
-      bool reset_timers{false};
-      if (new_time >= existing_time) {
-        const auto registry = ev_loop_.GetTimerRegistry();
-        // Only timers the simulated clock drives belong here. Anything else is driven by asio and its expiry is a
-        // steady clock reading, so comparing it against simulated time would be comparing two unrelated epochs -- and
-        // since a non-simulated Reload() advances expiry by a single interval, catching such a timer up would spin once
-        // per interval across the gap between those epochs.
-        std::vector<TimerRegistry::Entry> entries;
-        for (const auto& entry : registry->GetEntries()) {
-          if (entry.timer->IsSimulationDriven()) {
-            entries.push_back(entry);
+    asio::dispatch(*ev_loop_, [this, new_time]() { StepSimulatedClock(new_time); });
+  }
+}
+
+void Node::StepSimulatedClock(const time::TimePoint& new_time) {
+  if (!time::IsSimulatedClockEnabled()) {
+    return;
+  }
+  auto existing_time = time::Now();
+  bool reset_timers{false};
+  if (new_time >= existing_time) {
+    const auto registry = ev_loop_.GetTimerRegistry();
+    // Only timers the simulated clock drives belong here. Anything else is driven by asio and its expiry is a
+    // steady clock reading, so comparing it against simulated time would be comparing two unrelated epochs -- and
+    // since a non-simulated Reload() advances expiry by a single interval, catching such a timer up would spin once
+    // per interval across the gap between those epochs.
+    std::vector<TimerRegistry::Entry> entries;
+    for (const auto& entry : registry->GetEntries()) {
+      if (entry.timer->IsSimulationDriven()) {
+        entries.push_back(entry);
+      }
+    }
+    if (!entries.empty()) {
+      if (time::TimePointToMilliseconds(existing_time) != 0) {
+        // A queued timer holds its expiry by value: pop() and push() re-heapify, which runs the comparator against
+        // other queued timers, and a callback fired below may have destroyed one of those. The comparator must
+        // therefore never dereference, and every dereference of a popped timer is guarded by its registration
+        // handle, which -- unlike an address -- the allocator cannot recycle onto a different timer.
+        struct QueuedTimer {
+          TimerImpl* timer{nullptr};
+          TimerRegistry::RegistrationHandle handle{TimerRegistry::kInvalidRegistrationHandle};
+          time::TimePoint expiry;
+        };
+        // Timers sharing an expiry fire in creation order. Handles are monotonic, so ordering on them gives that,
+        // and it keeps the sequence reproducible across runs -- entries arrive here in the registry map's iteration
+        // order, which is unspecified and shifts with its rehash history.
+        auto timer_comp = [](const QueuedTimer& a, const QueuedTimer& b) {
+          return a.expiry != b.expiry ? a.expiry > b.expiry : a.handle > b.handle;
+        };
+        std::priority_queue<QueuedTimer, std::vector<QueuedTimer>, decltype(timer_comp)> expired_timers(timer_comp);
+
+        // First find all the non-cancelled timers that are expiring before our new_time
+        for (const auto& entry : entries) {
+          const auto expiry = entry.timer->GetExpiry();
+          if (!entry.timer->IsCancelled() && new_time >= expiry) {
+            expired_timers.push(QueuedTimer{.timer = entry.timer, .handle = entry.handle, .expiry = expiry});
           }
         }
-        if (!entries.empty()) {
-          if (time::TimePointToMilliseconds(existing_time) != 0) {
-            // A queued timer holds its expiry by value: pop() and push() re-heapify, which runs the comparator against
-            // other queued timers, and a callback fired below may have destroyed one of those. The comparator must
-            // therefore never dereference, and every dereference of a popped timer is guarded by its registration
-            // handle, which -- unlike an address -- the allocator cannot recycle onto a different timer.
-            struct QueuedTimer {
-              TimerImpl* timer{nullptr};
-              TimerRegistry::RegistrationHandle handle{TimerRegistry::kInvalidRegistrationHandle};
-              time::TimePoint expiry;
-            };
-            // Timers sharing an expiry fire in creation order. Handles are monotonic, so ordering on them gives that,
-            // and it keeps the sequence reproducible across runs -- entries arrive here in the registry map's iteration
-            // order, which is unspecified and shifts with its rehash history.
-            auto timer_comp = [](const QueuedTimer& a, const QueuedTimer& b) {
-              return a.expiry != b.expiry ? a.expiry > b.expiry : a.handle > b.handle;
-            };
-            std::priority_queue<QueuedTimer, std::vector<QueuedTimer>, decltype(timer_comp)> expired_timers(timer_comp);
 
-            // First find all the non-cancelled timers that are expiring before our new_time
-            for (const auto& entry : entries) {
-              const auto expiry = entry.timer->GetExpiry();
-              if (!entry.timer->IsCancelled() && new_time >= expiry) {
-                expired_timers.push(QueuedTimer{.timer = entry.timer, .handle = entry.handle, .expiry = expiry});
-              }
-            }
-
-            // Step forward in time while firing the timers that are expiring until there are no more timers to fire
-            while (!expired_timers.empty()) {
-              const auto top = expired_timers.top();
-              expired_timers.pop();
-              // An earlier callback may have destroyed this timer, which deregisters it
-              if (!registry->Contains(top.handle)) {
-                continue;
-              }
-              // Move our simulated time up to the expiration time of this timer, so the callback sees the
-              // moment it was scheduled for, and tell the timer how far we are stepping to so its rearm can
-              // account for the slots between here and there.
-              //
-              // Note that advancing to each expiry in turn means no timer is ever dispatched late here, so
-              // passing the target is a deliberate choice rather than a measurement: a caller stepping well
-              // past a timer's expiry is treated as that timer having fallen behind. That is what lets a
-              // rearm policy mean the same thing in a replay as it does on a real clock. Only
-              // RearmPolicy::kSkipAligned acts on it; kCatchUp replays every slot either way.
-              time::SetSimulatedTime(top.expiry);
-              top.timer->Fire(new_time);  // Fire the timer (which updates the expiry time also)
-
-              // The callback we just ran may have destroyed this timer too
-              if (!registry->Contains(top.handle) || top.timer->GetType() == TimerImpl::Type::kOneShot) {
-                continue;
-              }
-              // If our expiry time is still earlier than our new_time, put it back in the queue for another go.
-              // The cancelled check matters as much as the expiry one: firing skips the rearm for a timer whose
-              // callback stopped it, and the rearm is the only thing that advances a periodic timer's expiry, so
-              // without it this re-queues the same timer against the same expiry forever.
-              const auto next_expiry = top.timer->GetExpiry();
-              if (!top.timer->IsCancelled() && new_time >= next_expiry) {
-                expired_timers.push(QueuedTimer{.timer = top.timer, .handle = top.handle, .expiry = next_expiry});
-              }
-            }
-          } else {
-            // This is our first jump forward in time, reset all the timers so their expiry times are sane
-            reset_timers = true;
+        // Step forward in time while firing the timers that are expiring until there are no more timers to fire
+        while (!expired_timers.empty()) {
+          const auto top = expired_timers.top();
+          expired_timers.pop();
+          // An earlier callback may have destroyed this timer, which deregisters it
+          if (!registry->Contains(top.handle)) {
+            continue;
           }
-        }
-        time::SetSimulatedTime(new_time);
-        // If we need to reset timers, it needs to happen after the new time is updated. Reusing the entries read above
-        // is safe here because this branch is mutually exclusive with the one that fires callbacks, so nothing has run
-        // that could have destroyed a timer since.
-        if (reset_timers) {
-          for (const auto& entry : entries) {
-            entry.timer->Reset();
+          // Move our simulated time up to the expiration time of this timer, so the callback sees the
+          // moment it was scheduled for, and tell the timer how far we are stepping to so its rearm can
+          // account for the slots between here and there.
+          //
+          // Note that advancing to each expiry in turn means no timer is ever dispatched late here, so
+          // passing the target is a deliberate choice rather than a measurement: a caller stepping well
+          // past a timer's expiry is treated as that timer having fallen behind. That is what lets a
+          // rearm policy mean the same thing in a replay as it does on a real clock. Only
+          // RearmPolicy::kSkipAligned acts on it; kCatchUp replays every slot either way.
+          time::SetSimulatedTime(top.expiry);
+          top.timer->Fire(new_time);  // Fire the timer (which updates the expiry time also)
+
+          // The callback we just ran may have destroyed this timer too
+          if (!registry->Contains(top.handle) || top.timer->GetType() == TimerImpl::Type::kOneShot) {
+            continue;
+          }
+          // If our expiry time is still earlier than our new_time, put it back in the queue for another go.
+          // The cancelled check matters as much as the expiry one: firing skips the rearm for a timer whose
+          // callback stopped it, and the rearm is the only thing that advances a periodic timer's expiry, so
+          // without it this re-queues the same timer against the same expiry forever.
+          const auto next_expiry = top.timer->GetExpiry();
+          if (!top.timer->IsCancelled() && new_time >= next_expiry) {
+            expired_timers.push(QueuedTimer{.timer = top.timer, .handle = top.handle, .expiry = next_expiry});
           }
         }
       } else {
-        Log::Debug("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
-                   time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
+        // This is our first jump forward in time, reset all the timers so their expiry times are sane
+        reset_timers = true;
       }
-    });
+    }
+    time::SetSimulatedTime(new_time);
+    // If we need to reset timers, it needs to happen after the new time is updated. Reusing the entries read above
+    // is safe here because this branch is mutually exclusive with the one that fires callbacks, so nothing has run
+    // that could have destroyed a timer since.
+    if (reset_timers) {
+      for (const auto& entry : entries) {
+        // Only re-base timers that are still pending. Reset() clears both did_fire_ and cancelled_, so
+        // resetting an already-expired timer (a one-shot that fired, or any timer explicitly stopped)
+        // would silently bring it back to life. This mirrors the !IsCancelled() guard in the fire path.
+        if (!entry.timer->Expired()) {
+          entry.timer->Reset();
+        }
+      }
+    }
+  } else {
+    Log::Debug("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
+               time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
   }
+}
+
+void Node::BroadcastSimulatedClock(uint64_t epoch, const time::TimePoint& target_time) {
+  if (sim_clock_role_ != SimClockRole::kPublisher) {
+    Log::Warn(
+        "BroadcastSimulatedClock called on a node whose role is not kPublisher; a follower must not "
+        "also generate the clock");
+  }
+
+  if (sim_clock_publisher_ == nullptr) {
+    const auto clock_topic = config_.AsIfExists<std::string>("trellis.simulated_clock.topic",
+                                                             std::string{SimController::kDefaultClockTopic});
+    sim_clock_publisher_ = CreatePublisher<SimClock>(clock_topic);
+  }
+  SimClock msg;
+  msg.set_epoch(epoch);
+  *msg.mutable_target_time() = time::TimePointToTimestamp(target_time);
+  // Send with an explicit send_time equal to target_time: that send_time is the signal receivers use to
+  // advance their clocks (see SimController), which is the single mechanism shared with every other topic.
+  sim_clock_publisher_->Send(msg, target_time);
+
+  // Advance our own clock to the time we just broadcast, via the same mechanism followers use. Without this
+  // the publisher's Now() would never move and its own data/timers would be stamped/fired at the wrong
+  // time. See the header for the ordering caveat: UpdateSimulatedClock defers to the event loop, so Now()
+  // only reaches target_time once the loop runs.
+  UpdateSimulatedClock(target_time);
 }

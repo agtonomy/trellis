@@ -21,6 +21,7 @@
 #include <asio.hpp>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -36,6 +37,7 @@
 #include "trellis/core/ipc/proto/rpc/server.hpp"
 #include "trellis/core/logging.hpp"
 #include "trellis/core/publisher.hpp"
+#include "trellis/core/sim_clock.pb.h"
 #include "trellis/core/subscriber.hpp"
 #include "trellis/core/subscriber_base.hpp"
 #include "trellis/core/time.hpp"
@@ -45,6 +47,8 @@
 
 namespace trellis {
 namespace core {
+
+class SimController;
 
 /**
  * Node A class to represent each actor in the actor pattern
@@ -65,12 +69,34 @@ class Node {
   using SignalHandler = std::function<void(int)>;
 
   /**
+   * SimClockRole the role this node plays with respect to simulated time.
+   *
+   * - kDisabled: normal operation on the system (wall) clock.
+   * - kFollower: simulated time is enabled and the node subscribes to the clock topic, advancing its
+   *   clock from received SimClock messages (see SimController). This is the role for ordinary application
+   *   nodes, which do not know at compile time whether they will run in simulation, so it is selected at
+   *   runtime via the trellis.simulated_clock.enabled config flag.
+   * - kPublisher: simulated time is enabled but the node does NOT subscribe; it generates time and drives
+   *   it forward via BroadcastSimulatedClock. This is the role for the simulation engine, which knows at
+   *   compile time that it is the clock source, so it is selected explicitly via the constructor argument.
+   *
+   * Note: kFollower and kPublisher both enable the process-global simulated clock; they differ only in
+   * whether a SimController subscription is created and in who advances time.
+   */
+  enum class SimClockRole { kDisabled, kFollower, kPublisher };
+
+  /**
    * Node Construct an instance
    *
    * @param name the name of the application this instance represents
    * @param config the config object
+   * @param role the simulated clock role. When omitted (std::nullopt), the role is resolved from config:
+   *        kFollower if trellis.simulated_clock.enabled is set, otherwise kDisabled. The simulation engine
+   *        passes kPublisher explicitly. The role is fixed at construction because enabling the simulated
+   *        clock must happen before the node's timers are created (see the constructor body for the
+   *        ordering rationale), which a post-construction call could not guarantee.
    */
-  Node(std::string_view name, trellis::core::Config config);
+  Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role = std::nullopt);
 
   ~Node();
 
@@ -128,7 +154,9 @@ class Node {
       typename trellis::core::SubscriberImpl<SerializableT, MsgT, ConverterT>::Callback callback,
       std::optional<unsigned> watchdog_timeout_ms = {}, TimerImpl::Callback watchdog_callback = {},
       std::optional<double> max_frequency = {}, ConverterT converter = {}) {
-    auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
+    // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
+    // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
+    auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
     Timer watchdog_timer{};
 
@@ -218,7 +246,9 @@ class Node {
                                     std::optional<unsigned> watchdog_timeout_ms = {},
                                     TimerImpl::Callback watchdog_callback = {},
                                     std::optional<double> max_frequency = {}) {
-    auto update_sim_fn = [this](const time::TimePoint& time) { UpdateSimulatedClock(time); };
+    // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
+    // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
+    auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
     const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
 
     const auto impl = std::make_shared<SubscriberImpl<google::protobuf::Message>>(
@@ -484,6 +514,25 @@ class Node {
   void UpdateSimulatedClock(const time::TimePoint& new_time);
 
   /**
+   * BroadcastSimulatedClock publish a simulated clock update on the configured clock topic.
+   *
+   * Intended for the simulation engine (a kPublisher node) to drive simulated time across all nodes. The
+   * update is sent with its send_time set to target_time; that send_time is the signal receiving nodes use
+   * to advance their clocks (see SimController). The clock publisher is created lazily on first use.
+   *
+   * This also advances the publisher's OWN clock to target_time via UpdateSimulatedClock, so that the
+   * publisher's Now() and timers track the time it broadcasts (otherwise its own clock would never move and
+   * any data it publishes would be stamped at the wrong time). Because UpdateSimulatedClock defers its work
+   * to the event loop, the local clock reaches target_time only once the loop runs; a publisher that stamps
+   * outgoing data from Now() must therefore publish that data from within the event loop (after this
+   * advance is processed), not synchronously on the line after this call returns.
+   *
+   * @param epoch a monotonically increasing step counter owned by the simulator
+   * @param target_time the simulated time receiving nodes should advance to
+   */
+  void BroadcastSimulatedClock(uint64_t epoch, const time::TimePoint& target_time);
+
+  /**
    * GetConfig retrieve a reference to the loaded configuration object
    *
    * @return the config object
@@ -541,6 +590,12 @@ class Node {
   void MarkUncleanExit() { crash_counter_.MarkUncleanExit(); }
 
  private:
+  // Synchronously advance the simulated clock to new_time, firing any timers due in between. This is the
+  // body behind UpdateSimulatedClock (which posts a call to it). The subscriber receive path calls it
+  // directly because it already runs on the event loop thread; off-thread callers must go through the
+  // posted UpdateSimulatedClock instead. No-op when the simulated clock is disabled.
+  void StepSimulatedClock(const time::TimePoint& new_time);
+
   // Helper to determine if we should not be running anymore
   bool ShouldRun();
 
@@ -577,6 +632,15 @@ class Node {
 
   // Optional metrics publisher and timer for internal node metrics (always constructed together)
   std::optional<std::pair<trellis::utils::metrics::MetricsPublisher, Timer>> metrics_;
+
+  // The simulated clock role resolved at construction (see SimClockRole)
+  SimClockRole sim_clock_role_{SimClockRole::kDisabled};
+
+  // Subscribes to the clock topic and advances this node's clock; only created for the kFollower role
+  std::unique_ptr<SimController> sim_controller_;
+
+  // Publisher for broadcasting simulated clock updates; created lazily by BroadcastSimulatedClock
+  Publisher<SimClock> sim_clock_publisher_;
 };
 
 }  // namespace core

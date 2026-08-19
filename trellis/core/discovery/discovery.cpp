@@ -19,6 +19,7 @@
 
 #include <fmt/core.h>
 
+#include <chrono>
 #include <ranges>
 #include <utility>
 
@@ -27,6 +28,9 @@
 namespace trellis::core::discovery {
 
 namespace {
+
+// This is used to prevent rapid cache aging from simulation clock jumps
+time::TimePoint DiscoveryNow() { return std::chrono::steady_clock::now(); }
 
 /**
  * Creates and returns a socket file descriptor with SO_REUSEADDR and SO_REUSEPORT
@@ -139,14 +143,14 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
                               static_cast<asio::ip::udp::socket::native_handle_type>(CreateNativeUDPSocket(
                                   config_.discovery_port, config_.rcvbuf_size, config_.sndbuf_size)),
                               [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
-                                ReceiveData(trellis::core::time::Now(), data, len);
+                                ReceiveData(DiscoveryNow(), data, len);
                               })),
       udp_sender_(config_.loopback_enabled
                       ? std::nullopt
                       : std::make_optional<trellis::network::UDP>(
                             loop, CreateNativeUDPSocket(0, config_.rcvbuf_size, config_.sndbuf_size))),
       management_timer_{std::make_shared<PeriodicTimerImpl>(
-          loop, [this](const time::TimePoint& now) { Evaluate(now); }, config_.management_interval,
+          loop, [this](const time::TimePoint&) { Evaluate(DiscoveryNow()); }, config_.management_interval,
           config_.management_interval, TimerKind::kManagement)} {
   Register(utils::GetNodeProcessSample(node_name_));
 }
@@ -417,9 +421,8 @@ void Discovery::BroadcastSample(const Sample& sample) {
 
       // Loopback mode is only for testing or replay, so the extra copy is acceptable.
       auto buffer_copy = std::make_shared<std::vector<uint8_t>>(send_buf_.begin(), send_buf_.begin() + packet_size);
-      asio::post(*loop_, [this, buffer_copy]() {
-        ReceiveData(trellis::core::time::Now(), buffer_copy->data(), buffer_copy->size());
-      });
+      asio::post(*loop_,
+                 [this, buffer_copy]() { ReceiveData(DiscoveryNow(), buffer_copy->data(), buffer_copy->size()); });
     }
 
     payload_offset += chunk_size;

@@ -195,9 +195,11 @@ cc_library(
     name = "core_node",
     srcs = [
         "node.cpp",
+        "sim_controller.cpp",
     ],
     hdrs = [
         "node.hpp",
+        "sim_controller.hpp",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -206,9 +208,11 @@ cc_library(
         ":core_crash_counter",
         ":core_event_loop",
         ":core_health",
+        ":core_proto",
         ":core_proto_utils",
         ":core_publisher",
         ":core_subscriber",
+        ":core_time",
         ":core_timer_options_config",
         ":core_timer_registry",
         "//trellis/core/ipc:named_resource_registry",
@@ -387,6 +391,7 @@ proto_library(
         "health_status.proto",
         "quaternion.proto",
         "rigid_transform.proto",
+        "sim_clock.proto",
         "timestamped_message.proto",
         "vector3.proto",
     ],
