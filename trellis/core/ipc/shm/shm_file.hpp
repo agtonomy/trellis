@@ -19,8 +19,11 @@
 #define TRELLIS_CORE_IPC_SHM_SHM_FILE_HPP_
 
 #include <array>
+#include <atomic>
+#include <cstddef>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/ipc/shm/mapping.hpp"
@@ -68,11 +71,26 @@ class ShmFile {
    */
   struct SMemFileHeader {
     uint16_t hdr_size = sizeof(SMemFileHeader);  ///< Size of this header.
+    std::array<std::uint8_t, 6> padding = {};    ///< Padding for 64-bit word alignment.
     uint64_t data_size = 0;                      ///< Size of the payload data.
     uint64_t sequence = 0;                       ///< Sequence number for versioning.
     uint64_t clock = 0;                          ///< Timestamp or clock value.
     uint64_t writer_id = 0;                      ///< ID of the writer process.
+    /// Seqlock counter for this slot: odd while a write is in progress, even at rest. Writers increment it through
+    /// std::atomic_ref under the slot's write lock. Readers copy this struct by value through the reader callback,
+    /// reading this word non-atomically, which is race-free because they hold the slot's read lock.
+    uint64_t generation = 0;
   };
+
+  static_assert(std::is_trivially_copyable_v<SMemFileHeader>);
+  // 2 (hdr_size) + 6 (padding) + 8 each for data_size, sequence, clock, writer_id, generation
+  static_assert(sizeof(SMemFileHeader) == 48);
+  static_assert(std::atomic_ref<uint64_t>::is_always_lock_free);
+  // std::atomic_ref requires its referent to be suitably aligned. mmap returns page-aligned addresses, so the
+  // generation word is 8-byte aligned iff its offset from the start of the mapping is.
+  static_assert((sizeof(ShmHeader) + offsetof(SMemFileHeader, generation)) %
+                    std::atomic_ref<uint64_t>::required_alignment ==
+                0);
 
   /**
    * @brief Total size of both headers combined.
@@ -125,6 +143,23 @@ class ShmFile {
    * @return A ReadInfo structure containing the data pointer and size.
    */
   ReadInfo GetReadInfo();
+
+  /**
+   * @brief Opens the seqlock window on this slot, marking the payload as being rewritten.
+   *
+   * Must be called by the writer with this slot's write lock held, after any resize and before the first payload
+   * store. The release fence keeps the subsequent payload stores from being reordered ahead of the counter bump; a
+   * release operation on the counter alone would not, as release only orders the operations that precede it.
+   */
+  void BeginWriteGeneration();
+
+  /**
+   * @brief Closes the seqlock window on this slot, marking the payload as stable again.
+   *
+   * Must be called by the writer with this slot's write lock still held, after the payload and both headers are
+   * complete.
+   */
+  void EndWriteGeneration();
 
   /**
    * @brief Gets the handle (name) of the shared memory object.

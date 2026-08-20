@@ -125,6 +125,7 @@ ShmWriter::ShmWriter(std::string_view node_name, trellis::core::EventLoop loop, 
 
 ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
   if (files_.empty()) {
+    // Nothing was locked and no generation window was opened, so this return must not be paired with a release
     return ShmFile::WriteInfo{};
   }
   if (buffer_index_ >= files_.size()) {
@@ -158,6 +159,7 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
       file.Resize(minimum_size);
       write_info = file.GetWriteInfo();
     }
+    file.BeginWriteGeneration();
     return write_info;
   } catch (...) {
     // Release the lock here to prevent leaks before forwarding the exception.
@@ -171,13 +173,22 @@ void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, co
   auto& file = files_.at(buffer_index_);
   auto& lock = locks_.at(file.Handle());
 
-  {  // The header writes can throw; the lock has to be released either way
+  {  // The header writes can throw; the lock has to be released and the seqlock window closed either way
     ShmReadWriteLock::UnlockGuard guard{lock};
-    if (success) {
-      file.SetHeader(bytes_written);
-      ++sequence_;
-      file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
+    try {
+      if (success) {
+        file.SetHeader(bytes_written);
+        ++sequence_;
+        file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
+      }
+    } catch (...) {
+      // A skipped increment would invert the slot's parity for its lifetime
+      file.EndWriteGeneration();
+      throw;
     }
+    // Runs even on the abandoned-write path: the caller may have partially clobbered the previous contents, so any
+    // outstanding borrow of them has to be invalidated.
+    file.EndWriteGeneration();
   }
 
   if (success) {

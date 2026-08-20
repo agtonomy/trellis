@@ -99,6 +99,11 @@ std::shared_ptr<Mapping> Map(const int fd, const bool owner, const size_t reques
     header->header_size = sizeof(ShmFile::ShmHeader);
     header->cur_data_size = sizeof(ShmFile::SMemFileHeader);
     header->max_data_size = map_size - ShmFile::kCombinedHeaderSize;
+    // SMemFileHeader is never constructed over the zero-filled pages, so its default initializer never runs. Stamp
+    // hdr_size here so GetReadInfo's version check doesn't misfire on a never-written slot.
+    ShmFile::SMemFileHeader* file_header =
+        reinterpret_cast<ShmFile::SMemFileHeader*>(static_cast<uint8_t*>(map->Addr()) + sizeof(ShmFile::ShmHeader));
+    file_header->hdr_size = sizeof(ShmFile::SMemFileHeader);
   } else {
     // Each process, whether owner or not, has to decide how large of a region of memory to map into the process'
     // address space. In the case of a non-owner (reader), we use the header metadata to know how much memory to map.
@@ -186,7 +191,26 @@ ShmFile::ReadInfo ShmFile::GetReadInfo() {
 
   const auto* base = static_cast<const uint8_t*>(map_->Addr());
   const SMemFileHeader& memfile_header = *reinterpret_cast<const SMemFileHeader*>(base + sizeof(ShmHeader));
+  // Sanity check that writer and readers have the same header size.
+  if (memfile_header.hdr_size != sizeof(SMemFileHeader)) {
+    throw std::runtime_error(
+        fmt::format("ShmFile::GetReadInfo file header size mismatch for {}: shared memory reports {}, this build "
+                    "expects {}. Mixed shared memory versions are not supported.",
+                    handle_, memfile_header.hdr_size, sizeof(SMemFileHeader)));
+  }
+
   return ReadInfo{.data = base + kCombinedHeaderSize, .size = memfile_header.data_size};
+}
+
+void ShmFile::BeginWriteGeneration() {
+  std::atomic_ref<uint64_t> generation{GetMutableFileHeader().generation};
+  generation.fetch_add(1, std::memory_order_relaxed);
+  std::atomic_thread_fence(std::memory_order_release);
+}
+
+void ShmFile::EndWriteGeneration() {
+  std::atomic_ref<uint64_t> generation{GetMutableFileHeader().generation};
+  generation.fetch_add(1, std::memory_order_release);
 }
 
 ShmFile::WriteInfo ShmFile::GetWriteInfo() {

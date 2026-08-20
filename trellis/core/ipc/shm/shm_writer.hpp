@@ -72,9 +72,9 @@ class ShmWriter {
    * `ReleaseWriteAccess` is called. If the shared memory buffer is less than the given minimum size, it will be resized
    * automatically.
    *
-   * A call that throws, or that returns a null `data` pointer, holds no buffer: the write lock is released before the
-   * exception escapes, and the buffer stays available to a later call. Only a call that returns a non-null `data`
-   * pointer may be paired with `ReleaseWriteAccess`.
+   * Opens the slot's seqlock window. A call that throws, or that returns a null `data` pointer, holds no buffer: the
+   * write lock is released before the exception escapes, and the buffer stays available to a later call. Only a call
+   * that returns a non-null `data` pointer may be paired with `ReleaseWriteAccess`.
    *
    * @param minimum_size Minimum size in bytes required for the write operation.
    * @return WriteInfo Struct containing pointer to buffer and available size.
@@ -84,7 +84,7 @@ class ShmWriter {
   /**
    * @brief Releases the previously acquired write buffer and optionally notifies readers.
    *
-   * This function unlocks the write lock and, if the write was successful, signals
+   * This function closes the slot's seqlock window, unlocks the write lock and, if the write was successful, signals
    * subscribed readers with a socket event.
    *
    * The write lock is released unconditionally. Stamping the headers can throw, and a throw leaves the buffer
@@ -99,7 +99,8 @@ class ShmWriter {
   /**
    * @brief Releases a buffer acquired with `GetWriteAccess` when the enclosing scope exits.
    *
-   * A buffer that is never released holds its write lock forever, and every subsequent read of it fails. The
+   * A buffer that is never released holds its write lock forever and leaves its generation odd, and every subsequent
+   * read or borrow validation of it fails. The
    * destructor releases unconditionally, so a throw between acquire and release abandons the write instead of
    * wedging the buffer. Call `Commit` after a completed write to publish it to readers; without it, release
    * discards the write.

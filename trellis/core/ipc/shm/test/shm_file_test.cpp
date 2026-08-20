@@ -136,6 +136,18 @@ TEST(ShmFile, ConstructionFailureReleasesFdAndSegment) {
   EXPECT_FALSE(std::filesystem::exists("/dev/shm/" + handle));
 }
 
+TEST(ShmFile, FreshSlotPassesHeaderSizeCheck) {
+  const trellis::core::Config config;
+  const auto handle = UniqueHandle("fresh_hdr");
+  ShmFile owner(handle, true, kRequestedSize, config);
+  ShmFile reader(handle, false, 0, config);
+  ASSERT_TRUE(reader.IsInitialized());
+  // hdr_size is stamped at creation, not first write: the version check must not throw on a never-written slot
+  EXPECT_EQ(reader.GetFileHeader().hdr_size, sizeof(ShmFile::SMemFileHeader));
+  const auto read_info = reader.GetReadInfo();
+  EXPECT_EQ(read_info.size, 0U);
+}
+
 TEST(ShmFile, MissingSegmentHoldsNoFd) {
   const trellis::core::Config config;
   const auto baseline = CountOpenFds();
