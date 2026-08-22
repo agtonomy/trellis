@@ -73,7 +73,7 @@ class ShmFile {
     uint16_t hdr_size = sizeof(SMemFileHeader);  ///< Size of this header.
     std::array<std::uint8_t, 6> padding = {};    ///< Padding for 64-bit word alignment.
     uint64_t data_size = 0;                      ///< Size of the payload data.
-    uint64_t sequence = 0;                       ///< Sequence number for versioning.
+    uint64_t sequence = 0;                       ///< Version counter; 0 means never written or invalidated.
     uint64_t clock = 0;                          ///< Timestamp or clock value.
     uint64_t writer_id = 0;                      ///< ID of the writer process.
     /// Seqlock counter for this slot: odd while a write is in progress, even at rest. Writers increment it through
@@ -162,6 +162,19 @@ class ShmFile {
   void EndWriteGeneration();
 
   /**
+   * @brief Zeroes the committed sequence, marking this slot's message stale.
+   *
+   * An abandoned or partially stamped write may have clobbered the payload while the header still describes the
+   * previously committed message. A lagging reader draining an old event for this slot would pass the header checks
+   * and deliver the clobbered bytes. Zeroing the sequence makes such a reader drop the slot as an already-seen
+   * message; the next successful write re-stamps the real sequence. The size fields are left alone, so the slot is
+   * identified as stale by its sequence rather than by an empty payload.
+   *
+   * Must be called by the writer with this slot's write lock held.
+   */
+  void InvalidateSequence();
+
+  /**
    * @brief Gets the handle (name) of the shared memory object.
    * @return Constant reference to the handle string.
    */
@@ -180,7 +193,7 @@ class ShmFile {
    * @param now the current timepoint
    * @param writer_id the unique writer id
    */
-  void SetFileHeader(size_t bytes_written, unsigned sequence, const trellis::core::time::TimePoint& now,
+  void SetFileHeader(size_t bytes_written, uint64_t sequence, const trellis::core::time::TimePoint& now,
                      uint64_t writer_id);
 
   /**

@@ -223,7 +223,7 @@ ShmFile::WriteInfo ShmFile::GetWriteInfo() {
   return WriteInfo{.data = static_cast<uint8_t*>(map_->Addr()) + kCombinedHeaderSize, .size = data_size_available};
 }
 
-void ShmFile::SetFileHeader(const size_t bytes_written, const unsigned sequence,
+void ShmFile::SetFileHeader(const size_t bytes_written, const uint64_t sequence,
                             const trellis::core::time::TimePoint& now, const uint64_t writer_id) {
   auto& file_header = GetMutableFileHeader();
   file_header.hdr_size = sizeof(ShmFile::SMemFileHeader);
@@ -232,6 +232,8 @@ void ShmFile::SetFileHeader(const size_t bytes_written, const unsigned sequence,
   file_header.clock = trellis::core::time::TimePointToNanoseconds(now);
   file_header.writer_id = writer_id;
 }
+
+void ShmFile::InvalidateSequence() { GetMutableFileHeader().sequence = 0; }
 
 void ShmFile::SetHeader(const size_t bytes_written) {
   GetHeader().cur_data_size = sizeof(ShmFile::SMemFileHeader) + bytes_written;

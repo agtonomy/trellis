@@ -92,7 +92,8 @@ class ShmWriter {
    *
    * @param now The timestamp of the write operation.
    * @param bytes_written Number of bytes written to the buffer.
-   * @param success Whether the write was successful (used to determine if readers should be notified).
+   * @param success Whether the write completed. A false value both skips notifying readers and invalidates the
+   *   slot's committed sequence, since an abandoned write may have clobbered the payload under it.
    */
   void ReleaseWriteAccess(const trellis::core::time::TimePoint& now, size_t bytes_written, bool success);
 
@@ -195,7 +196,7 @@ class ShmWriter {
   std::unordered_map<std::string, unix::SocketEvent>
       events_{};              ///< Active reader socket event mappings keyed by reader ID.
   unsigned buffer_index_{0};  ///< Current buffer index for round-robin writing.
-  unsigned sequence_{0};      ///< Monotonic sequence number for write tracking.
+  uint64_t sequence_{0};      ///< Monotonic sequence number for write tracking; 0 is never stamped on a publish.
 };
 
 }  // namespace trellis::core::ipc::shm

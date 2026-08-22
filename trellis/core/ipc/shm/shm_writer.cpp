@@ -178,10 +178,18 @@ void ShmWriter::ReleaseWriteAccess(const trellis::core::time::TimePoint& now, co
     try {
       if (success) {
         file.SetHeader(bytes_written);
+        // Advance the counter only once the stamp is durable, so a throw cannot burn a sequence number that
+        // subscribers would then report as a dropped message
+        file.SetFileHeader(bytes_written, sequence_ + 1, now, static_cast<uint64_t>(writer_id_));
         ++sequence_;
-        file.SetFileHeader(bytes_written, sequence_, now, static_cast<uint64_t>(writer_id_));
+      } else {
+        // The abandoned write may have clobbered the payload the committed header still describes
+        file.InvalidateSequence();
       }
     } catch (...) {
+      // A half-stamped header leaves the same hazard as an abandoned write. This throws only when the slot is
+      // unmapped, in which case the generation counter below is unreachable anyway
+      file.InvalidateSequence();
       // A skipped increment would invert the slot's parity for its lifetime
       file.EndWriteGeneration();
       throw;

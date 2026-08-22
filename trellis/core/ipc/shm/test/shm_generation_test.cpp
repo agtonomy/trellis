@@ -115,19 +115,26 @@ TEST_F(ShmGenerationTest, GenerationIsOddWhileWriteIsInProgress) {
   EXPECT_EQ(GenerationOf(0), at_rest + 2);
 }
 
-TEST_F(ShmGenerationTest, AbandonedWriteAdvancesGenerationWithoutPublishing) {
+TEST_F(ShmGenerationTest, AbandonedWriteAdvancesGenerationAndInvalidatesTheSequence) {
   CreateWriter(/* num_buffers = */ 1);
   Write("original");
   const auto after_write = Slot(0).GetFileHeader();
+  ASSERT_GT(after_write.sequence, 0U);
 
   WriteAndAbandon("clobbered by a partial serialize");
 
   const auto after_abandon = Slot(0).GetFileHeader();
   EXPECT_EQ(after_abandon.generation, after_write.generation + 2);
   EXPECT_EQ(after_abandon.generation % 2, 0U);
-  // The abandoned write publishes nothing, so the committed metadata is untouched even though the bytes are not
-  EXPECT_EQ(after_abandon.sequence, after_write.sequence);
+  // The clobbered bytes no longer match the committed header, so the sequence is zeroed: a reader draining a stale
+  // event for this slot compares it against the last sequence it consumed and drops the slot instead of delivering the
+  // clobbered payload
+  EXPECT_EQ(after_abandon.sequence, 0U);
   EXPECT_EQ(after_abandon.data_size, after_write.data_size);
+
+  // The next successful write re-stamps the real sequence over the zeroed one, so readers deliver it again
+  Write("retry");
+  EXPECT_EQ(Slot(0).GetFileHeader().sequence, after_write.sequence + 1);
 }
 
 TEST_F(ShmGenerationTest, GenerationSurvivesGrowingTheSlot) {

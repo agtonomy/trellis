@@ -91,6 +91,10 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
       // chance to read it, then we can get into this case here where our last header's sequence number was the
       // overwritten (newer) message, and then the current sequence number is now from an older message
 
+      // A zeroed sequence lands here too: the writer abandoned a write that had already clobbered this slot, so the
+      // message this event announced no longer exists. The warning above cannot tell the two apart, so a burst of it
+      // does not by itself mean the subscriber is falling behind.
+
       // We don't want to call back with the older message so we'll drop it.
       // We already collect metrics of dropped messages at the subscriber layer, so here we just keep an internal count
       // for logging.
