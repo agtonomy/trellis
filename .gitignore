@@ -27,6 +27,7 @@
 # Bazel things
 bazel-*
 .cache
+user.bazelrc
 
 # Python defaults
 *.pyc

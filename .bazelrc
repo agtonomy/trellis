@@ -7,5 +7,10 @@ build --experimental_cc_shared_library
 # Default all tests to show errors
 test --test_output=errors
 
+# Enforce that MODULE.bazel.lock is committed and up to date. Enabled only via
+# --config=ci so local builds keep Bazel's default (update) and regenerate the
+# lock file instead of failing when dependencies change.
+common:ci --lockfile_mode=error
+
 # User-specific .bazelrc
 try-import user.bazelrc
