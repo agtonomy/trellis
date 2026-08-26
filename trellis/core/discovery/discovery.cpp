@@ -305,52 +305,65 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
 
 namespace {
 
-void ProcessSamplesMap(Discovery::SamplesMap& map, trellis::core::time::TimePoint now, Discovery::EventType event,
-                       Sample sample) {
+/**
+ * @brief Adds or removes a sample in the given map, consuming the sample on a registration
+ *
+ * @param map The map of samples to update
+ * @param now The time the sample was received
+ * @param event Whether the sample is a registration or an unregistration
+ * @param sample The sample to store or remove, moved into the map on a registration
+ * @return The sample to hand to callbacks: the stored one on a registration, otherwise the argument. Both outlive
+ *         the call, since unordered_map element references survive rehashing and nothing reachable from a callback
+ *         erases from these maps.
+ */
+const Sample& ProcessSamplesMap(Discovery::SamplesMap& map, trellis::core::time::TimePoint now,
+                                Discovery::EventType event, Sample&& sample) {
   if (event == Discovery::EventType::kNewRegistration) {
-    const auto topic_id = sample.id();  // copy map key before moving sample
-    map[topic_id] = Discovery::TimestampedSample{.stamp = now, .sample = std::move(sample)};
-  } else if (event == Discovery::EventType::kNewUnregistration) {
-    auto it = map.find(sample.id());
-    if (it != map.end()) {
-      map.erase(it);
-    }
+    // The key has to be read before `sample` is moved from, hence the separate statements.
+    auto& entry = map[sample.id()];
+    entry.stamp = now;
+    entry.sample = std::move(sample);
+    return entry.sample;
   }
+  if (event == Discovery::EventType::kNewUnregistration) {
+    map.erase(sample.id());
+  }
+  return sample;
 }
 
 }  // namespace
 
 void Discovery::ProcessProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  ProcessSamplesMap(process_samples_, now, event, sample);
+  ProcessSamplesMap(process_samples_, now, event, std::move(sample));
 }
 
 void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  ProcessSamplesMap(subscriber_samples_, now, event, sample);
+  const Sample& callback_sample = ProcessSamplesMap(subscriber_samples_, now, event, std::move(sample));
   std::lock_guard guard(callback_mutex_);
   for (const auto& callback : subscriber_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, sample);
+    if (callback) callback(event, callback_sample);
   }
 }
 
 void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  ProcessSamplesMap(publisher_samples_, now, event, sample);
+  const Sample& callback_sample = ProcessSamplesMap(publisher_samples_, now, event, std::move(sample));
   std::lock_guard guard(callback_mutex_);
   for (const auto& callback : publisher_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, sample);
+    if (callback) callback(event, callback_sample);
   }
 }
 
 void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  ProcessSamplesMap(service_samples_, now, event, sample);
+  const Sample& callback_sample = ProcessSamplesMap(service_samples_, now, event, std::move(sample));
   std::lock_guard guard(callback_mutex_);
   for (const auto& callback : service_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, sample);
+    if (callback) callback(event, callback_sample);
   }
 }
 
 Discovery::RegistrationHandle Discovery::Register(Sample sample) {
   std::lock_guard lock(registered_samples_mutex_);
-  registered_samples_.emplace(std::make_pair(next_handle_, sample));
+  registered_samples_.emplace(next_handle_, std::move(sample));
   const auto handle = next_handle_++;
   return handle;
 }

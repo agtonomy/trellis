@@ -101,6 +101,8 @@ class Discovery {
   /**
    * @brief Callback invoked on new or removed discovery samples
    *
+   * The sample reference is only valid for the duration of the call and may alias an entry in an internal map.
+   *
    * @param event Type of event (registration or unregistration)
    * @param sample The discovery sample affected
    */
