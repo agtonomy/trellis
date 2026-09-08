@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CORE_SUBSCRIBER_V2_HPP_
 #define TRELLIS_CORE_SUBSCRIBER_V2_HPP_
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <ranges>
 #include <type_traits>

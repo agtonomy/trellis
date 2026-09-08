@@ -17,7 +17,7 @@
 
 #include "trellis/core/ipc/shm/shm_reader.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <regex>
 

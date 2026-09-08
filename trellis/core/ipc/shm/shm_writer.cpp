@@ -17,7 +17,7 @@
 
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <sys/mman.h>
 

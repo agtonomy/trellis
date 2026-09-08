@@ -17,7 +17,7 @@
 
 #include "trellis/core/test/test_paths.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <cstdlib>
 #include <memory>

@@ -18,7 +18,7 @@
 #include "trellis/core/ipc/shm/shm_file.hpp"
 
 #include <fcntl.h> /* For O_* constants */
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <sys/mman.h>
 #include <sys/stat.h> /* For mode constants */
 #include <unistd.h>   /* For sysconf */

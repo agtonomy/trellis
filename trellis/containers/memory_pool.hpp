@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CONTAINERS_MEMORY_POOL_HPP_
 #define TRELLIS_CONTAINERS_MEMORY_POOL_HPP_
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <array>

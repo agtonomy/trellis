@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CORE_LOGGING_HPP
 #define TRELLIS_CORE_LOGGING_HPP
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <unistd.h>
 
 #include <string>

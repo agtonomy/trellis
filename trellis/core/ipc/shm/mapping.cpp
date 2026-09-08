@@ -17,7 +17,7 @@
 
 #include "trellis/core/ipc/shm/mapping.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <sys/mman.h>
 #include <unistd.h>
 

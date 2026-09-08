@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CORE_CONFIG_HPP
 #define TRELLIS_CORE_CONFIG_HPP
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <string>

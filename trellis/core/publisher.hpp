@@ -18,7 +18,7 @@
 #ifndef TRELLIS_CORE_PUBLISHER_HPP_
 #define TRELLIS_CORE_PUBLISHER_HPP_
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <unistd.h>
 
 #include <functional>

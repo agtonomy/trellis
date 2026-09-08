@@ -17,7 +17,7 @@
 
 #include "trellis/core/discovery/discovery.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <chrono>
 #include <ranges>
