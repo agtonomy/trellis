@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 cc_library(
     name = "table",
     hdrs = [
@@ -11,7 +13,6 @@ filegroup(
     srcs = glob(
         [
             "**/*.hpp",
-            "**/*.h",
         ],
         exclude = ["**/test/**"],
     ),

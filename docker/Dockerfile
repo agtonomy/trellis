@@ -38,7 +38,7 @@ RUN curl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
 # Default python binary to python3
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-ARG BAZEL_VERSION=6.5.0
+ARG BAZEL_VERSION=9.2.0
 
 # Add trellis user for non-root execution
 RUN useradd -d /workspace -ms /bin/bash trellis && \

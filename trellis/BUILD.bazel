@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
 load(":cc_hdrs.bzl", "cc_hdrs_filegroup")
 

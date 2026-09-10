@@ -4,7 +4,7 @@
 
 set -ex
 
-BAZEL_CACHE_DIR="/github/workspace/.cache/bazel"
+BAZEL_CACHE_DIR="$HOME/.cache/bazel"
 
 if [ -d "$BAZEL_CACHE_DIR" ]; then
   du -sh "$BAZEL_CACHE_DIR"

@@ -8,6 +8,8 @@ on-disk source files we want to ship. An aspect lets us reach the cc_library's
 `hdrs` attribute directly.
 """
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
 _HdrsInfo = provider("cc_library hdrs files", fields = ["hdrs"])
 
 def _hdrs_aspect_impl(target, ctx):

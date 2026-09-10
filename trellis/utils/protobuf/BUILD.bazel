@@ -1,3 +1,5 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 cc_library(
     name = "file_descriptor",
     hdrs = [
@@ -11,9 +13,7 @@ filegroup(
     srcs = glob(
         [
             "**/*.hpp",
-            "**/*.h",
         ],
-        exclude = ["**/test/**"],
     ),
     visibility = ["//trellis:__pkg__"],
 )
