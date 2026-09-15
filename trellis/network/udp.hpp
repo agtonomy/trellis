@@ -19,6 +19,7 @@
 #define TRELLIS_NETWORK_UDP_HPP
 
 #include <array>
+#include <utility>
 
 #include "trellis/core/error_code.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -161,6 +162,11 @@ class UDP {
  * This class allocates a static buffer internally to handle the inbound messages so that the user doesn't
  * have to manage buffers at all. The template argument `BUFFER_SIZE` specifies the static buffer size and
  * must be large enough to hold the messages we expect to come inbound on this socket.
+ *
+ * Constructed with a callback, the receiver keeps an asynchronous receive armed and invokes the callback as datagrams
+ * arrive, which wakes the event loop once per datagram. Constructed without one, it arms nothing and the owner takes
+ * the queued datagrams by calling `Drain`, for example from a periodic timer, which trades up to one period of latency
+ * for one wakeup per period on a socket carrying many small datagrams.
  */
 template <size_t BUFFER_SIZE = 1024>
 class UDPReceiver {
@@ -172,54 +178,74 @@ class UDPReceiver {
    *
    * @param loop the event loop thread handle to use for IO
    * @param ipv4_port the IPv4 port number to bind this socket to
-   * @param callback the callback to invoke any time inbound data has arrived
+   * @param callback the callback to invoke any time inbound data has arrived, or empty to arm no asynchronous receive
+   * and leave receiving to `Drain`
    */
-  explicit UDPReceiver(trellis::core::EventLoop loop, uint16_t ipv4_port, Callback callback)
-      : udp_(loop, ipv4_port), callback_{callback} {
-    udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
-                          [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
-                                 size_t size) { DidReceive(code, ep, size); });
+  explicit UDPReceiver(trellis::core::EventLoop loop, uint16_t ipv4_port, Callback callback = {})
+      : udp_(loop, ipv4_port), callback_{std::move(callback)} {
+    if (callback_) ArmReceive();
   }
 
   /**
    * UDPReceiver constructor for receiving UDP packets
    *
    * @param loop the event loop thread handle to use for IO
-   * @param ipv4_port the IPv4 port number to bind this socket to
-   * @param callback the callback to invoke any time inbound data has arrived
+   * @param socket_fd the socket file descriptor to assign to this socket
+   * @param callback the callback to invoke any time inbound data has arrived, or empty to arm no asynchronous receive
+   * and leave receiving to `Drain`
    */
   explicit UDPReceiver(trellis::core::EventLoop loop, asio::ip::udp::socket::native_handle_type socket_fd,
-                       Callback callback)
-      : udp_(loop, socket_fd), callback_{callback} {
-    udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
-                          [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
-                                 size_t size) { DidReceive(code, ep, size); });
+                       Callback callback = {})
+      : udp_(loop, socket_fd), callback_{std::move(callback)} {
+    if (callback_) ArmReceive();
   }
 
   uint16_t GetPort() const { return udp_.GetPort(); }
 
- private:
-  void DidReceive(const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, size_t size) {
-    // call to user for the first packet
-    callback_(buffer_.data(), size, ep);
-
-    // Drain the socket of any more packets before we go back to the event loop
+  /**
+   * Drain pass every datagram currently queued on the socket to `callback`
+   *
+   * This is a synchronous non-blocking receive loop, so it returns as soon as the socket has nothing left. It is the
+   * only way data arrives on a receiver constructed without a callback. A zero length datagram is delivered like any
+   * other. Call it on the thread running this receiver's event loop: it shares the receive buffer with the
+   * asynchronous path.
+   *
+   * @param callback the function to hand each queued datagram to
+   */
+  void Drain(const Callback& callback) {
     auto& socket = udp_.GetSocket();
-    while (socket.available()) {
+    while (true) {
       asio::ip::udp::endpoint sender_endpoint;
       trellis::core::error_code ec;
-      size_t bytes_received = socket.receive_from(asio::buffer(buffer_.data(), buffer_.size()), sender_endpoint, 0, ec);
-      if (ec || bytes_received == 0) {
+      const size_t bytes_received = socket.receive_from(asio::buffer(buffer_), sender_endpoint, 0, ec);
+      if (ec) {
+        // would_block is the empty queue. Anything else cannot be reported from a library with no logging dependency.
         break;
       }
-      callback_(buffer_.data(), bytes_received, sender_endpoint);
+      callback(buffer_.data(), bytes_received, sender_endpoint);
     }
+  }
 
-    // queue up next receive
+ private:
+  void ArmReceive() {
     udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
                           [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
                                  size_t size) { DidReceive(code, ep, size); });
   }
+
+  void DidReceive(const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, size_t size) {
+    // A failed receive completes with size 0, which must not reach the callback looking like an empty datagram
+    if (!code) {
+      // call to user for the first packet
+      callback_(buffer_.data(), size, ep);
+
+      // Take the rest of the backlog before going back to the event loop. Stopping on would_block costs one receive
+      // per datagram, where checking socket.available() first cost an extra ioctl(FIONREAD) each time.
+      Drain(callback_);
+    }
+    ArmReceive();
+  }
+
   std::array<uint8_t, BUFFER_SIZE> buffer_;
   UDP udp_;
   Callback callback_;

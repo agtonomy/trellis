@@ -17,6 +17,9 @@
 
 #include <gtest/gtest.h>
 
+#include <string>
+#include <vector>
+
 #include "trellis/network/udp.hpp"
 
 using trellis::network::UDP;
@@ -81,4 +84,78 @@ TEST(UDPTests, Receiver) {
   loop.RunFor(std::chrono::milliseconds(5));
   ASSERT_EQ(receive_count, expected_receive_count);
   ASSERT_EQ(receive_bytes_count, 88);
+}
+
+// Three datagrams are queued before the loop runs, so one wakeup must deliver all of them. If the drain after the first
+// packet is broken, only that packet arrives from this wakeup and the rest wait for the next one.
+TEST(UDPTests, ReceiverDrainsBacklogInOneWakeup) {
+  trellis::core::EventLoop loop;
+  const std::string msg{"payload"};
+  unsigned receive_count = 0;
+
+  UDPReceiver<1024> receiver(
+      loop, static_cast<uint16_t>(0),
+      [&receive_count](const void*, size_t, const asio::ip::udp::endpoint&) { ++receive_count; });
+
+  UDP sender(loop);
+  constexpr unsigned expected_receive_count = 3;
+  for (unsigned i = 0; i < expected_receive_count; ++i) {
+    size_t bytes_sent = 0;
+    ASSERT_FALSE(sender.SendTo("127.0.0.1", receiver.GetPort(), msg.data(), msg.size(), bytes_sent));
+  }
+
+  loop.RunOne();
+  ASSERT_EQ(receive_count, expected_receive_count);
+}
+
+// A receiver built without a callback arms nothing, so the loop delivers nothing on its own and the owner's Drain()
+// call is what hands the backlog over.
+TEST(UDPTests, ReceiverWithoutCallbackIsDrainedByOwner) {
+  trellis::core::EventLoop loop;
+  const std::string msg{"The quick brown fox jumps over the lazy dog."};
+  std::vector<std::string> received;
+
+  UDPReceiver<1024> receiver(loop, static_cast<uint16_t>(0));
+
+  UDP sender(loop);
+  constexpr unsigned expected_receive_count = 3;
+  for (unsigned i = 0; i < expected_receive_count; ++i) {
+    size_t bytes_sent = 0;
+    ASSERT_FALSE(sender.SendTo("127.0.0.1", receiver.GetPort(), msg.data(), msg.size(), bytes_sent));
+    ASSERT_EQ(bytes_sent, msg.size());
+  }
+
+  loop.RunFor(std::chrono::milliseconds(5));
+  ASSERT_TRUE(received.empty());
+
+  receiver.Drain([&received](const void* data, size_t size, const asio::ip::udp::endpoint&) {
+    received.emplace_back(static_cast<const char*>(data), size);
+  });
+  ASSERT_EQ(received.size(), expected_receive_count);
+  for (const auto& payload : received) {
+    EXPECT_EQ(payload, msg);
+  }
+}
+
+// A zero length datagram is legal on UDP and must not be mistaken for an empty queue, or everything behind it would be
+// stranded until the next drain.
+TEST(UDPTests, DrainDeliversZeroLengthDatagram) {
+  trellis::core::EventLoop loop;
+  const std::string msg{"payload"};
+  std::vector<size_t> received_sizes;
+
+  UDPReceiver<1024> receiver(loop, static_cast<uint16_t>(0));
+
+  UDP sender(loop);
+  for (const size_t length : {msg.size(), size_t{0}, msg.size()}) {
+    size_t bytes_sent = 0;
+    ASSERT_FALSE(sender.SendTo("127.0.0.1", receiver.GetPort(), msg.data(), length, bytes_sent));
+  }
+
+  receiver.Drain(
+      [&received_sizes](const void*, size_t size, const asio::ip::udp::endpoint&) { received_sizes.push_back(size); });
+  ASSERT_EQ(received_sizes.size(), size_t{3});
+  EXPECT_EQ(received_sizes[0], msg.size());
+  EXPECT_EQ(received_sizes[1], size_t{0});
+  EXPECT_EQ(received_sizes[2], msg.size());
 }
