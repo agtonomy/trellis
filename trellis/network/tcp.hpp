@@ -219,9 +219,23 @@ class TCP {
   void Cancel() { socket_->cancel(); }
 
   /**
+   * Cancel all pending events, reporting failures through ec instead of throwing
+   *
+   * @param ec set to the error that occurred, if any
+   */
+  void Cancel(trellis::core::error_code& ec) { socket_->cancel(ec); }
+
+  /**
    * Close the underlying socket
    */
   void Close() { socket_->close(); }
+
+  /**
+   * Close the underlying socket, reporting failures through ec instead of throwing
+   *
+   * @param ec set to the error that occurred, if any
+   */
+  void Close(trellis::core::error_code& ec) { socket_->close(ec); }
 
   /**
    * BytesAvailable returns the number of bytes available to be read without blocking

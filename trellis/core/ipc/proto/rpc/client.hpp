@@ -18,7 +18,9 @@
 #ifndef TRELLIS_CORE_IPC_PROTO_RPC_CLIENT_HPP_
 #define TRELLIS_CORE_IPC_PROTO_RPC_CLIENT_HPP_
 
-#include <optional>
+#include <exception>
+#include <memory>
+#include <queue>
 
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -30,10 +32,18 @@ namespace trellis::core::ipc::proto::rpc {
 /**
  * @brief A gRPC-style client for asynchronous request/response calls over TCP using a protobuf-based interface.
  *
+ * Instances must be owned by a std::shared_ptr (see Node::CreateServiceClient). Every call gets exactly one
+ * callback: destruction fails whatever is still outstanding with kFailure, invoking those callbacks synchronously
+ * on the destroying thread before the destructor returns. Owners whose callbacks capture `this` must release the
+ * client before the members those callbacks touch are destroyed.
+ *
+ * Destroy a Client on the thread running its event loop, or once that loop has stopped. Teardown closes the socket
+ * and cancels the timeout timer without synchronizing against a running loop.
+ *
  * @tparam PROTO_SERVICE_T The protobuf-generated service type.
  */
 template <typename PROTO_SERVICE_T>
-class Client {
+class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
  public:
   /**
    * @brief Type alias for the response callback function.
@@ -61,30 +71,30 @@ class Client {
               if (sample.service().sname() == PROTO_SERVICE_T::descriptor()->full_name()) {
                 const auto tcp_port = sample.service().tcp_port();
                 if (event == discovery::Discovery::EventType::kNewUnregistration) {
-                  if (tcp_client_.has_value()) {
+                  if (tcp_client_) {
                     trellis::core::Log::Info(
                         "Received unregistration for service {} server on port {}, removing TCP connection",
                         PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                    const auto maybe_remote_port = tcp_client_.value().GetRemotePort();
+                    const auto maybe_remote_port = tcp_client_->GetRemotePort();
                     if (!maybe_remote_port.has_value() || maybe_remote_port.value() == tcp_port) {
-                      tcp_client_.reset();
+                      DropConnection();
                     }
                   }
                 } else if (event == discovery::Discovery::EventType::kNewRegistration) {
-                  if (!tcp_client_.has_value()) {
+                  if (!tcp_client_) {
                     trellis::core::Log::Info(
                         "Received registration for service {} server on port {}, creating TCP connection",
                         PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                    tcp_client_ = network::TCP(loop, "127.0.0.1", tcp_port);
+                    tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
                   } else {
                     // if for some reason tcp_client_ is set already, but on the wrong port
-                    const auto maybe_remote_port = tcp_client_.value().GetRemotePort();
+                    const auto maybe_remote_port = tcp_client_->GetRemotePort();
                     if (maybe_remote_port.has_value() && maybe_remote_port.value() != tcp_port) {
                       trellis::core::Log::Info(
                           "Received registration for service {} server on port {}, updating existing TCP connection",
                           PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                      tcp_client_.reset();  // Port changed - TCP destructor handles cleanup
-                      tcp_client_ = network::TCP(loop, "127.0.0.1", tcp_port);
+                      DropConnection();
+                      tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
                     }
                   }
                 }
@@ -92,21 +102,44 @@ class Client {
             })} {}
 
   /**
-   * @brief Destructor that stops receiving service discovery events.
+   * @brief Destructor that stops receiving service discovery events and fails any outstanding call.
    */
   ~Client() {
     discovery_->StopReceive(callback_handle_);
-    CleanPendingRequest();
 
-    // Clear the request queue and cancel any timers
-    while (!queued_requests_.empty()) {
-      auto request = queued_requests_.front();
-      queued_requests_.pop();
+    // Drop the connection before running a single callback. CallAsync() and ProcessNextRequest() both refuse to
+    // start work without one, so a callback below that issues another call fails inline instead of reaching
+    // shared_from_this(), which throws once destruction has begun and would terminate from a destructor.
+    if (tcp_client_) {
+      DropConnection();
     }
 
-    if (tcp_client_.has_value()) {
-      tcp_client_->Cancel();  // Cancel any ongoing operations
-      tcp_client_->Close();   // Close the TCP connection
+    // A user callback that throws here would escape the destructor and terminate the process.
+    const auto fail = [](const std::shared_ptr<QueuedRequest>& request) {
+      try {
+        request->failure_fn();
+      } catch (const std::exception& e) {
+        trellis::core::Log::Error("Callback for service {} threw while failing a call during client destruction: {}",
+                                  PROTO_SERVICE_T::descriptor()->full_name(), e.what());
+      } catch (...) {
+        trellis::core::Log::Error(
+            "Callback for service {} threw a non-std::exception while failing a call during client destruction",
+            PROTO_SERVICE_T::descriptor()->full_name());
+      }
+    };
+
+    // Swap the queue out so nothing can extend the drain loop, then fail everything still outstanding.
+    std::queue<std::shared_ptr<QueuedRequest>> queued;
+    queued.swap(queued_requests_);
+    if (pending_request_) {
+      const auto request = pending_request_;  // failure_fn() resets pending_request_
+      fail(request);
+    }
+    CleanPendingRequest();
+    while (!queued.empty()) {
+      const auto request = queued.front();
+      queued.pop();
+      fail(request);
     }
   }
 
@@ -119,11 +152,11 @@ class Client {
    * @param method Name of the method to invoke.
    * @param request The request message object.
    * @param callback A callback to handle the response.
-   * @param timeout_ms Optional timeout in milliseconds (currently unused).
+   * @param timeout_ms Timeout in milliseconds; 0 means the call waits indefinitely for a response.
    */
   template <typename REQ_T, typename RESP_T>
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
-    if (!tcp_client_.has_value()) {
+    if (!tcp_client_) {
       RESP_T resp{};
       callback(kFailure, &resp);
       return;
@@ -154,7 +187,8 @@ class Client {
           RESP_T resp{};
           callback(kTimedOut, &resp);
           if (this->tcp_client_) {
-            this->tcp_client_->Cancel();  // Cancel the TCP client to avoid further processing
+            trellis::core::error_code ec;
+            this->tcp_client_->Cancel(ec);  // Cancel the TCP client to avoid further processing
           }
           CleanPendingAndProcessNext();
         },
@@ -185,6 +219,18 @@ class Client {
           timeout_ms(timeout_ms) {}
   };
 
+  // Closing the socket lets the in-flight request fail on the event loop. Discovery calls us holding its callback
+  // lock, so user callbacks must not run here, and an exception would take down Node::Run().
+  void DropConnection() {
+    trellis::core::error_code ec;
+    tcp_client_->Close(ec);
+    if (ec) {
+      trellis::core::Log::Warn("Failed to close TCP connection for service {}: {}",
+                               PROTO_SERVICE_T::descriptor()->full_name(), ec.message());
+    }
+    tcp_client_.reset();
+  }
+
   void CleanPendingRequest() {
     if (pending_timer_) {
       pending_timer_->Stop();
@@ -193,7 +239,13 @@ class Client {
   }
 
   void EnqueueProcessNext() {
-    asio::post(*loop_, [this]() { ProcessNextRequest(); });
+    // ~Client() reaches here while failing its outstanding requests, by which point shared_from_this() throws.
+    const std::weak_ptr<Client> weak_self = this->weak_from_this();
+    asio::post(*loop_, [weak_self]() {
+      if (auto self = weak_self.lock()) {
+        self->ProcessNextRequest();
+      }
+    });
   }
 
   void CleanPendingAndProcessNext() {
@@ -201,7 +253,7 @@ class Client {
     EnqueueProcessNext();
   }
 
-  // Triggered by either a new request or a timeout
+  // Triggered by a new request or by the completion of the previous one
   void ProcessNextRequest() {
     if (pending_request_) {
       // Already processing a request
@@ -220,93 +272,116 @@ class Client {
       throw std::runtime_error("queued request is null, this should not happen");
     }
 
+    if (!tcp_client_) {
+      // Nothing can complete this request without a connection. Failing it schedules the next, which fails too.
+      auto request = pending_request_;  // failure_fn() resets pending_request_
+      request->failure_fn();
+      return;
+    }
+
     // Generate our header payload which contains the size
     const uint32_t size = pending_request_->request_buffer->size();
     auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
     memcpy(send_header_buf.get(), &size, sizeof(size));
 
+    // Each handler needs the socket and request it started on: tcp_client_ may be gone or replaced by the time it
+    // runs. A client not owned by a shared_ptr throws here rather than silently dropping every handler.
+    const std::weak_ptr<Client> weak_self = this->shared_from_this();
+    const auto request = pending_request_;
+    const auto tcp = tcp_client_;
+
     // Start the timeout timer for this request
-    if (pending_request_->timeout_ms > 0) {
-      // Use weak_ptr to avoid circular reference and check if client still exists
-      std::weak_ptr<QueuedRequest> weak_request = pending_request_;
+    if (request->timeout_ms > 0) {
+      // Stop() cannot recall a completion asio has already queued, so the handler may run after ~Client() and must
+      // not touch a raw this. weak_request keeps the timer from holding a completed request alive.
+      std::weak_ptr<QueuedRequest> weak_request = request;
       pending_timer_ = std::make_shared<OneShotTimerImpl>(
           loop_,
-          [this, weak_request](const time::TimePoint&) {
-            auto request = weak_request.lock();
-            if (request && pending_request_ == request) {
-              request->timeout_fn();
+          [weak_self, weak_request](const time::TimePoint&) {
+            const auto self = weak_self.lock();
+            const auto timed_out = weak_request.lock();
+            if (self && timed_out && self->pending_request_ == timed_out) {
+              timed_out->timeout_fn();
             }
           },
-          pending_request_->timeout_ms, TimerKind::kManagement);
+          request->timeout_ms, TimerKind::kManagement);
     }
 
     // Drain any stale data from the receive buffer immediately before sending.
     // This handles cases where a previous request timed out but the server eventually
     // sent a response that is still sitting in the socket buffer.
     // TODO (bsirang) We should implement request/response ID tracking to avoid this situation entirely.
-    tcp_client_->DrainReceiveBuffer();
+    tcp->DrainReceiveBuffer();
 
     // We chain together 4 events:
     // 1. Send 4-byte request payload size
     // 2. Send request payload
     // 3. Receive 4-byte response payload size
     // 4. Receive response payload
-    tcp_client_.value().AsyncSendAll(
+    tcp->AsyncSendAll(
         send_header_buf->data(), send_header_buf->size(),
-        [this, send_header_buf](const trellis::core::error_code& ec, size_t bytes_sent) {
-          if (ec == asio::error::operation_aborted || !pending_request_) {
-            return;  // short circuit on Client destruction/cancellation or timeout
+        [weak_self, request, tcp, send_header_buf](const trellis::core::error_code& ec, size_t bytes_sent) {
+          auto self = weak_self.lock();
+          if (!self || self->pending_request_ != request) {
+            return;  // client gone, or this request already completed
           } else if (ec) {
-            pending_request_->failure_fn();
+            request->failure_fn();  // operation_aborted lands here too: a closed socket has to fail the request
             return;
           }
           // We sent the 4-byte length to the server, now let's send the actual payload
-          tcp_client_.value().AsyncSendAll(
-              pending_request_->request_buffer->data(), pending_request_->request_buffer->size(),
-              [this](const trellis::core::error_code& ec, size_t bytes_sent) {
-                if (ec == asio::error::operation_aborted || !pending_request_) {
-                  return;  // short circuit on Client destruction/cancellation or timeout
-                } else if (ec) {
-                  pending_request_->failure_fn();
-                  return;
-                }
-                // We sent the payload to the server, now let's receive the 4-byte length from the server
-                auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
-                tcp_client_.value().AsyncReceiveAll(
-                    receive_header_buf->data(), receive_header_buf->size(),
-                    [this, receive_header_buf](const trellis::core::error_code& ec, size_t /*bytes_received*/) {
-                      if (ec == asio::error::operation_aborted || !pending_request_) {
-                        return;  // short circuit on Client destruction/cancellation or timeout
-                      } else if (ec) {
-                        pending_request_->failure_fn();
-                        return;
-                      }
+          tcp->AsyncSendAll(request->request_buffer->data(), request->request_buffer->size(),
+                            [weak_self, request, tcp](const trellis::core::error_code& ec, size_t bytes_sent) {
+                              auto self = weak_self.lock();
+                              if (!self || self->pending_request_ != request) {
+                                return;
+                              } else if (ec) {
+                                request->failure_fn();
+                                return;
+                              }
+                              // We sent the payload to the server, now let's receive the 4-byte length from the server
+                              auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
+                              tcp->AsyncReceiveAll(
+                                  receive_header_buf->data(), receive_header_buf->size(),
+                                  [weak_self, request, tcp, receive_header_buf](const trellis::core::error_code& ec,
+                                                                                size_t /*bytes_received*/) {
+                                    auto self = weak_self.lock();
+                                    if (!self || self->pending_request_ != request) {
+                                      return;
+                                    } else if (ec) {
+                                      request->failure_fn();
+                                      return;
+                                    }
 
-                      // Since performance is not critical for RPCs, and because we don't know the receive payload
-                      // size ahead of time, we'll dynamically allocate the buffer size. The protocol does not
-                      // enforce any specific limit on payload size beyond the 32-bit length field.
-                      const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
-                      auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
-                      tcp_client_.value().AsyncReceiveAll(
-                          receive_buffer->data(), receive_buffer->size(),
-                          [this, receive_buffer](const trellis::core::error_code& ec, size_t bytes_received) {
-                            if (ec == asio::error::operation_aborted || !pending_request_) {
-                              return;  // short circuit on Client destruction/cancellation or timeout
-                            } else if (ec) {
-                              pending_request_->failure_fn();
-                              return;
-                            }
+                                    // Since performance is not critical for RPCs, and because we don't know the receive
+                                    // payload size ahead of time, we'll dynamically allocate the buffer size. The
+                                    // protocol does not enforce any specific limit on payload size beyond the 32-bit
+                                    // length field.
+                                    const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
+                                    auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
+                                    // tcp is captured to keep the socket alive: AsyncReceiveAll continues partial
+                                    // reads through it.
+                                    tcp->AsyncReceiveAll(
+                                        receive_buffer->data(), receive_buffer->size(),
+                                        [weak_self, request, tcp, receive_buffer](const trellis::core::error_code& ec,
+                                                                                  size_t bytes_received) {
+                                          auto self = weak_self.lock();
+                                          if (!self || self->pending_request_ != request) {
+                                            return;
+                                          } else if (ec) {
+                                            request->failure_fn();
+                                            return;
+                                          }
 
-                            discovery::Response response;
-                            response.ParseFromArray(receive_buffer->data(), bytes_received);
-                            if (response.header().status() == discovery::ServiceHeader::failed) {
-                              pending_request_->failure_fn();
-                            } else {
-                              pending_request_->success_fn(response);
-                            }
-                          });
-                    });
-              });
+                                          discovery::Response response;
+                                          response.ParseFromArray(receive_buffer->data(), bytes_received);
+                                          if (response.header().status() == discovery::ServiceHeader::failed) {
+                                            request->failure_fn();
+                                          } else {
+                                            request->success_fn(response);
+                                          }
+                                        });
+                                  });
+                            });
         });
   }
 
@@ -314,7 +389,7 @@ class Client {
   trellis::core::EventLoop loop_;                               ///< Event loop to run the client on
   discovery::DiscoveryPtr discovery_;                           ///< Pointer to the discovery service
   discovery::Discovery::CallbackHandle callback_handle_;        ///< Handle for the discovery callback
-  std::optional<network::TCP> tcp_client_;                      ///< Active TCP client, if connected
+  std::shared_ptr<network::TCP> tcp_client_;                    ///< Active TCP client, if connected
   std::queue<std::shared_ptr<QueuedRequest>> queued_requests_;  ///< Queue of requests
   std::shared_ptr<QueuedRequest> pending_request_;              ///< Currently processing request, if any
   core::Timer pending_timer_;                                   ///< Timer for pending request, if any

@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+
 #include "trellis/core/ipc/proto/rpc/client.hpp"
 #include "trellis/core/ipc/proto/rpc/server.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -478,5 +480,117 @@ TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
   EXPECT_EQ(success_count, 1);
   EXPECT_EQ(correlation_errors, 0) << "Response did not match the request - possible stale response received";
 }
+
+// The loop stops before the client is released, as it does when an app shuts down.
+TEST_F(TrellisFixture, FailsCallsOnDestruction) {
+  StartRunnerThread();
+
+  std::vector<network::TCP> accepted;  // held so the connections stay open
+  network::TCPServer silent_server(GetNode().GetEventLoop(), /* port = */ 0,
+                                   [&accepted](const trellis::core::error_code& ec, network::TCP socket) {
+                                     if (!ec) {
+                                       accepted.push_back(std::move(socket));
+                                     }
+                                   });
+  const auto handle = GetNode().GetDiscovery()->RegisterServiceServer(
+      std::string{TestService::descriptor()->full_name()}, silent_server.GetPort(), MethodsMap{});
+  std::atomic<unsigned> fail_count{0};  // declared before client: ~Client() runs the callbacks that reference it
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+
+  for (int i = 0; i < 3; ++i) {
+    test::Test request;
+    request.set_id(i);
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request,
+        [&fail_count](ServiceCallStatus status, const test::TestTwo*) {
+          if (status == kFailure) ++fail_count;
+        },
+        /* timeout_ms = */ 0);
+  }
+  WaitForSendReceive();
+  ASSERT_EQ(fail_count.load(), 0u) << "calls should still be outstanding before the client is destroyed";
+
+  StopAndJoinRunnerThread();
+  client.reset();
+  EXPECT_EQ(fail_count.load(), 3u) << "one in flight and two queued, all should be failed by ~Client()";
+
+  GetNode().GetDiscovery()->Unregister(handle);
+}
+
+// One call in flight and two queued when the registration goes away. Every one of them has to fail.
+class UnregisterTest : public TrellisFixture {
+ protected:
+  void ExpectAllCallsFail(unsigned timeout_ms) {
+    StartRunnerThread();
+
+    std::vector<network::TCP> accepted;  // held so the connections stay open
+    network::TCPServer silent_server(GetNode().GetEventLoop(), /* port = */ 0,
+                                     [&accepted](const trellis::core::error_code& ec, network::TCP socket) {
+                                       if (!ec) {
+                                         accepted.push_back(std::move(socket));
+                                       }
+                                     });
+    const auto handle = GetNode().GetDiscovery()->RegisterServiceServer(
+        std::string{TestService::descriptor()->full_name()}, silent_server.GetPort(), MethodsMap{});
+    // Declared before client: on a failing run ~Client() runs the callbacks that reference these.
+    std::atomic<unsigned> success_count{0};
+    std::atomic<unsigned> fail_count{0};
+    std::atomic<unsigned> timeout_count{0};
+    auto client = GetNode().CreateServiceClient<TestService>();
+    WaitForDiscovery();
+
+    for (int i = 0; i < 3; ++i) {
+      test::Test request;
+      request.set_id(i);
+      client->CallAsync<test::Test, test::TestTwo>(
+          "DoStuff", request,
+          [&success_count, &fail_count, &timeout_count](ServiceCallStatus status, const test::TestTwo* resp) {
+            if (status == kSuccess) {
+              ++success_count;
+            } else if (status == kFailure) {
+              ++fail_count;
+            } else {
+              ++timeout_count;
+            }
+          },
+          timeout_ms);
+    }
+    WaitForSendReceive();
+    EXPECT_EQ(success_count.load(), 0u);
+    EXPECT_EQ(fail_count.load(), 0u);
+    EXPECT_EQ(timeout_count.load(), 0u);
+
+    // The client only learns of this when discovery's stale-sample scan runs, up to one interval plus one timeout
+    // later, and the failures then cascade through posted handlers.
+    const auto unregistered_at = std::chrono::steady_clock::now();
+    GetNode().GetDiscovery()->Unregister(handle);
+    const auto deadline = unregistered_at + std::chrono::seconds{2};
+    while (fail_count < 3 && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - unregistered_at;
+
+    // Run past the timeout so a request timer that was never cancelled still gets seen.
+    if (timeout_ms > 0) {
+      EXPECT_LT(elapsed, std::chrono::milliseconds{timeout_ms}) << "calls should fail on unregistration, not time out";
+      std::this_thread::sleep_for(std::chrono::milliseconds{timeout_ms} - elapsed + kSendReceiveTime);
+    }
+    StopAndJoinRunnerThread();  // the accept handler and the call callbacks reference locals of this function
+
+    EXPECT_EQ(success_count.load(), 0u);
+    EXPECT_EQ(fail_count.load(), 3u);
+    EXPECT_EQ(timeout_count.load(), 0u);
+  }
+};
+
+// With no timer, closing the connection is the only thing that can complete the calls.
+TEST_F(UnregisterTest, FailsCallsWithoutTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 0); }
+
+// The timeout outlasts discovery's purge, so the calls fail before it fires. Unregister() only stops the broadcast,
+// so the client hears about it once the sample goes stale: kTestDiscoveryTimeout to expire, plus up to one
+// kTestDiscoveryInterval before the management tick that scans for it. 1000 ms is comfortably clear of that 300 ms
+// worst case without making a loaded machine flaky.
+TEST_F(UnregisterTest, FailsCallsBeforeTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 1000); }
 
 }  // namespace trellis::core::ipc::proto::rpc
