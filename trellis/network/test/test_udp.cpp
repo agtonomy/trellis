@@ -17,6 +17,9 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -24,6 +27,27 @@
 
 using trellis::network::UDP;
 using trellis::network::UDPReceiver;
+
+namespace {
+
+// epoll has no query call, but procfs lists every registered descriptor of an epoll instance as a "tfd: <fd> ..." line
+// in that instance's fdinfo.
+std::set<int> EpollRegisteredFds() {
+  std::set<int> fds;
+  for (const auto& entry : std::filesystem::directory_iterator("/proc/self/fd")) {
+    std::error_code ec;
+    if (std::filesystem::read_symlink(entry.path(), ec).string() != "anon_inode:[eventpoll]") continue;
+    std::ifstream fdinfo("/proc/self/fdinfo/" + entry.path().filename().string());
+    std::string key;
+    int fd = 0;
+    while (fdinfo >> key) {
+      if (key == "tfd:" && fdinfo >> fd) fds.insert(fd);
+    }
+  }
+  return fds;
+}
+
+}  // namespace
 
 TEST(UDPTests, SendAndReceive) {
   trellis::core::EventLoop loop;
@@ -158,4 +182,16 @@ TEST(UDPTests, DrainDeliversZeroLengthDatagram) {
   EXPECT_EQ(received_sizes[0], msg.size());
   EXPECT_EQ(received_sizes[1], size_t{0});
   EXPECT_EQ(received_sizes[2], msg.size());
+}
+
+// Without a callback the receiver releases its socket from asio so epoll never wakes the loop for it. The callback
+// receiver is the control showing the procfs lookup sees registrations at all.
+TEST(UDPTests, ReceiverWithoutCallbackIsNotRegisteredWithEpoll) {
+  trellis::core::EventLoop loop;
+  UDPReceiver<1024> armed(loop, static_cast<uint16_t>(0), [](const void*, size_t, const asio::ip::udp::endpoint&) {});
+  UDPReceiver<1024> drained(loop, static_cast<uint16_t>(0));
+
+  const std::set<int> registered = EpollRegisteredFds();
+  EXPECT_TRUE(registered.contains(armed.GetNativeHandle()));
+  EXPECT_FALSE(registered.contains(drained.GetNativeHandle()));
 }

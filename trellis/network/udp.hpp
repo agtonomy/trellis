@@ -18,7 +18,11 @@
 #ifndef TRELLIS_NETWORK_UDP_HPP
 #define TRELLIS_NETWORK_UDP_HPP
 
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <array>
+#include <cerrno>
 #include <utility>
 
 #include "trellis/core/error_code.hpp"
@@ -164,9 +168,10 @@ class UDP {
  * must be large enough to hold the messages we expect to come inbound on this socket.
  *
  * Constructed with a callback, the receiver keeps an asynchronous receive armed and invokes the callback as datagrams
- * arrive, which wakes the event loop once per datagram. Constructed without one, it arms nothing and the owner takes
- * the queued datagrams by calling `Drain`, for example from a periodic timer, which trades up to one period of latency
- * for one wakeup per period on a socket carrying many small datagrams.
+ * arrive, which wakes the event loop once per datagram. Constructed without one, it releases the socket from asio so
+ * the event loop never watches it, and the owner takes the queued datagrams by calling `Drain`, for example from a
+ * periodic timer, which trades up to one period of latency for one wakeup per period on a socket carrying many small
+ * datagrams.
  */
 template <size_t BUFFER_SIZE = 1024>
 class UDPReceiver {
@@ -178,11 +183,11 @@ class UDPReceiver {
    *
    * @param loop the event loop thread handle to use for IO
    * @param ipv4_port the IPv4 port number to bind this socket to
-   * @param callback the callback to invoke any time inbound data has arrived, or empty to arm no asynchronous receive
-   * and leave receiving to `Drain`
+   * @param callback the callback to invoke any time inbound data has arrived, or empty to keep the socket off the event
+   * loop and leave receiving to `Drain`
    */
   explicit UDPReceiver(trellis::core::EventLoop loop, uint16_t ipv4_port, Callback callback = {})
-      : udp_(loop, ipv4_port), callback_{std::move(callback)} {
+      : udp_(loop, ipv4_port), callback_{std::move(callback)}, port_{udp_.GetPort()}, fd_{TakeSocket()} {
     if (callback_) ArmReceive();
   }
 
@@ -191,42 +196,62 @@ class UDPReceiver {
    *
    * @param loop the event loop thread handle to use for IO
    * @param socket_fd the socket file descriptor to assign to this socket
-   * @param callback the callback to invoke any time inbound data has arrived, or empty to arm no asynchronous receive
-   * and leave receiving to `Drain`
+   * @param callback the callback to invoke any time inbound data has arrived, or empty to keep the socket off the event
+   * loop and leave receiving to `Drain`
    */
   explicit UDPReceiver(trellis::core::EventLoop loop, asio::ip::udp::socket::native_handle_type socket_fd,
                        Callback callback = {})
-      : udp_(loop, socket_fd), callback_{std::move(callback)} {
+      : udp_(loop, socket_fd), callback_{std::move(callback)}, port_{udp_.GetPort()}, fd_{TakeSocket()} {
     if (callback_) ArmReceive();
   }
 
-  uint16_t GetPort() const { return udp_.GetPort(); }
+  ~UDPReceiver() {
+    // Only the released descriptor is ours to close. With a callback the asio socket still owns it.
+    if (!callback_) ::close(fd_);
+  }
+
+  UDPReceiver(const UDPReceiver&) = delete;
+  UDPReceiver& operator=(const UDPReceiver&) = delete;
+
+  uint16_t GetPort() const { return port_; }
+
+  /**
+   * GetNativeHandle retrieve the socket descriptor, asio's while a callback is armed and otherwise released from it
+   */
+  int GetNativeHandle() const { return fd_; }
 
   /**
    * Drain pass every datagram currently queued on the socket to `callback`
    *
    * This is a synchronous non-blocking receive loop, so it returns as soon as the socket has nothing left. It is the
    * only way data arrives on a receiver constructed without a callback. A zero length datagram is delivered like any
-   * other. Call it on the thread running this receiver's event loop: it shares the receive buffer with the
-   * asynchronous path.
+   * other. On a receiver constructed with a callback, call it on the event loop thread: it shares the receive buffer
+   * with the asynchronous path.
    *
    * @param callback the function to hand each queued datagram to
    */
   void Drain(const Callback& callback) {
-    auto& socket = udp_.GetSocket();
     while (true) {
-      asio::ip::udp::endpoint sender_endpoint;
-      trellis::core::error_code ec;
-      const size_t bytes_received = socket.receive_from(asio::buffer(buffer_), sender_endpoint, 0, ec);
-      if (ec) {
-        // would_block is the empty queue. Anything else cannot be reported from a library with no logging dependency.
+      asio::ip::udp::endpoint sender;
+      socklen_t sender_length = sender.capacity();
+      const ssize_t bytes_received = ::recvfrom(fd_, buffer_.data(), buffer_.size(), 0, sender.data(), &sender_length);
+      if (bytes_received < 0) {
+        if (errno == EINTR) continue;
+        // EAGAIN is the empty queue. Anything else cannot be reported from a library with no logging dependency.
         break;
       }
-      callback(buffer_.data(), bytes_received, sender_endpoint);
+      sender.resize(sender_length);
+      callback(buffer_.data(), static_cast<size_t>(bytes_received), sender);
     }
   }
 
  private:
+  // Assigning a descriptor to an asio socket registers it with epoll (EPOLLIN | EPOLLET) at once, whether or not a
+  // receive is ever armed, so a socket asio still owns wakes the event loop on every datagram even when nothing reads
+  // it. Without a callback, release() deregisters the descriptor and hands it to us. It keeps O_NONBLOCK, which asio
+  // set on the descriptor itself.
+  int TakeSocket() { return callback_ ? udp_.GetSocket().native_handle() : udp_.GetSocket().release(); }
+
   void ArmReceive() {
     udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
                           [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
@@ -249,6 +274,8 @@ class UDPReceiver {
   std::array<uint8_t, BUFFER_SIZE> buffer_;
   UDP udp_;
   Callback callback_;
+  const uint16_t port_;  ///< Read before the socket may be released, since asio cannot report it afterwards
+  const int fd_;         ///< asio's while a callback is armed, otherwise released from it and ours to close
 };
 
 }  // namespace network
