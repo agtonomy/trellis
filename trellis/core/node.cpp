@@ -19,8 +19,10 @@
 
 #include <memory>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 
+#include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/utils.hpp"
 #include "trellis/core/sim_controller.hpp"
 #include "trellis/core/timer_options_config.hpp"
@@ -28,14 +30,69 @@
 
 using namespace trellis::core;
 
-Node::Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role)
+namespace {
+
+/**
+ * Build the loop this node runs on, tagged so its timers are attributable to it
+ *
+ * A shared-context node runs on the host's io_context, registry and timer policy; only the owner tag differs, and
+ * that tag is what keeps each node's timer metrics its own once the registry is shared (see
+ * Node::GetTimerOverrunCount). The policy is read from config even when the host's is the one that applies, because
+ * reading it is what rejects a malformed trellis.timers.rearm_policy. Running under a policy the config did not ask
+ * for is a host misconfiguration rather than a setting to honor, so it warns.
+ *
+ * @param shared_context the host's primitives, or nullopt for a node that owns its loop
+ * @param config the node's configuration
+ * @param owner the tag to register this node's timers under; only ever compared, never dereferenced
+ */
+EventLoop MakeEventLoop(const std::optional<Node::SharedContext>& shared_context, const Config& config,
+                        const void* owner) {
+  const auto options = TimerOptionsFromConfig(config);
+  if (!shared_context) {
+    return EventLoop{std::make_shared<TimerRegistry>(), options}.WithOwner(owner);
+  }
+  if (shared_context->loop.GetTimerRegistry() == nullptr) {
+    // Without a registry the node's timers go untracked: its metrics come back empty and, worse, a simulated clock
+    // step skips them. A default constructed EventLoop is the usual way to get here.
+    throw std::invalid_argument("Node::SharedContext requires an event loop that carries a timer registry");
+  }
+  if (options.rearm_policy != shared_context->loop.GetTimerOptions().rearm_policy) {
+    Log::Warn("Ignoring trellis.timers.rearm_policy: a shared-context node runs under the host's timer policy");
+  }
+  return shared_context->loop.WithOwner(owner);
+}
+
+/**
+ * Build or adopt the discovery instance this node uses
+ *
+ * @param shared_context the host's primitives, or nullopt for a node that owns its discovery
+ * @param name the node name, used to announce this node to the rest of the system
+ * @param loop the loop discovery runs its sockets and management timer on
+ * @param config the node's configuration
+ */
+discovery::DiscoveryPtr MakeDiscovery(const std::optional<Node::SharedContext>& shared_context, const std::string& name,
+                                      const EventLoop& loop, const Config& config) {
+  if (!shared_context) {
+    return std::make_shared<trellis::core::discovery::Discovery>(name, loop, config);
+  }
+  if (shared_context->discovery == nullptr) {
+    // Without this check the failure surfaces at the first CreatePublisher, a long way from the cause.
+    throw std::invalid_argument("Node::SharedContext requires a non-null discovery instance");
+  }
+  return shared_context->discovery;
+}
+
+}  // namespace
+
+Node::Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role,
+           std::optional<SharedContext> shared_context)
     : name_{name},
       config_{std::move(config)},
       crash_counter_{config_, name_, trellis::core::ipc::utils::GetUidGidFromConfig(config_).first,
                      trellis::core::ipc::utils::GetUidGidFromConfig(config_).second},
-      ev_loop_{std::make_shared<TimerRegistry>(), TimerOptionsFromConfig(config_)},
-      discovery_{std::make_shared<trellis::core::discovery::Discovery>(name_, ev_loop_, config_)},
-      signal_set_(*ev_loop_, SIGTERM, SIGINT),
+      shares_context_{shared_context.has_value()},
+      ev_loop_{MakeEventLoop(shared_context, config_, this)},
+      discovery_{MakeDiscovery(shared_context, name_, ev_loop_, config_)},
       health_{std::string(name), config_,
               [this](const std::string& topic) { return CreatePublisher<trellis::core::HealthHistory>(topic); },
               [this](unsigned interval_ms, trellis::core::TimerImpl::Callback cb) {
@@ -55,8 +112,27 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
   // This ordering is why the role is fixed at construction rather than via a post-construction call, and it
   // mirrors the long-standing convention of enabling the clock just after constructing a Node. Followers
   // and publishers both enable the clock; only the SimController subscription (created below) differs.
-  if (sim_clock_role_ != SimClockRole::kDisabled) {
+  //
+  // That ordering only covers the timers this node is about to create. Whether a timer is simulation-driven is fixed
+  // at construction (TimerImpl::IsSimulationDriven), so flipping this process-global switch now would leave every
+  // timer the host already built on a real asio deadline, while time::Now() reported simulated time. A hosted node
+  // therefore does not touch the switch; it requires the host to have already set it the way its own role asks for.
+  const bool wants_simulated_clock = sim_clock_role_ != SimClockRole::kDisabled;
+  if (shares_context_) {
+    if (wants_simulated_clock != time::IsSimulatedClockEnabled()) {
+      throw std::runtime_error(
+          fmt::format("{}: a shared-context node needs the host to have already {} the simulated clock, because "
+                      "changing it now would strand every timer the host built before this node existed",
+                      name_, wants_simulated_clock ? "enabled" : "left disabled"));
+    }
+  } else if (wants_simulated_clock) {
     time::EnableSimulatedClock();
+  }
+
+  // A Discovery instance registers a process sample only for the node that built it, so a node adopting someone
+  // else's has to announce itself or it never shows up in `trellis node list`.
+  if (shares_context_) {
+    discovery_registration_ = discovery_->Register(discovery::utils::GetNodeProcessSample(name_));
   }
 
   Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
@@ -64,15 +140,19 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
   if (unclean_exits > 0) {
     Log::Error("{} starting after {} consecutive unclean exit(s)", name_, unclean_exits);
   }
-  // Handle signals explicitly, allowing the user to supply their own handler
-  signal_set_.async_wait([this](const trellis::core::error_code& error, int signal_number) {
-    if (!error) {
-      ipc::NamedResourceRegistry::Get().UnlinkAll();
-      if (user_handler_) user_handler_(signal_number);
-      Log::Info("{} node stopping...", name_);
-      Stop();
-    }
-  });
+  // Handle signals explicitly, allowing the user to supply their own handler. A shared-context node installs none:
+  // stopping the shared loop is the host's job, and the unlinking below is per-process work in any case.
+  if (!shares_context_) {
+    signal_set_.emplace(*ev_loop_, SIGTERM, SIGINT);
+    signal_set_->async_wait([this](const trellis::core::error_code& error, int signal_number) {
+      if (!error) {
+        ipc::NamedResourceRegistry::Get().UnlinkAll();
+        if (user_handler_) user_handler_(signal_number);
+        Log::Info("{} node stopping...", name_);
+        Stop();
+      }
+    });
+  }
 
   if (config_.AsIfExists<bool>("trellis.health.auto_report", false)) {
     // Kick off health reporting for this node
@@ -116,17 +196,37 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
         }));
   }
 
-  // Only a follower subscribes to the clock topic; a publisher generates time and must not also receive it.
-  if (sim_clock_role_ == SimClockRole::kFollower) {
+  // Only a follower subscribes to the clock topic; a publisher generates time and must not also receive it. A
+  // shared-context follower skips the subscription too: it shares the host's timer registry, and StepSimulatedClock
+  // walks that registry whole, so the host's own step already carries this node's timers. The host must therefore
+  // hold a clock role itself, since a host that neither follows nor publishes advances nothing and its tenants'
+  // timers would never fire. The check above enforces that, because a host with no clock role never enabled the
+  // process-global clock.
+  if (sim_clock_role_ == SimClockRole::kFollower && !shares_context_) {
     const auto clock_topic = config_.AsIfExists<std::string>("trellis.simulated_clock.topic",
                                                              std::string{SimController::kDefaultClockTopic});
     sim_controller_ = std::make_unique<SimController>(*this, clock_topic);
   }
 }
 
-Node::~Node() { Stop(); }
+Node::~Node() {
+  if (shares_context_) {
+    // Destruction is how a hosted node ends: withdraw our registration from the Discovery that outlives us and
+    // leave the host's loop alone. Not through Stop(), which now warns.
+    discovery_->Unregister(discovery_registration_);
+    return;
+  }
+  // Nothing to withdraw: the Discovery is this node's own and goes away with us.
+  Stop();
+}
 
 int Node::Run() {
+  if (shares_context_) {
+    // The loop is the host's: this would block on a call this node's own Stop() cannot end, and an exception from
+    // any sibling's handler would reach the catch below and mark this node's crash counter.
+    Log::Error("{}: ignoring Run, a shared-context node runs on the host's loop; call Run on the host", name_);
+    return 1;
+  }
   Log::Debug("{} node running...", name_);
   try {
     if (time::IsSimulatedClockEnabled()) {
@@ -196,7 +296,15 @@ OneShotTimer Node::CreateOneShotTimer(unsigned initial_delay_ms, TimerImpl::Call
   return timer;
 }
 
-void Node::Stop() { ev_loop_.Stop(); }
+void Node::Stop() {
+  if (shares_context_) {
+    // Stopping the host's loop would end every sibling irrecoverably: asio leaves it stopped until restart().
+    // Warned rather than ignored, because a caller expecting a quiesced node still has a fully live one.
+    Log::Warn("{}: ignoring Stop, a shared-context node runs on the host's loop; destroy the node instead", name_);
+    return;
+  }
+  ev_loop_.Stop();
+}
 
 void Node::UpdateHealth(const trellis::core::HealthStatus& status, const bool compare_description) {
   UpdateHealth(status.health_state(), status.status_code(), status.status_description(), compare_description);
@@ -217,7 +325,16 @@ const trellis::core::HealthStatus& Node::GetLastHealthStatus() const { return he
 
 const Health::HealthHistory& Node::GetHealthHistory() const { return health_.GetHealthHistory(); }
 
-void Node::AddSignalHandler(const SignalHandler& handler) { user_handler_ = handler; }
+void Node::AddSignalHandler(const SignalHandler& handler) {
+  if (shares_context_) {
+    // Storing it would be worse than refusing: nothing on this node waits on a signal, so the handler would look
+    // installed and never fire.
+    Log::Warn("{}: ignoring AddSignalHandler, a shared-context node handles no signals; register one on the host",
+              name_);
+    return;
+  }
+  user_handler_ = handler;
+}
 
 uint64_t Node::GetTimerOverrunCount() const {
   uint64_t total = 0;
@@ -225,8 +342,12 @@ uint64_t Node::GetTimerOverrunCount() const {
   // valid pointer. That is all the lock buys: it serializes entry lifetime, not a timer's internals, so the counters
   // read here must be safe to read concurrently in their own right. Neither this nor the collection below runs a user
   // callback, so the no-reentrancy contract holds.
-  ev_loop_.GetTimerRegistry()->ForEach([&total](const TimerRegistry::Entry& entry) {
-    if (entry.kind == TimerKind::kApplication) {
+  //
+  // The owner check is what makes this total the node's own rather than the whole registry's. Under a SharedContext
+  // every hosted node's timers are kApplication timers on the same io_context, so neither the kind nor the loop tells
+  // them apart.
+  ev_loop_.GetTimerRegistry()->ForEach([this, &total](const TimerRegistry::Entry& entry) {
+    if (entry.kind == TimerKind::kApplication && entry.owner == this) {
       total += entry.timer->GetOverrunCount();
     }
   });
@@ -235,8 +356,8 @@ uint64_t Node::GetTimerOverrunCount() const {
 
 TimerImpl::SchedLatencyStats Node::GetAndResetTimerSchedLatencyStats() {
   TimerImpl::SchedLatencyStats combined{};
-  ev_loop_.GetTimerRegistry()->ForEach([&combined](const TimerRegistry::Entry& entry) {
-    if (entry.kind != TimerKind::kApplication) {
+  ev_loop_.GetTimerRegistry()->ForEach([this, &combined](const TimerRegistry::Entry& entry) {
+    if (entry.kind != TimerKind::kApplication || entry.owner != this) {
       return;  // resetting a timer this node does not own would steal the samples from whoever does
     }
     const auto stats = entry.timer->GetAndResetSchedLatencyStats();
@@ -276,6 +397,10 @@ void Node::StepSimulatedClock(const time::TimePoint& new_time) {
     // steady clock reading, so comparing it against simulated time would be comparing two unrelated epochs -- and
     // since a non-simulated Reload() advances expiry by a single interval, catching such a timer up would spin once
     // per interval across the gap between those epochs.
+    //
+    // Deliberately not filtered by owner, unlike the metrics collection above. Time is process-global, so a step
+    // has to carry every timer in the registry, including those of siblings on this loop. That is what lets a host
+    // advance its tenants' timers without each of them subscribing to the clock topic.
     std::vector<TimerRegistry::Entry> entries;
     for (const auto& entry : registry->GetEntries()) {
       if (entry.timer->IsSimulationDriven()) {

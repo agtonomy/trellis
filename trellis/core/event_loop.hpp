@@ -39,6 +39,10 @@ class TimerRegistry;
  * only ever receives an event loop still gets its timers tracked. A default constructed loop carries no registry, which
  * means its timers still fire but go untracked.
  *
+ * A loop additionally carries an opaque owner tag, recorded on each of its timers' registry entries. Copies of a loop
+ * share one io_context and one registry, so when several components run on the same loop the tag is the only thing that
+ * says whose timer is whose -- see WithOwner() and Node::GetTimerOverrunCount().
+ *
  * Notes on thread-safety: The various Run() methods should only be called on the same thread as one another. The Stop()
  * method may be called from other threads.
  */
@@ -160,15 +164,52 @@ class EventLoop {
    */
   TimerOptions GetTimerOptions() const { return options_; }
 
+  /**
+   * @brief Return a handle to the same loop, tagging the timers built against it with a different owner
+   *
+   * The result drives the same io_context, tracks timers in the same registry and applies the same timer policy; only
+   * the tag differs. This is how two components sharing one loop keep their timers apart in the registry they also
+   * share, which per-component metrics need and loop identity cannot provide.
+   *
+   * @param owner an opaque tag, only ever compared for equality and never dereferenced, so an object's own address
+   *        while it is still under construction is a valid choice
+   *
+   * @return a handle to this loop whose timers register under the given owner
+   */
+  EventLoop WithOwner(const void* owner) const { return EventLoop{*this, owner}; }
+
+  /**
+   * @brief Return the tag that timers constructed against this loop register under
+   *
+   * @return the owner tag, or nullptr for a loop that was never tagged
+   */
+  const void* GetOwner() const { return owner_; }
+
  private:
+  /**
+   * @brief Construct a handle to another loop's io_context, registry and policy under a different owner tag
+   *
+   * Private because retagging is the only reason to build a loop from another one; WithOwner() is the way in. The work
+   * guard is rebuilt rather than copied so that this handle holds the io_context open in its own right.
+   */
+  EventLoop(const EventLoop& other, const void* owner)
+      : state_{other.state_},
+        io_context_{other.io_context_},
+        work_guard_{asio::make_work_guard(*other.io_context_)},
+        registry_{other.registry_},
+        options_{other.options_},
+        owner_{owner} {}
+
   std::shared_ptr<std::atomic<State>> state_ = std::make_shared<std::atomic<State>>(State::kStopped);
   IOContextPointer io_context_ = std::make_shared<IOContext>();
   asio::executor_work_guard<typename IOContext::executor_type> work_guard_{asio::make_work_guard(*io_context_)};
-  // Both are set once at construction and never mutated, so plain copying is correct. Const costs nothing here:
+  // All three are set once at construction and never mutated, so plain copying is correct. Const costs nothing here:
   // work_guard_ already leaves this class copy-constructible but not assignable, which it has to be -- an
   // assignment would leave the guard holding the io_context the loop no longer points at.
   const std::shared_ptr<TimerRegistry> registry_{nullptr};
   const TimerOptions options_{};
+  // Opaque and never dereferenced, so it may point at an object that is still being constructed
+  const void* owner_{nullptr};
 };
 
 }  // namespace core

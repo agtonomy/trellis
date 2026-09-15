@@ -21,11 +21,12 @@
 
 namespace trellis::core {
 
-TimerRegistry::RegistrationHandle TimerRegistry::Add(TimerImpl* timer, asio::io_context* loop, TimerKind kind) {
+TimerRegistry::RegistrationHandle TimerRegistry::Add(TimerImpl* timer, asio::io_context* loop, TimerKind kind,
+                                                     const void* owner) {
   std::lock_guard guard(mutex_);
   const auto handle = next_handle_++;
   const auto inserted =
-      entries_.try_emplace(handle, Entry{.handle = handle, .timer = timer, .loop = loop, .kind = kind});
+      entries_.try_emplace(handle, Entry{.handle = handle, .timer = timer, .loop = loop, .kind = kind, .owner = owner});
   if (!inserted.second) {
     // Two live timers sharing one entry: one would go untracked, and the other would leave the entry behind when it
     // died. Unreachable while handles are 64 bits wide, but too damaging to let pass quietly if it ever were.

@@ -74,16 +74,19 @@ class TimerRegistry {
   static constexpr RegistrationHandle kInvalidRegistrationHandle = 0;
 
   /**
-   * Entry a registered timer, the event loop that drives it, and how it should be treated
+   * Entry a registered timer, the event loop that drives it, its owner, and how it should be treated
    *
    * The loop is recorded so that callers can attribute a timer to the loop it runs on, which a single registry shared
-   * by several loops requires.
+   * by several loops requires. The owner covers the mirror image of that -- a single loop shared by several components,
+   * where every entry names the same io_context and only the tag says whose timer it is. It comes from the EventLoop
+   * the timer was built against (see EventLoop::WithOwner) and is nullptr for a loop that was never tagged.
    */
   struct Entry {
     RegistrationHandle handle{kInvalidRegistrationHandle};
     TimerImpl* timer{nullptr};
     asio::io_context* loop{nullptr};
     TimerKind kind{TimerKind::kApplication};
+    const void* owner{nullptr};
   };
 
   /**
@@ -92,10 +95,11 @@ class TimerRegistry {
    * @param timer the timer to register
    * @param loop the io_context that drives the timer
    * @param kind how the timer should be treated by metrics collection and by a simulated clock
+   * @param owner an opaque tag identifying the component the timer belongs to, only ever compared for equality
    *
    * @return the handle identifying this registration
    */
-  RegistrationHandle Add(TimerImpl* timer, asio::io_context* loop, TimerKind kind);
+  RegistrationHandle Add(TimerImpl* timer, asio::io_context* loop, TimerKind kind, const void* owner = nullptr);
 
   /**
    * Remove deregister a timer

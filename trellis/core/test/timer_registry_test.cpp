@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <stdexcept>
@@ -365,4 +366,42 @@ TEST_F(TrellisFixture, CollectingMetricsFromAnotherThreadWhileTheLoopRunsThrows)
   StopAndJoinRunnerThread();
   timer.reset();
   ASSERT_FALSE(registry->Contains(handle));
+}
+
+// Look up the owner a timer registered under, or nullptr if it is not registered
+const void* OwnerOf(const TimerRegistry& registry, const trellis::core::TimerImpl* timer) {
+  for (const auto& entry : registry.GetEntries()) {
+    if (entry.timer == timer) {
+      return entry.owner;
+    }
+  }
+  return nullptr;
+}
+
+TEST_F(TrellisFixture, TimersOnOneRegistryAreSeparatedByOwner) {
+  const auto registry = GetNode().GetEventLoop().GetTimerRegistry();
+  int other_owner = 0;
+  auto mine = std::make_shared<PeriodicTimerImpl>(GetNode().GetEventLoop(), kNeverFiresIntervalMs, kNoopCallback);
+  auto theirs = std::make_shared<PeriodicTimerImpl>(GetNode().GetEventLoop().WithOwner(&other_owner),
+                                                    kNeverFiresIntervalMs, kNoopCallback);
+
+  // One registry and one io_context: only the owner tag says which component each timer belongs to
+  EXPECT_EQ(OwnerOf(*registry, mine.get()), &GetNode());
+  EXPECT_EQ(OwnerOf(*registry, theirs.get()), &other_owner);
+}
+
+TEST_F(TrellisFixture, ANodeDoesNotCountTimersItDoesNotOwn) {
+  StartRunnerThread();
+  int other_owner = 0;
+  const auto baseline = GetNode().GetTimerOverrunCount();
+
+  // 10ms interval with a 25ms callback guarantees overruns, but they belong to another owner
+  auto timer =
+      std::make_shared<PeriodicTimerImpl>(GetNode().GetEventLoop().WithOwner(&other_owner), 10u, kSlowCallback);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // The timer's asio handler holds a raw pointer to it, so the loop must finish before it goes out of scope
+  StopAndJoinRunnerThread();
+
+  ASSERT_GT(timer->GetOverrunCount(), 0U);
+  EXPECT_EQ(GetNode().GetTimerOverrunCount(), baseline);
 }

@@ -30,6 +30,7 @@
 #include "trellis/core/config.hpp"
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/crash_counter.hpp"
+#include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/health.hpp"
 #include "trellis/core/ipc/named_resource_registry.hpp"
@@ -59,7 +60,9 @@ class SimController;
  *
  * The lifecycle of this class should be coupled to the lifecycle of the
  * application using it. Each instance of this class manages the underlying
- * threads that drive the IPC and asynchronous IO.
+ * threads that drive the IPC and asynchronous IO, unless it was given a
+ * SharedContext, in which case those belong to the host and this node is
+ * only a tenant.
  */
 class Node {
  public:
@@ -75,15 +78,45 @@ class Node {
    * - kFollower: simulated time is enabled and the node subscribes to the clock topic, advancing its
    *   clock from received SimClock messages (see SimController). This is the role for ordinary application
    *   nodes, which do not know at compile time whether they will run in simulation, so it is selected at
-   *   runtime via the trellis.simulated_clock.enabled config flag.
+   *   runtime via the trellis.simulated_clock.enabled config flag. A follower given a SharedContext creates no
+   *   subscription, because it shares the host's timer registry and the host already advances those timers.
    * - kPublisher: simulated time is enabled but the node does NOT subscribe; it generates time and drives
    *   it forward via BroadcastSimulatedClock. This is the role for the simulation engine, which knows at
    *   compile time that it is the clock source, so it is selected explicitly via the constructor argument.
    *
    * Note: kFollower and kPublisher both enable the process-global simulated clock; they differ only in
-   * whether a SimController subscription is created and in who advances time.
+   * whether a SimController subscription is created and in who advances time. That switch is process-global,
+   * so a node given a SharedContext does not flip it: it refuses to construct unless the host has already
+   * enabled or disabled the clock to match its own role. See the constructor.
    */
   enum class SimClockRole { kDisabled, kFollower, kPublisher };
+
+  /**
+   * @brief The primitives an in-process multi-app host injects so several Nodes run on one thread and one set of
+   * discovery sockets
+   *
+   * Sharing the loop shares its timer registry, which is what lets the host advance every hosted node's
+   * simulation-driven timers with a single step. (It is not what puts them on one timeline; the simulated clock is a
+   * process-global switch, so nodes in one process always shared a timeline.) Each node still tags the timers it
+   * creates, so timer metrics stay attributable per node.
+   *
+   * A hosted node gives up four things to the host, which owns them for the whole process: signal handling (so
+   * AddSignalHandler does nothing), Stop() (a no-op, since stopping the loop would stop every sibling), the
+   * SimController subscription, and its own `trellis.timers.*` and `trellis.discovery.*` settings. It still
+   * registers under its own name in discovery and reports its own health.
+   *
+   * `loop` must carry a timer registry and `discovery` must be non-null; the constructor rejects anything else.
+   *
+   * Two requirements on the host cannot be checked, and neither fails loudly. The first is that the host has to run
+   * the loop, since a hosted node's timers, subscriber callbacks and health reporting only progress while someone
+   * does. The hosted node cannot do it itself, because its Run() would drive every sibling's work from a call that
+   * its own Stop() can no longer end. The second is that the host has to outlive its tenants: its destructor stops
+   * the loop, which leaves any node still running on that loop with an io_context that never runs another handler.
+   */
+  struct SharedContext {
+    EventLoop loop;
+    discovery::DiscoveryPtr discovery;
+  };
 
   /**
    * Node Construct an instance
@@ -95,8 +128,17 @@ class Node {
    *        passes kPublisher explicitly. The role is fixed at construction because enabling the simulated
    *        clock must happen before the node's timers are created (see the constructor body for the
    *        ordering rationale), which a post-construction call could not guarantee.
+   * @param shared_context when set, the node runs on the caller's event loop and discovery rather than its own, and
+   *        leaves signal handling, shutdown and the simulated-clock subscription to the caller. Used by an in-process
+   *        multi-app host to run several nodes on one thread; see SharedContext for what the node gives up.
+   *
+   * @throws std::invalid_argument if shared_context holds a null discovery or an event loop with no timer registry
+   * @throws std::invalid_argument if trellis.timers.rearm_policy is not a recognized policy name
+   * @throws std::runtime_error if shared_context is set and the resolved simulated clock role disagrees with the
+   *         state the host has already put the process-global clock in
    */
-  Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role = std::nullopt);
+  Node(std::string_view name, trellis::core::Config config, std::optional<SimClockRole> role = std::nullopt,
+       std::optional<SharedContext> shared_context = std::nullopt);
 
   ~Node();
 
@@ -412,6 +454,10 @@ class Node {
    * After the application has performed the required initialization, call this method to co-opt the current thread to
    * run the underlying Trellis facilities. It is recommended to call this method as your main() return statement.
    *
+   * Refused on a node given a SharedContext, which has no loop of its own to run: it logs an error and returns
+   * non-zero instead of blocking on the host's loop. Run the host. RunOnce(), RunN() and RunFor() stay available;
+   * they return on their own.
+   *
    * @return a return code that may be used to return from main()
    */
   int Run();
@@ -478,6 +524,10 @@ class Node {
   /**
    * @brief stop the underlying threads
    *
+   * Refused on a node given a SharedContext, which has no loop of its own: stopping the host's would end every
+   * sibling. Such a node ends by being destroyed instead, which withdraws its discovery registration and takes the
+   * timers it owns with it. The application's own publishers, subscribers and timers must still go with it.
+   *
    * Note: this method is not needed for typical applications
    */
   void Stop();
@@ -495,6 +545,9 @@ class Node {
 
   /**
    *  AddSignalHandler adds a handler for SIGINT or SIGTERM signals
+   *
+   * Ignored, with a warning, on a node given a SharedContext: that node waits on no signal, so a stored handler
+   * would never be called. The host registers one handler for the whole process.
    *
    * @param handler the function to call when SIGINT or SIGTERM is caught
    */
@@ -540,10 +593,13 @@ class Node {
   const trellis::core::Config& GetConfig() { return config_; }
 
   /**
-   * GetTimerOverrunCount returns the total number of timer overruns across every application timer running on this
-   * node's event loop, whether it was created through this node or directly against the loop
+   * GetTimerOverrunCount returns the total number of timer overruns across every application timer belonging to this
+   * node, whether it was created through this node or directly against the loop handle this node hands out
    *
-   * Timers tagged TimerKind::kManagement are excluded; see TimerKind for why.
+   * Ownership rather than the loop is what draws the line, because a loop and the registry it carries can be shared:
+   * a timer built against another owner's handle to the same loop is that owner's, not this node's (see
+   * EventLoop::WithOwner, and SharedContext for the case where several nodes do exactly that). Timers tagged
+   * TimerKind::kManagement are excluded; see TimerKind for why.
    *
    * An overrun occurs when the callback execution time exceeds the timer interval.
    *
@@ -553,10 +609,11 @@ class Node {
 
   /**
    * GetAndResetTimerSchedLatencyStats returns aggregated scheduling latency stats across every application timer
-   * running on this node's event loop since the last call, then resets those timers' accumulators.
+   * belonging to this node since the last call, then resets those timers' accumulators.
    *
-   * Timers tagged TimerKind::kManagement are excluded, and their accumulators are left untouched so that whoever owns
-   * them still sees their samples; see TimerKind for why.
+   * Timers under another owner on the same loop are excluded along with those tagged TimerKind::kManagement, and both
+   * are left untouched so that whoever owns them still sees their samples; see TimerKind, EventLoop::WithOwner and
+   * SharedContext.
    *
    * Call this from the thread running this node's event loop, or while it is not running. Collecting from a timer
    * callback, which is how this node's own metrics reach it, satisfies that.
@@ -609,14 +666,23 @@ class Node {
   // lifetime brackets the event loop and other members.
   CrashCounter crash_counter_;
 
-  // The event loop handle used for asynchronous operations
+  // Whether the loop and discovery below belong to a host rather than to this node. Declared before them because
+  // both are built from it, and const because everything it governs is settled once at construction.
+  const bool shares_context_;
+
+  // The event loop handle used for asynchronous operations. Tagged with this node as the owner, so timers built
+  // against it stay attributable to this node even when the loop and its registry are shared.
   EventLoop ev_loop_;
 
   // The dynamic discovery layer for discovering other nodes
   discovery::DiscoveryPtr discovery_;
 
-  // Used to manage signal handlers
-  asio::signal_set signal_set_;
+  // This node's own process registration, held only when the Discovery instance is shared: a Discovery announces
+  // its builder alone, so a node that adopts one must announce itself or never appear in `trellis node list`.
+  discovery::Discovery::RegistrationHandle discovery_registration_{discovery::Discovery::kInvalidRegistrationHandle};
+
+  // Used to manage signal handlers. Empty on a shared-context node: the host handles signals for the process.
+  std::optional<asio::signal_set> signal_set_;
 
   // Used to manage application health state
   trellis::core::Health health_;
@@ -636,7 +702,8 @@ class Node {
   // The simulated clock role resolved at construction (see SimClockRole)
   SimClockRole sim_clock_role_{SimClockRole::kDisabled};
 
-  // Subscribes to the clock topic and advances this node's clock; only created for the kFollower role
+  // Subscribes to the clock topic and advances this node's clock; only created for a kFollower that owns its loop,
+  // since the host's own step already advances a hosted follower's timers
   std::unique_ptr<SimController> sim_controller_;
 
   // Publisher for broadcasting simulated clock updates; created lazily by BroadcastSimulatedClock

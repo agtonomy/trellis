@@ -56,7 +56,7 @@ TimerImpl::~TimerImpl() { DeregisterFromLoop(); }
 
 void TimerImpl::RegisterWithLoop() {
   if (const auto registry = loop_.GetTimerRegistry(); registry != nullptr) {
-    registration_ = registry->Add(this, &(*loop_), kind_);
+    registration_ = registry->Add(this, &(*loop_), kind_, loop_.GetOwner());
   }
 }
 
