@@ -63,6 +63,7 @@ class Discovery {
     const bool loopback_enabled;                        ///< Whether to loopback broadcasts bypassing UDP
     const int rcvbuf_size;                              ///< Size of the UDP receive buffer
     const int sndbuf_size;                              ///< Size of the UDP send buffer
+    const unsigned poll_interval_ms;                    ///< Drain period of udp_receiver_; 0 = async recv per datagram
   };
 
   /**
@@ -356,12 +357,16 @@ class Discovery {
   using OptUdpReceiver = std::optional<UdpReceiver>;
   using OptUdpSender = std::optional<trellis::network::UDP>;
 
+  /// The callback that feeds inbound datagrams to ReceiveData, whether armed on the receiver or handed to Drain
+  UdpReceiver::Callback ReceiveCallback();
+
   const std::string node_name_;                                          ///< This process's logical node name
   const ConfigData config_;                                              ///< Configuration data initialized from Config
   DescriptorStore store_;                                                ///< Host-local content-addressed schema store
   trellis::core::EventLoop loop_;                                        ///< Event loop for deferred operations
   OptUdpReceiver udp_receiver_;                                          ///< Receives discovery broadcasts
   OptUdpSender udp_sender_;                                              ///< Sends discovery broadcasts
+  trellis::core::Timer poll_timer_;                                      ///< Drains udp_receiver_, null unless polling
   trellis::core::Timer management_timer_;                                ///< Periodic timer for housekeeping
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples
   std::mutex registered_samples_mutex_{};               ///< synchronize access to registered samples map

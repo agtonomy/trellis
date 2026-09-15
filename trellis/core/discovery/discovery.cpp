@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <ranges>
+#include <stdexcept>
 #include <utility>
 
 #include "trellis/core/logging.hpp"
@@ -119,6 +120,7 @@ constexpr unsigned kDefaultSampleTimeout = 2000u;
 constexpr bool kDefaultLoopbackEnabled = false;
 constexpr unsigned kDefaultRcvBufSize = 8 * 1024 * 1024;  // 8MB
 constexpr unsigned kDefaultSndBufSize = 2 * 1024 * 1024;  // 2MB
+constexpr unsigned kDefaultPollIntervalMs = 0u;
 
 }  // namespace
 
@@ -129,7 +131,18 @@ Discovery::ConfigData::ConfigData(const trellis::core::Config& config)
       sample_timeout_ms{config.AsIfExists<unsigned>("trellis.discovery.sample_timeout", kDefaultSampleTimeout)},
       loopback_enabled{config.AsIfExists<bool>("trellis.discovery.loopback_enabled", kDefaultLoopbackEnabled)},
       rcvbuf_size{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.rcvbuf_size", kDefaultRcvBufSize))},
-      sndbuf_size{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.sndbuf_size", kDefaultSndBufSize))} {}
+      sndbuf_size{static_cast<int>(config.AsIfExists<unsigned>("trellis.discovery.sndbuf_size", kDefaultSndBufSize))},
+      poll_interval_ms{config.AsIfExists<unsigned>("trellis.discovery.poll_interval_ms", kDefaultPollIntervalMs)} {
+  // A live peer's sample can age up to interval + poll_interval between drains. Keep one more broadcast of slack so a
+  // single dropped datagram doesn't purge the peer, matching the default 2x ratio. Assumes peers use this interval.
+  if (poll_interval_ms > 0 && static_cast<uint64_t>(poll_interval_ms) + 2 * static_cast<uint64_t>(management_interval) >
+                                  static_cast<uint64_t>(sample_timeout_ms.count())) {
+    throw std::invalid_argument(
+        fmt::format("trellis.discovery.poll_interval_ms ({}) plus two trellis.discovery.interval ({}) periods must not "
+                    "exceed trellis.discovery.sample_timeout ({})",
+                    poll_interval_ms, management_interval, sample_timeout_ms.count()));
+  }
+}
 
 Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
     : node_name_{std::move(node_name)},
@@ -142,17 +155,26 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
                               loop,
                               static_cast<asio::ip::udp::socket::native_handle_type>(CreateNativeUDPSocket(
                                   config_.discovery_port, config_.rcvbuf_size, config_.sndbuf_size)),
-                              [this](const void* data, size_t len, const asio::ip::udp::endpoint&) {
-                                ReceiveData(DiscoveryNow(), data, len);
-                              })),
+                              // Without a callback the receiver arms nothing, and poll_timer_ drains it instead
+                              config_.poll_interval_ms > 0 ? UdpReceiver::Callback{} : ReceiveCallback())),
       udp_sender_(config_.loopback_enabled
                       ? std::nullopt
                       : std::make_optional<trellis::network::UDP>(
                             loop, CreateNativeUDPSocket(0, config_.rcvbuf_size, config_.sndbuf_size))),
+      poll_timer_{udp_receiver_.has_value() && config_.poll_interval_ms > 0
+                      ? std::make_shared<PeriodicTimerImpl>(
+                            loop, [this](const time::TimePoint&) { udp_receiver_->Drain(ReceiveCallback()); },
+                            config_.poll_interval_ms, config_.poll_interval_ms, TimerKind::kManagement)
+                      : nullptr},
       management_timer_{std::make_shared<PeriodicTimerImpl>(
           loop, [this](const time::TimePoint&) { Evaluate(DiscoveryNow()); }, config_.management_interval,
           config_.management_interval, TimerKind::kManagement)} {
   Register(utils::GetNodeProcessSample(node_name_));
+}
+
+Discovery::UdpReceiver::Callback Discovery::ReceiveCallback() {
+  return
+      [this](const void* data, size_t len, const asio::ip::udp::endpoint&) { ReceiveData(DiscoveryNow(), data, len); };
 }
 
 void Discovery::Evaluate(const trellis::core::time::TimePoint& now) {
