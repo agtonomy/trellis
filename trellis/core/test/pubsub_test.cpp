@@ -15,12 +15,20 @@
  *
  */
 
+#include <fmt/core.h>
 #include <gtest/gtest.h>
+#include <unistd.h>
 
+#include <algorithm>
+#include <chrono>
 #include <iostream>
+#include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "trellis/core/discovery/descriptor_store.hpp"
+#include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
@@ -30,6 +38,9 @@ using namespace trellis::core::test;
 
 static constexpr std::chrono::milliseconds kProcessEventsWaitTime(500U);
 static constexpr unsigned kWatchdogTimeoutMs{1000u};
+// An upper bound rather than an expected duration: whoever waits on it polls, so it only has to outlast a heavily
+// loaded CI machine.
+static constexpr std::chrono::milliseconds kDiscoveryConvergeTimeout(5000U);
 
 TEST_F(TrellisFixture, PubSubBurst) {
   unsigned receive_count{0};
@@ -713,4 +724,282 @@ TEST_F(TrellisFixture, SendAlternatesLargeAndSmallMessages) {
   }
 
   EXPECT_EQ(received_sizes, payload_sizes);
+}
+
+// Publisher and subscriber share a process in these tests, so the subscriber selects the in-process bus from the
+// publisher's advertisement. That choice is independent of how discovery is configured -- see
+// InProcessTransportIsSelectedWithoutLoopback.
+
+TEST_F(TrellisFixture, InProcessBusCarriesSendTimeAndPayload) {
+  std::string received_msg;
+  trellis::core::time::TimePoint received_send_time{};
+  std::mutex m;
+  std::condition_variable cv;
+  bool got{false};
+
+  const Publisher<test::Test> pub = GetNode().CreatePublisher<test::Test>("test_inproc_bus_topic");
+  const Subscriber<test::Test> sub = GetNode().CreateSubscriber<test::Test>(
+      "test_inproc_bus_topic", [&](const time::TimePoint&, const time::TimePoint& send_time,
+                                   trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received_msg = msg->msg();
+        received_send_time = send_time;
+        got = true;
+        cv.notify_one();
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  test::Test msg;
+  msg.set_msg("through the bus");
+  const time::TimePoint sent = pub->Send(msg);
+
+  std::unique_lock<std::mutex> lock(m);
+  ASSERT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime, [&got]() { return got; }));
+  EXPECT_EQ(received_msg, "through the bus");
+  // The synthesized header must carry the publisher's send time so a follower steps its sim clock identically.
+  EXPECT_EQ(received_send_time, sent);
+}
+
+TEST_F(TrellisFixture, InProcessBusDeliversFromMultiplePublishersOnOneTopic) {
+  std::vector<std::string> received;
+  std::mutex m;
+  std::condition_variable cv;
+
+  const Subscriber<test::Test> sub = GetNode().CreateSubscriber<test::Test>(
+      "test_inproc_multi_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received.push_back(msg->msg());
+        cv.notify_one();
+      });
+  const Publisher<test::Test> pub_a = GetNode().CreatePublisher<test::Test>("test_inproc_multi_topic");
+  const Publisher<test::Test> pub_b = GetNode().CreatePublisher<test::Test>("test_inproc_multi_topic");
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
+
+  test::Test a;
+  a.set_msg("from A");
+  test::Test b;
+  b.set_msg("from B");
+  pub_a->Send(a);
+  pub_b->Send(b);
+
+  std::unique_lock<std::mutex> lock(m);
+  // Each publisher has a distinct writer id, so both messages are tracked independently and neither is dropped as a
+  // stale sequence on the single per-topic route.
+  ASSERT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime, [&received]() { return received.size() == 2; }));
+  EXPECT_NE(std::find(received.begin(), received.end(), "from A"), received.end());
+  EXPECT_NE(std::find(received.begin(), received.end(), "from B"), received.end());
+}
+
+TEST_F(TrellisFixture, InProcessBusFansOutFromMultiplePublishersToMultipleSubscribers) {
+  std::vector<std::string> received_a;
+  std::vector<std::string> received_b;
+  std::mutex m;
+  std::condition_variable cv;
+
+  const auto make_sub = [&](std::vector<std::string>& sink) {
+    return GetNode().CreateSubscriber<test::Test>(
+        "test_inproc_many_to_many_topic",
+        [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+          std::lock_guard<std::mutex> lock(m);
+          sink.push_back(msg->msg());
+          cv.notify_one();
+        });
+  };
+  const Subscriber<test::Test> sub_a = make_sub(received_a);
+  const Subscriber<test::Test> sub_b = make_sub(received_b);
+  const Publisher<test::Test> pub_a = GetNode().CreatePublisher<test::Test>("test_inproc_many_to_many_topic");
+  const Publisher<test::Test> pub_b = GetNode().CreatePublisher<test::Test>("test_inproc_many_to_many_topic");
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_TRUE(sub_a->IsInProcess());
+  ASSERT_TRUE(sub_b->IsInProcess());
+
+  test::Test a;
+  a.set_msg("from A");
+  test::Test b;
+  b.set_msg("from B");
+  pub_a->Send(a);
+  pub_b->Send(b);
+
+  // Routes are keyed by topic rather than by publisher, so each subscriber holds one route and still sees both
+  // publishers. Distinct per-publisher writer ids keep the two sequence streams independent, so neither message is
+  // charged as a drop against the other.
+  std::unique_lock<std::mutex> lock(m);
+  ASSERT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime,
+                          [&received_a, &received_b]() { return received_a.size() == 2 && received_b.size() == 2; }));
+  for (const std::vector<std::string>* sink : {&received_a, &received_b}) {
+    EXPECT_NE(std::find(sink->begin(), sink->end(), "from A"), sink->end());
+    EXPECT_NE(std::find(sink->begin(), sink->end(), "from B"), sink->end());
+  }
+}
+
+TEST_F(TrellisFixture, InProcessTransportIsSelectedForSameProcessPublisher) {
+  const Publisher<test::Test> pub = GetNode().CreatePublisher<test::Test>("test_inproc_selection_topic");
+  const Subscriber<test::Test> sub = GetNode().CreateSubscriber<test::Test>(
+      "test_inproc_selection_topic",
+      [](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr) {});
+
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  EXPECT_TRUE(sub->IsInProcess());
+}
+
+namespace {
+
+/// @brief Runs a node on its own thread, stopping and joining it on every exit path.
+///
+/// A failed ASSERT_* returns from the test body immediately. Without this, that early return would destroy a
+/// still-joinable std::thread, and std::thread's destructor calls std::terminate() — taking down every remaining test
+/// in the binary rather than failing just the one.
+class ScopedNodeRunner {
+ public:
+  explicit ScopedNodeRunner(trellis::core::Node& node) : node_{node}, thread_{[&node]() { node.Run(); }} {}
+
+  ~ScopedNodeRunner() {
+    node_.Stop();
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+
+  ScopedNodeRunner(const ScopedNodeRunner&) = delete;
+  ScopedNodeRunner& operator=(const ScopedNodeRunner&) = delete;
+
+ private:
+  trellis::core::Node& node_;
+  std::thread thread_;
+};
+
+/// @brief A discovery config on a port drawn from the IANA dynamic range, which nothing well-known claims.
+///
+/// Discovery sockets set SO_REUSEPORT and broadcast, so on a fixed port two concurrent runs of this binary would see
+/// each other's samples. The peer in the other process advertises a different pid, so the subscriber below would build
+/// an ShmReader alongside its bus route and could receive the message twice.
+std::string RandomPortDiscoveryConfig() {
+  std::random_device rd;
+  const uint16_t port = std::uniform_int_distribution<uint16_t>{49152U, 65535U}(rd);
+  return fmt::format(R"(
+    trellis:
+      discovery:
+        interval: 10
+        sample_timeout: 500
+        port: {}
+    )",
+                     port);
+}
+
+}  // namespace
+
+// Discovery is left on its default UDP path here, so the only thing steering the subscriber onto the bus is the
+// publisher's advertised transport layer plus a matching pid. This is what keeps the transport decision independent
+// of trellis.discovery.loopback_enabled.
+TEST(InProcessTransport, InProcessTransportIsSelectedWithoutLoopback) {
+  trellis::core::Node node("InProcessTransportIsSelectedWithoutLoopback",
+                           trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+
+  std::string received_msg;
+  std::mutex m;
+  std::condition_variable cv;
+  bool got{false};
+
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_no_loopback_topic");
+  const Subscriber<test::Test> sub = node.CreateSubscriber<test::Test>(
+      "test_no_loopback_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received_msg = msg->msg();
+        got = true;
+        cv.notify_one();
+      });
+
+  // Declared after the publisher and subscriber so it is destroyed before them, stopping the loop while they are still
+  // alive to serve any handler already in flight.
+  const ScopedNodeRunner runner{node};
+
+  // Polled rather than slept, so the test proceeds the moment discovery converges.
+  const auto deadline = std::chrono::steady_clock::now() + kDiscoveryConvergeTimeout;
+  while (!sub->IsInProcess() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  msg.set_msg("no loopback");
+  pub->Send(msg);
+
+  {
+    std::unique_lock<std::mutex> lock(m);
+    EXPECT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime, [&got]() { return got; }));
+  }
+  EXPECT_EQ(received_msg, "no loopback");
+}
+
+// A publisher can hold a subscriber in this process and one outside it at the same time. That is the only path where
+// a single send both publishes to the bus and fills a shared memory slot, from the same serialized bytes, so it is
+// worth covering on its own rather than inferring it from the two single-transport cases.
+TEST(InProcessTransport, SendReachesAnInProcessSubscriberWhileARemoteOneIsRegistered) {
+  // Short by necessity: the node name goes into a Unix socket path that AddReader builds, capped at 108 bytes.
+  trellis::core::Node node("mixed_transport", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+
+  std::string received_msg;
+  std::mutex m;
+  std::condition_variable cv;
+  unsigned receive_count{0};
+
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_mixed_transport_topic");
+  const Subscriber<test::Test> sub = node.CreateSubscriber<test::Test>(
+      "test_mixed_transport_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received_msg = msg->msg();
+        ++receive_count;
+        cv.notify_one();
+      });
+
+  // Declared after the publisher and subscriber so it is destroyed before them, stopping the loop while they are
+  // still alive to serve any handler already in flight.
+  const ScopedNodeRunner runner{node};
+
+  // A subscriber sample reporting a pid that is not ours, which is what makes the publisher treat it as remote and
+  // keep a shared memory reader alongside its bus route. Nothing ever reads that slot, and nothing needs to:
+  // ShmWriter::AddReader only opens a notification socket, and the writer never waits on one.
+  trellis::core::discovery::DescriptorStore store{""};
+  trellis::core::discovery::Sample remote_subscriber = trellis::core::discovery::utils::CreateProtoPubSubSample(
+      store, "test_mixed_transport_topic", /* message_desc = */ "", "trellis.core.test.Test",
+      /* publisher = */ false, /* memory_file_prefix = */ "", /* buffer_count = */ 0u);
+  ASSERT_EQ(remote_subscriber.topic().pid(), ::getpid());
+  remote_subscriber.mutable_topic()->set_pid(::getpid() + 1);
+  node.GetDiscovery()->Register(std::move(remote_subscriber));
+
+  // Polled rather than slept, so the test proceeds the moment both transports are in play.
+  const auto deadline = std::chrono::steady_clock::now() + kDiscoveryConvergeTimeout;
+  while ((!sub->IsInProcess() || !pub->HasRemoteSubscribers()) && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(sub->IsInProcess()) << "the same-process subscriber did not take the bus";
+  ASSERT_TRUE(pub->HasRemoteSubscribers()) << "the publisher never saw the subscriber from another process";
+
+  test::Test msg;
+  msg.set_msg("mixed transport");
+  pub->Send(msg);
+
+  {
+    std::unique_lock<std::mutex> lock(m);
+    ASSERT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime, [&receive_count]() { return receive_count > 0; }));
+    // Exactly once, not merely at least once: a second copy would mean this subscriber was served by both
+    // transports, which is what registering a shared memory reader for it would cause. Wait for one and require
+    // the wait to time out.
+    EXPECT_FALSE(cv.wait_for(lock, kProcessEventsWaitTime, [&receive_count]() { return receive_count > 1; }))
+        << "delivered " << receive_count << " times";
+  }
+  EXPECT_EQ(received_msg, "mixed transport");
 }

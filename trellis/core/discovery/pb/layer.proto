@@ -35,8 +35,10 @@ message TransportConfig  // connection parameter for reader / writer
 
 enum TransportLayerType  // transport layer
 {
-  tl_none = 0;  // undefined
-  tl_shm = 1;   // shared memory
+  tl_none = 0;    // undefined
+  tl_shm = 1;     // shared memory
+  tl_inproc = 2;  // in-process bus, usable only between entities sharing one address space; carries no parameters,
+                  // since Topic already reports the pid and host that identify the address space
 }
 
 message TransportLayer {

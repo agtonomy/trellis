@@ -1,0 +1,10 @@
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+cc_test(
+    name = "in_process_bus_test",
+    srcs = ["in_process_bus_test.cpp"],
+    deps = [
+        "//trellis/core/ipc:in_process_bus",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

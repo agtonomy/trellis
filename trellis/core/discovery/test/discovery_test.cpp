@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/test/test.pb.h"
 
 namespace trellis::core::discovery {
@@ -324,6 +325,53 @@ TEST(DiscoveryTests, Loopback) {
     ASSERT_EQ(samples.size(), 1);
     ASSERT_EQ(samples[0].process().uname(), "test_node");
   }
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessAcceptsOurOwnSample) {
+  DescriptorStore store{""};
+  const Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                       "memfile", /* buffer_count = */ 2u);
+  EXPECT_TRUE(utils::SharesThisProcess(sample));
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessAcceptsSubscriberSamples) {
+  // Either end may need to compare the other's address space against its own, so a sample built with
+  // publisher = false carries the layer too.
+  DescriptorStore store{""};
+  const Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ false,
+                                                       "", /* buffer_count = */ 0u);
+  EXPECT_TRUE(utils::SharesThisProcess(sample));
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessRejectsADifferentPid) {
+  // Every other process on this host reports a different pid. Matching on the layer alone would put all of them on the
+  // in-process bus.
+  DescriptorStore store{""};
+  Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                 "memfile", /* buffer_count = */ 2u);
+  ASSERT_EQ(sample.topic().pid(), ::getpid());
+  sample.mutable_topic()->set_pid(::getpid() + 1);
+  EXPECT_FALSE(utils::SharesThisProcess(sample));
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessRejectsADifferentHostname) {
+  // Discovery reaches other hosts, where a pid equal to ours says nothing about address spaces.
+  DescriptorStore store{""};
+  Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                 "memfile", /* buffer_count = */ 2u);
+  ASSERT_EQ(sample.topic().hname(), utils::GetHostname());
+  sample.mutable_topic()->set_hname(sample.topic().hname() + "_elsewhere");
+  EXPECT_FALSE(utils::SharesThisProcess(sample));
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessRejectsASampleWithoutTheInProcessLayer) {
+  // A peer that cannot use the layer never advertises it. Treating a missing layer as a match would make every such
+  // peer look local, including one that only ever offered shared memory.
+  DescriptorStore store{""};
+  Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                 "memfile", /* buffer_count = */ 2u);
+  sample.mutable_topic()->clear_tlayer();
+  EXPECT_FALSE(utils::SharesThisProcess(sample));
 }
 
 TEST(DiscoveryTests, PollIntervalDefaultsToAsyncReceive) {

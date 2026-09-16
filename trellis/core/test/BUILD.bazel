@@ -85,6 +85,8 @@ cc_test(
         ":test",
         ":test_fixture",
         ":test_proto",
+        "//trellis/core/discovery:descriptor_store",
+        "//trellis/core/discovery:utils",
     ],
 )
 

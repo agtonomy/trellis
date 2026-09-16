@@ -17,6 +17,7 @@
 
 #include "trellis/core/discovery/utils.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <string_view>
 
@@ -128,6 +129,17 @@ std::string GetHostname() {
   return std::string(hostname);
 }
 
+bool SharesThisProcess(const discovery::Sample& sample) {
+  // Cached because this runs per discovery event, and a host does not rename itself out from under a live process.
+  static const std::string hostname = GetHostname();
+  if (sample.topic().pid() != ::getpid() || sample.topic().hname() != hostname) {
+    return false;
+  }
+  return std::ranges::any_of(sample.topic().tlayer(), [](const discovery::TransportLayer& layer) {
+    return layer.type() == discovery::tl_inproc;
+  });
+}
+
 std::string GetProtoMessageDescription(const google::protobuf::Message& msg_) {
   return GetProtoMessageDescription(msg_.GetDescriptor());
 }
@@ -185,15 +197,21 @@ Sample CreateProtoPubSubSample(DescriptorStore& store, const std::string& topic,
   tdatatype->set_encoding("proto");
   PopulateDescriptor(store, message_desc, tdatatype->mutable_desc_hash(), tdatatype->mutable_desc());
 
-  {
+  // Advertise only the layers this entity can actually serve, so a subscriber picks its transport from the
+  // advertisement.
+  if (buffer_count > 0) {
     auto* layer = sample.mutable_topic()->add_tlayer();
     layer->set_type(discovery::tl_shm);
     layer->set_version(1);
-    if (buffer_count > 0) {
-      layer->mutable_par_layer()->mutable_layer_par_shm()->set_memory_file_prefix(memory_file_prefix);
-      layer->mutable_par_layer()->mutable_layer_par_shm()->set_buffer_count(buffer_count);
-    }
+    layer->mutable_par_layer()->mutable_layer_par_shm()->set_memory_file_prefix(memory_file_prefix);
+    layer->mutable_par_layer()->mutable_layer_par_shm()->set_buffer_count(buffer_count);
   }
+
+  // Advertised by publishers and subscribers alike, since either end may need to decide whether the other shares its
+  // address space. It carries no parameters: this sample already reports the pid and hostname that answer that.
+  auto* inproc_layer = sample.mutable_topic()->add_tlayer();
+  inproc_layer->set_type(discovery::tl_inproc);
+  inproc_layer->set_version(1);
 
   return sample;
 }

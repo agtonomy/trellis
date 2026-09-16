@@ -299,8 +299,10 @@ cc_library(
     deps = [
         ":core_constraints",
         ":core_converters",
+        ":core_time",
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
+        "//trellis/core/ipc:in_process_bus",
         "//trellis/core/ipc/shm:shm_writer",
         "//trellis/core/statistics:frequency_calculator",
     ],
@@ -334,6 +336,7 @@ cc_library(
         ":core_timer",
         "//trellis/core/discovery",
         "//trellis/core/discovery:utils",
+        "//trellis/core/ipc:in_process_bus",
         "//trellis/core/ipc/proto:dynamic_message_cache",
         "//trellis/core/ipc/shm:shm_reader",
         "//trellis/core/statistics:frequency_calculator",

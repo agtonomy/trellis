@@ -19,15 +19,21 @@
 #define TRELLIS_CORE_SUBSCRIBER_V2_HPP_
 
 #include <fmt/format.h>
+#include <unistd.h>
 
+#include <algorithm>
+#include <atomic>
 #include <ranges>
+#include <string>
 #include <type_traits>
+#include <unordered_set>
 #include <variant>
 
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/ipc/in_process_bus.hpp"
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
 #include "trellis/core/ipc/shm/shm_reader.hpp"
 #include "trellis/core/logging.hpp"
@@ -39,10 +45,12 @@
 namespace trellis::core {
 
 /**
- * @brief Implementation of a protobuf subscriber for shared memory message passing.
+ * @brief Implementation of a protobuf subscriber that receives messages over the in-process transport, shared
+ *        memory, or both.
  *
- * This class handles discovery of publishers, connecting to shared memory regions,
- * and deserializing received messages (both statically and dynamically typed).
+ * This class handles discovery of publishers, registering one ipc::InProcessBus route for the publishers in this
+ * process, connecting to shared memory regions for the rest, and deserializing received messages (both statically
+ * and dynamically typed).
  *
  * This class supports opt-in automatic conversion from serializable types to native C++ types. Callers may specify a
  * native message type that is convertible from the serializable type. By default, ADL is used to find a `FromProto`
@@ -141,6 +149,9 @@ class SubscriberImpl : public SubscriberBase,
     for (const auto& r : readers_ | std::views::values) {
       r->Stop();
     }
+
+    UnsubscribeInProcess();
+    inproc_publisher_ids_.clear();
   }
 
   SubscriberImpl(const SubscriberImpl&) = delete;
@@ -153,6 +164,18 @@ class SubscriberImpl : public SubscriberBase,
 
   /// @brief Get the topic name this subscriber is subscribed to.
   const std::string& GetTopic() const override { return topic_; }
+
+  /**
+   * @brief Whether this subscriber is being served by the in-process transport rather than shared memory.
+   *
+   * Reflects what the discovered publishers advertised, so it only becomes meaningful once discovery has run.
+   *
+   * @note Backed by its own atomic rather than by inproc_bus_, which the discovery thread mutates, so that this is
+   * safe to call from any thread.
+   *
+   * @return True while at least one same-process publisher is routing this topic through the in-process transport.
+   */
+  bool IsInProcess() const { return inproc_active_.load(std::memory_order_relaxed); }
 
   /// @brief Sets a watchdog timer that is reset upon each received message.
   void SetWatchdogTimer(Timer timer) { watchdog_timer_ = std::move(timer); }
@@ -197,7 +220,9 @@ class SubscriberImpl : public SubscriberBase,
   /**
    * @brief Handles discovery events for publishers.
    *
-   * Connects to new shared memory regions or disconnects from dropped ones.
+   * Publishers advertising the in-process layer from this process share a single in-process route, registered when
+   * the first appears and dropped when the last goes away. Every other publisher gets a shared memory reader, connected
+   * on registration and disconnected when it drops.
    */
   void ReceivePublisher(const discovery::Discovery::EventType event, const discovery::Sample& sample) {
     const auto& topic = sample.topic().tname();
@@ -216,6 +241,22 @@ class SubscriberImpl : public SubscriberBase,
         dynamic_message_cache_->Create(name);
       }
     }
+    if (discovery::utils::SharesThisProcess(sample)) {
+      // The in-process transport delivers by topic, so every same-process publisher shares one route and none of them
+      // gets an shm reader. Track which publishers are in process so the route outlives exactly as long as one of
+      // them does.
+      if (event == discovery::Discovery::EventType::kNewRegistration) {
+        inproc_publisher_ids_.insert(topic_id);
+        SubscribeInProcess();
+      } else if (event == discovery::Discovery::EventType::kNewUnregistration) {
+        inproc_publisher_ids_.erase(topic_id);
+        if (inproc_publisher_ids_.empty()) {
+          UnsubscribeInProcess();
+        }
+      }
+      return;
+    }
+
     if (readers_.contains(topic_id)) {
       if (event == discovery::Discovery::EventType::kNewUnregistration) {
         readers_.erase(topic_id);
@@ -259,8 +300,38 @@ class SubscriberImpl : public SubscriberBase,
     }
   }
 
+  /// @brief Register this subscriber's single per-topic route with InProcessBus, if one is not registered.
+  void SubscribeInProcess() {
+    // inproc_bus_ is the registered flag, so the second same-process publisher on this topic lands here as a no-op.
+    if (inproc_bus_ != nullptr) {
+      return;
+    }
+    // shared_from_this is valid here because the discovery callback runs after the owning shared_ptr exists.
+    const std::weak_ptr<SubscriberImpl> weak_self = this->shared_from_this();
+    inproc_bus_ = ipc::InProcessBus::Instance();
+    inproc_bus_handle_ = inproc_bus_->Subscribe(
+        topic_, loop_, [weak_self](const ipc::shm::ShmFile::SMemFileHeader& header, const void* data, size_t len) {
+          const std::shared_ptr<SubscriberImpl> self = weak_self.lock();
+          if (self != nullptr) {
+            self->ReceiveData(header, data, len);
+          }
+        });
+    inproc_active_.store(true, std::memory_order_relaxed);
+  }
+
+  /// @brief Drop the in-process route, if one is registered.
+  void UnsubscribeInProcess() {
+    if (inproc_bus_ == nullptr) {
+      return;
+    }
+    inproc_bus_->Unsubscribe(topic_, inproc_bus_handle_);
+    inproc_bus_handle_ = ipc::InProcessBus::kNoHandle;
+    inproc_bus_.reset();
+    inproc_active_.store(false, std::memory_order_relaxed);
+  }
+
   /**
-   * @brief Called when a shared memory segment delivers new data.
+   * @brief Called when either transport delivers new data: an InProcessBus route or a shared memory reader.
    *
    * Handles throttling, parsing, and dispatching to user callbacks.
    */
@@ -299,8 +370,8 @@ class SubscriberImpl : public SubscriberBase,
     SerializableTypePtr owned_msg;
     SerializableT* msg = nullptr;
 
-    // Only materialize/parse a message when a parsed callback is registered. Raw subscribers forward the
-    // shared-memory bytes directly and need neither the message nor the schema.
+    // Only materialize/parse a message when a parsed callback is registered. Raw subscribers forward the delivered
+    // bytes directly and need neither the message nor the schema.
     if (callback_) {
       if constexpr (kCanUseScratch) {
         // Converter subscribers parse into a reused scratch proto to avoid per msg allocs that are thrown away
@@ -316,8 +387,8 @@ class SubscriberImpl : public SubscriberBase,
       }
 
       if (!msg->ParseFromArray(data, len)) {
-        throw std::runtime_error(fmt::format("Failed to parse proto from shared memory from topic {} and writer_id {}",
-                                             topic_, header.writer_id));
+        throw std::runtime_error(
+            fmt::format("Failed to parse proto from topic {} and writer_id {}", topic_, header.writer_id));
       }
     }
 
@@ -406,6 +477,14 @@ class SubscriberImpl : public SubscriberBase,
   std::string subscriber_id_;
   discovery::Discovery::CallbackHandle callback_handle_;
   std::unordered_map<std::string, std::shared_ptr<ipc::shm::ShmReader>> readers_;
+  /// Held while a route is registered; non-null means registered. Owning it keeps Stop() away from the singleton
+  /// accessor, so a subscriber torn down during static destruction still unsubscribes against a live InProcessBus.
+  std::shared_ptr<ipc::InProcessBus> inproc_bus_;
+  ipc::InProcessBus::Handle inproc_bus_handle_{ipc::InProcessBus::kNoHandle};  ///< Handle for Unsubscribe
+  /// Discovery ids of the same-process publishers on this topic. They share the single route above, so it is
+  /// registered when the first one appears and dropped when the last one goes away.
+  std::unordered_set<std::string> inproc_publisher_ids_;
+  std::atomic<bool> inproc_active_{false};  ///< Mirrors inproc_bus_ for IsInProcess(), which any thread may call.
   bool did_receive_{false};
   std::unique_ptr<ipc::proto::DynamicMessageCache> dynamic_message_cache_{nullptr};
   std::atomic<unsigned> rate_throttle_interval_ms_{0};
