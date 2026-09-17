@@ -280,6 +280,32 @@ bool Node::RunN(const unsigned n) {
   }
 }
 
+bool Node::RunUntilIdle(const unsigned max_handlers) {
+  try {
+    unsigned count{0};
+    while (ShouldRun() && ev_loop_.PollOne()) {
+      // Reaching the cap means a handler keeps rescheduling itself; leaving work queued without a word would look
+      // like a settled loop, so warn instead of returning silently.
+      if (++count >= max_handlers) {
+        Log::Warn("RunUntilIdle ran {} handlers without reaching quiescence; work may remain on the loop",
+                  max_handlers);
+        break;
+      }
+    }
+    return ShouldRun();
+  } catch (const std::exception& e) {
+    Log::Error("Unhandled std::exception: {}", e.what());
+    crash_counter_.MarkUncleanExit();
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return false;
+  } catch (...) {
+    Log::Error("Unhandled unknown exception occurred.");
+    crash_counter_.MarkUncleanExit();
+    ipc::NamedResourceRegistry::Get().UnlinkAll();
+    return false;
+  }
+}
+
 bool Node::ShouldRun() {
   const bool should_run = (!ev_loop_.Stopped() || first_run_);
   first_run_ = false;

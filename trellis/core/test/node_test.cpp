@@ -19,6 +19,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string>
@@ -258,4 +259,45 @@ TEST(TrellisNodeSharedContext, GuestPublisherReachesAHostSubscriber) {
     return received > 0;
   });
   EXPECT_GT(received, 0u);
+}
+
+// RunUntilIdle is the conductor's quiescence step: it must drain a whole cascade of posted work, however deep, not
+// stop at a fixed count the way RunN does.
+TEST(TrellisNode, RunUntilIdleDrainsAFullCascade) {
+  Config config(DataPath(kBaseFilename));
+  Node node("node", config);
+
+  unsigned ran{0};
+  // Each handler posts the next, forming a chain deeper than RunN's old fixed 10000-handler cap in replay_apps.
+  static constexpr unsigned kDepth{15000};
+  std::function<void()> step = [&]() {
+    ++ran;
+    if (ran < kDepth) {
+      asio::post(*node.GetEventLoop(), step);
+    }
+  };
+  asio::post(*node.GetEventLoop(), step);
+
+  EXPECT_TRUE(node.RunUntilIdle());
+  EXPECT_EQ(ran, kDepth);
+  // The loop is now idle, so a second drain runs nothing more.
+  EXPECT_TRUE(node.RunUntilIdle());
+  EXPECT_EQ(ran, kDepth);
+}
+
+TEST(TrellisNode, RunUntilIdleStopsAtTheSafetyCap) {
+  Config config(DataPath(kBaseFilename));
+  Node node("node", config);
+
+  unsigned ran{0};
+  // A handler that reposts itself unconditionally never lets the loop go idle; the cap must stop it rather than spin.
+  std::function<void()> forever = [&]() {
+    ++ran;
+    asio::post(*node.GetEventLoop(), forever);
+  };
+  asio::post(*node.GetEventLoop(), forever);
+
+  static constexpr unsigned kCap{100};
+  EXPECT_TRUE(node.RunUntilIdle(kCap));
+  EXPECT_EQ(ran, kCap);
 }

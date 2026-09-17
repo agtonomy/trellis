@@ -489,6 +489,18 @@ class Node {
   bool RunN(unsigned n);
 
   /**
+   * RunUntilIdle drain the event loop until no handler is ready to run
+   *
+   * A pending future timer does not count as ready, so it does not hold the loop short of idle. Intended as the
+   * quiescence step for a simulated-time driver, between one clock advance and the next.
+   *
+   * @param max_handlers safety bound against a handler that reposts itself unconditionally; reaching it logs a
+   *        warning rather than returning as though the loop had settled
+   * @return false if the underlying facilities have stopped
+   */
+  bool RunUntilIdle(unsigned max_handlers = 1'000'000);
+
+  /**
    * RunFor runs the underlying event loop for a specified duration
    *
    * This method allows the application to execute the event loop for a limited time duration,

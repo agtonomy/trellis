@@ -152,7 +152,7 @@ TEST_F(SimClockFixture, FollowerAdvancesFromReceivedClock) {
 
 // A publisher must advance its OWN clock (and fire its own timers) when it broadcasts, so its Now() tracks
 // the time it hands out. This is deterministic: BroadcastSimulatedClock defers the local advance to the
-// event loop, so we pump the loop with RunN after each broadcast.
+// event loop, so we drain the loop after each broadcast.
 TEST_F(SimClockFixture, PublisherBroadcastAdvancesOwnClock) {
   CreateNode(Node::SimClockRole::kPublisher);
   ASSERT_TRUE(time::IsSimulatedClockEnabled());
@@ -161,11 +161,11 @@ TEST_F(SimClockFixture, PublisherBroadcastAdvancesOwnClock) {
   auto timer = node_->CreateTimer(kTimerIntervalMs, [&ticks](const time::TimePoint&) { ++ticks; });
 
   node_->BroadcastSimulatedClock(1, MsToTimePoint(1000));  // first advance resets the timers
-  node_->RunN(1000);
+  node_->RunUntilIdle();
   EXPECT_EQ(ticks, 0u);
 
   node_->BroadcastSimulatedClock(2, MsToTimePoint(2000));  // second advance fires ten 100 ms ticks
-  node_->RunN(1000);
+  node_->RunUntilIdle();
   EXPECT_EQ(ticks, 10u);
   EXPECT_GE(time::TimePointToMilliseconds(time::Now()), 2000u);
 }
