@@ -64,42 +64,46 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
    * @param discovery Shared pointer to the service discovery instance.
    */
   Client(trellis::core::EventLoop loop, discovery::DiscoveryPtr discovery)
-      : loop_{loop},
-        discovery_{discovery},
-        callback_handle_{discovery->AsyncReceiveServices(
-            [this, loop](discovery::Discovery::EventType event, const discovery::Sample& sample) {
-              if (sample.service().sname() == PROTO_SERVICE_T::descriptor()->full_name()) {
-                const auto tcp_port = sample.service().tcp_port();
-                if (event == discovery::Discovery::EventType::kNewUnregistration) {
-                  if (tcp_client_) {
-                    trellis::core::Log::Info(
-                        "Received unregistration for service {} server on port {}, removing TCP connection",
-                        PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                    const auto maybe_remote_port = tcp_client_->GetRemotePort();
-                    if (!maybe_remote_port.has_value() || maybe_remote_port.value() == tcp_port) {
-                      DropConnection();
-                    }
-                  }
-                } else if (event == discovery::Discovery::EventType::kNewRegistration) {
-                  if (!tcp_client_) {
-                    trellis::core::Log::Info(
-                        "Received registration for service {} server on port {}, creating TCP connection",
-                        PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                    tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
-                  } else {
-                    // if for some reason tcp_client_ is set already, but on the wrong port
-                    const auto maybe_remote_port = tcp_client_->GetRemotePort();
-                    if (maybe_remote_port.has_value() && maybe_remote_port.value() != tcp_port) {
-                      trellis::core::Log::Info(
-                          "Received registration for service {} server on port {}, updating existing TCP connection",
-                          PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-                      DropConnection();
-                      tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
-                    }
-                  }
-                }
-              }
-            })} {}
+      : loop_{loop}, discovery_{discovery}, callback_handle_{discovery::Discovery::kInvalidCallbackHandle} {
+    // Registered from the constructor body, not the member-initializer list. This callback reads members declared
+    // after callback_handle_ -- tcp_client_ among them -- and discovery can deliver to it on the loop thread as soon
+    // as it is registered, which a loopback instance does by replaying the registrations it already holds. From the
+    // body every member is constructed before the first delivery can arrive; from the initializer list tcp_client_
+    // was still uninitialized storage, and a delivery that dereferenced it segfaulted.
+    callback_handle_ = discovery_->AsyncReceiveServices([this, loop](discovery::Discovery::EventType event,
+                                                                     const discovery::Sample& sample) {
+      if (sample.service().sname() == PROTO_SERVICE_T::descriptor()->full_name()) {
+        const auto tcp_port = sample.service().tcp_port();
+        if (event == discovery::Discovery::EventType::kNewUnregistration) {
+          if (tcp_client_) {
+            trellis::core::Log::Info(
+                "Received unregistration for service {} server on port {}, removing TCP connection",
+                PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
+            const auto maybe_remote_port = tcp_client_->GetRemotePort();
+            if (!maybe_remote_port.has_value() || maybe_remote_port.value() == tcp_port) {
+              DropConnection();
+            }
+          }
+        } else if (event == discovery::Discovery::EventType::kNewRegistration) {
+          if (!tcp_client_) {
+            trellis::core::Log::Info("Received registration for service {} server on port {}, creating TCP connection",
+                                     PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
+            tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
+          } else {
+            // if for some reason tcp_client_ is set already, but on the wrong port
+            const auto maybe_remote_port = tcp_client_->GetRemotePort();
+            if (maybe_remote_port.has_value() && maybe_remote_port.value() != tcp_port) {
+              trellis::core::Log::Info(
+                  "Received registration for service {} server on port {}, updating existing TCP connection",
+                  PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
+              DropConnection();
+              tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
+            }
+          }
+        }
+      }
+    });
+  }
 
   /**
    * @brief Destructor that stops receiving service discovery events and fails any outstanding call.

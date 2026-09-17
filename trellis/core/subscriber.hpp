@@ -121,15 +121,21 @@ class SubscriberImpl : public SubscriberBase,
         discovery_{std::move(discovery)},
         discovery_handle_{discovery_->RegisterSubscriber<SerializableT>(topic)},
         subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
-        callback_handle_{discovery_->AsyncReceivePublishers(
-            [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
-              ReceivePublisher(event, sample);
-            })},
+        callback_handle_{discovery::Discovery::kInvalidCallbackHandle},
         statistics_timer_{std::make_shared<PeriodicTimerImpl>(
             loop, [this](const time::TimePoint& now) { UpdateStatistics(now); }, statistics_update_interval_ms_, 0,
             TimerKind::kManagement)},
         frequency_calculator_{statistics_update_interval_ms_},
-        converter_{std::move(converter)} {}
+        converter_{std::move(converter)} {
+    // Registered from the constructor body, not the member-initializer list: this callback reads members declared
+    // after callback_handle_, and discovery can deliver to it on the loop thread the moment it is registered -- a
+    // loopback instance does so by replaying the registrations it already holds. Registering last means every
+    // member is constructed before the first delivery can arrive.
+    callback_handle_ = discovery_->AsyncReceivePublishers(
+        [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
+          ReceivePublisher(event, sample);
+        });
+  }
 
   /// @brief Destructor calls the Stop method which unregisters from discovery and stops callbacks.
   ~SubscriberImpl() { Stop(); }

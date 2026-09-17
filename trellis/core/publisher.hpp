@@ -145,12 +145,18 @@ class PublisherImpl {
             return discovery_->RegisterPublisher<SerializableT>(topic, ShmFilePrefix(), ShmBufferCount());
           }
         }()},
-        callback_handle_{discovery->AsyncReceiveSubscribers(
-            [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
-              ReceiveSubscriber(event, sample);
-            })},
+        callback_handle_{discovery::Discovery::kInvalidCallbackHandle},
         frequency_calculator_{statistics_update_interval_ms_},
-        converter_{std::move(converter)} {}
+        converter_{std::move(converter)} {
+    // Registered from the constructor body, not the member-initializer list: this callback reads members declared
+    // after callback_handle_, and discovery can deliver to it on the loop thread the moment it is registered -- a
+    // loopback instance does so by replaying the registrations it already holds. Registering last means every
+    // member is constructed before the first delivery can arrive.
+    callback_handle_ = discovery_->AsyncReceiveSubscribers(
+        [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+          ReceiveSubscriber(event, sample);
+        });
+  }
 
   /**
    * @brief Destructor.
