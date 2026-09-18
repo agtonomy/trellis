@@ -53,13 +53,12 @@ TEST(TrellisNode, Name) {
 
 namespace {
 
-// Loopback discovery with a short management interval, so the tests below see a registration within a few RunFor
-// calls instead of waiting on the one-second default and a real UDP socket.
+// In-process discovery. No UDP socket, and a registration reaches this instance's own callbacks on the next loop
+// drain rather than the next heartbeat.
 Config SharedContextConfig() {
   return Config(YAML::Load(R"(
     trellis:
       discovery:
-        interval: 20
         sample_timeout: 2000
         loopback_enabled: true
     )"));

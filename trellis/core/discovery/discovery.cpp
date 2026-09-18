@@ -385,8 +385,14 @@ void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventTy
 
 Discovery::RegistrationHandle Discovery::Register(Sample sample) {
   std::lock_guard lock(registered_samples_mutex_);
-  registered_samples_.emplace(next_handle_, std::move(sample));
   const auto handle = next_handle_++;
+  const Sample& stored = registered_samples_.emplace(handle, std::move(sample)).first->second;
+  // Loopback has no socket to carry this to the rest of the process, so without this the registration would not
+  // reach anyone until the next heartbeat. BroadcastSample posts delivery to the loop rather than running
+  // ReceiveData inline, so this cannot re-enter Register while registered_samples_mutex_ is held.
+  if (config_.loopback_enabled) {
+    BroadcastSample(stored);
+  }
   return handle;
 }
 
@@ -408,6 +414,8 @@ void Discovery::BroadcastSamples() {
   }
 }
 
+// Called with registered_samples_mutex_ held: it guards the shared send_buf_ below and keeps one sample's packets
+// contiguous in the post queue, since ReceiveData drops a multi-packet sample whose packets arrive out of order.
 void Discovery::BroadcastSample(const Sample& sample) {
   const uint16_t sample_id_string_length = sample.id().size() + 1;
   const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
@@ -466,23 +474,30 @@ void Discovery::BroadcastSample(const Sample& sample) {
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {
-  std::lock_guard guard(callback_mutex_);
-  const unsigned handle = next_callback_handle_++;
-  publisher_sample_callbacks_[handle] = std::move(callback);
-  return handle;
+  return AddSampleCallback(publisher_sample_callbacks_, std::move(callback));
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveSubscribers(SampleCallback callback) {
-  std::lock_guard guard(callback_mutex_);
-  const unsigned handle = next_callback_handle_++;
-  subscriber_sample_callbacks_[handle] = std::move(callback);
-  return handle;
+  return AddSampleCallback(subscriber_sample_callbacks_, std::move(callback));
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveServices(SampleCallback callback) {
-  std::lock_guard guard(callback_mutex_);
-  const unsigned handle = next_callback_handle_++;
-  service_sample_callbacks_[handle] = std::move(callback);
+  return AddSampleCallback(service_sample_callbacks_, std::move(callback));
+}
+
+Discovery::CallbackHandle Discovery::AddSampleCallback(SampleCallbackMap& callbacks, SampleCallback callback) {
+  CallbackHandle handle;
+  {
+    std::lock_guard guard(callback_mutex_);
+    handle = next_callback_handle_++;
+    callbacks[handle] = std::move(callback);
+  }
+  // A callback registered after its peers would otherwise not hear about them until the next heartbeat, so the
+  // samples already held go out again for it. Deliberately outside callback_mutex_: BroadcastSamples takes
+  // registered_samples_mutex_, and holding both here would be the only place in this class that orders them so.
+  if (config_.loopback_enabled) {
+    BroadcastSamples();
+  }
   return handle;
 }
 

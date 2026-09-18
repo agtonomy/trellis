@@ -97,15 +97,17 @@ TEST_F(SimClockFixture, ConfigEnablesSimulatedClockAndTimersAreSimDriven) {
   auto timer = node_->CreateTimer(kTimerIntervalMs, [&ticks](const time::TimePoint&) { ++ticks; });
 
   // The first advance only resets the timers; the second advances one second -> ten 100 ms ticks.
+  // UpdateSimulatedClock posts the step behind whatever discovery has already queued, so the step runs only once
+  // the loop is drained to quiescence.
   auto t = time::Now();
   t += 1000ms;
   node_->UpdateSimulatedClock(t);
-  node_->RunOnce();
+  node_->RunUntilIdle();
   EXPECT_EQ(ticks, 0u);
 
   t += 1000ms;
   node_->UpdateSimulatedClock(t);
-  node_->RunOnce();
+  node_->RunUntilIdle();
   EXPECT_EQ(ticks, 10u);
 }
 
@@ -225,11 +227,11 @@ TEST_F(SimClockFixture, TimerCallbackCanCreateTimer) {
   auto t = time::Now();
   t += 1000ms;
   node_->UpdateSimulatedClock(t);  // first advance only rebases the timers
-  node_->RunOnce();
+  node_->RunUntilIdle();
 
   t += 1000ms;
   node_->UpdateSimulatedClock(t);
-  node_->RunOnce();
+  node_->RunUntilIdle();
   EXPECT_EQ(ticks, 10u);
   EXPECT_TRUE(nested);
 }

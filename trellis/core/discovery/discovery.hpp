@@ -348,6 +348,7 @@ class Discovery {
   void Evaluate(const trellis::core::time::TimePoint& now);
   void BroadcastSamples();
   void BroadcastSample(const Sample& sample);
+  CallbackHandle AddSampleCallback(SampleCallbackMap& callbacks, SampleCallback callback);
   void PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                          const SampleCallbackMap& callback_map);
   void PurgeStalePartialBuffers(const trellis::core::time::TimePoint& now);

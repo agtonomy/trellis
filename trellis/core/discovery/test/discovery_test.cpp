@@ -56,6 +56,17 @@ static constexpr std::string_view test_config_loopback = R"(
             port: 45678
         )";
 
+// The heartbeat here outlasts any test, so a callback that fires within a short RunFor was delivered by the
+// immediate path.
+static constexpr std::string_view test_config_loopback_no_heartbeat = R"(
+        trellis:
+          discovery:
+            interval: 100000
+            sample_timeout: 200000
+            loopback_enabled: true
+            port: 45687
+        )";
+
 // Poll tests use their own ports so a slow drain in one of them cannot show up as a stray sample in another.
 std::string MakeConfig(unsigned port, unsigned poll_interval_ms) {
   return "trellis:\n"
@@ -119,6 +130,38 @@ TEST(DiscoveryTests, RegisterPublisher) {
   }
 
   ASSERT_NE(receive_count, 0);  // exact count dependent on timing
+}
+
+// A callback added after the publisher registered catches up on it when it is added, not on the next heartbeat.
+TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredBeforeCallback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev,
+                      trellis::core::Config(YAML::Load(std::string(test_config_loopback_no_heartbeat))));
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  unsigned receive_count{0};
+  discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
+    ++receive_count;
+    EXPECT_EQ(event, Discovery::EventType::kNewRegistration);
+    EXPECT_EQ(sample.topic().tname(), "/dummy/publisher");
+  });
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_GT(receive_count, 0u);
+}
+
+// A publisher registered after the callback reaches it when it registers, not on the next heartbeat.
+TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev,
+                      trellis::core::Config(YAML::Load(std::string(test_config_loopback_no_heartbeat))));
+  unsigned receive_count{0};
+  discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
+    ++receive_count;
+    EXPECT_EQ(event, Discovery::EventType::kNewRegistration);
+    EXPECT_EQ(sample.topic().tname(), "/dummy/publisher");
+  });
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_GT(receive_count, 0u);
 }
 
 TEST(DiscoveryTests, RegisterSubscriber) {
