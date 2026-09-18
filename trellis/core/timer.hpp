@@ -19,6 +19,8 @@
 #define TRELLIS_CORE_TIMER_HPP
 
 #include <asio.hpp>
+#include <atomic>
+#include <memory>
 #include <optional>
 
 #include "trellis/core/error_code.hpp"
@@ -51,6 +53,12 @@ namespace core {
  * the thread running this timer's event loop, or on any thread while that loop is not running. They rewrite the
  * expiry and the underlying deadline without synchronizing, so calling one from elsewhere races whatever the
  * loop is doing with the same timer. Re-arming from another thread means posting the call onto the loop.
+ *
+ * Destruction has that affinity too, but is otherwise safe. Handlers carry the generation of the wait they were
+ * armed for and compare it against a counter that outlives the timer, so a completion asio already queued returns
+ * instead of touching a timer that has gone or moved on; see wait_generation_. A callback may destroy its own timer,
+ * even by dropping the last reference to whatever owns it. Doing that from another thread while the loop is
+ * mid-callback is still not safe.
  */
 class TimerImpl {
  public:
@@ -284,8 +292,16 @@ class TimerImpl {
     (void)horizon;
   }
 
+  // Shared, not by value: a callback may destroy its own timer (the RPC client's timeout handler does), and a
+  // std::function cannot free itself mid-call. Fire() holds a copy until the callback returns.
+  const std::shared_ptr<const Callback> callback_;
+  // Which wait this timer currently wants, held apart from the timer so a handler can still read it once the timer
+  // is gone. A handler captures the generation it was armed for and compares; ~TimerImpl, Stop() and KickOff() each
+  // move it on, so destroyed, stopped, reset and rearmed all read as "not the wait you were armed for" and need no
+  // separate liveness test. asio cannot recall a completion it has already queued, and that completion carries no
+  // error code, so this is all a handler has to go on.
+  const std::shared_ptr<uint64_t> wait_generation_{std::make_shared<uint64_t>(0)};
   EventLoop loop_;
-  const Callback callback_;
   const unsigned interval_ms_;
   const unsigned delay_ms_;
   const TimerKind kind_;

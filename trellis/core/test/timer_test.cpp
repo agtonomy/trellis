@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
+#include <string>
 
 #include "trellis/core/test/test_fixture.hpp"
 
@@ -144,4 +145,113 @@ TEST_F(TrellisFixture, PeriodicTimerOverrunDetection) {
   // We should have detected overruns since callback takes longer than interval
   ASSERT_GT(timer->GetOverrunCount(), 0U);
   ASSERT_GT(fire_count, 0U);
+}
+
+// A callback may drop the last reference to its own timer (the RPC client's timeout handler does) and keep running
+// afterwards, so its closure has to outlive the timer.
+TEST_F(TrellisFixture, CallbackMayDestroyItsOwnTimer) {
+  static unsigned fire_count{0};
+  static bool closure_outlived_the_timer{false};
+  StartRunnerThread();
+
+  // The 10ms delay matters. At the default of zero the timer is due the moment its constructor arms it, and the
+  // callback would race this thread's assignment to `timer`.
+  std::shared_ptr<trellis::core::TimerImpl> timer = GetNode().CreateTimer(
+      10,
+      // Too big for a small-object buffer, so it lives wherever the callback does. Reading it after the reset is
+      // the point.
+      [&timer, sentinel = std::string(64, 'x')](const trellis::core::time::TimePoint&) {
+        ++fire_count;
+        timer.reset();
+        closure_outlived_the_timer = sentinel.size() == 64;
+      },
+      10u);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  StopAndJoinRunnerThread();
+
+  ASSERT_EQ(fire_count, 1U);
+  ASSERT_EQ(timer, nullptr);
+  ASSERT_TRUE(closure_outlived_the_timer);
+}
+
+// Block the loop past both deadlines and asio queues killer and victim together, in expiry order. Killer destroys
+// victim after victim's completion is committed, which cancel() cannot undo.
+//
+// That batching is current asio behaviour, not a promise, so the extra counters are here to fail loudly rather than
+// pass empty if the blocker or the killer never ran.
+TEST_F(TrellisFixture, DestroyedTimerDropsAnAlreadyQueuedCompletion) {
+  static unsigned blocker_fire_count{0};
+  static unsigned killer_fire_count{0};
+  static unsigned victim_fire_count{0};
+  StartRunnerThread();
+
+  auto blocker = GetNode().CreateOneShotTimer(5, [](const trellis::core::time::TimePoint&) {
+    ++blocker_fire_count;
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  });
+  auto victim = GetNode().CreateOneShotTimer(20, [](const trellis::core::time::TimePoint&) { ++victim_fire_count; });
+  auto killer = GetNode().CreateOneShotTimer(10, [&victim](const trellis::core::time::TimePoint&) {
+    ++killer_fire_count;
+    victim.reset();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  StopAndJoinRunnerThread();
+
+  ASSERT_EQ(blocker_fire_count, 1U);
+  ASSERT_EQ(killer_fire_count, 1U);
+  ASSERT_EQ(victim, nullptr);  // the killer really did drop the last reference
+  ASSERT_EQ(victim_fire_count, 0U);
+}
+
+// Same queued completion, stopped instead of destroyed. Stop() cannot recall it either, so the timer would fire
+// once more after Stop() returned.
+TEST_F(TrellisFixture, StoppedTimerDropsAnAlreadyQueuedCompletion) {
+  static unsigned stopper_fire_count{0};
+  static unsigned target_fire_count{0};
+  StartRunnerThread();
+
+  auto blocker = GetNode().CreateOneShotTimer(
+      5, [](const trellis::core::time::TimePoint&) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); });
+  auto target = GetNode().CreateOneShotTimer(20, [](const trellis::core::time::TimePoint&) { ++target_fire_count; });
+  auto stopper = GetNode().CreateOneShotTimer(10, [&target](const trellis::core::time::TimePoint&) {
+    ++stopper_fire_count;
+    target->Stop();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  StopAndJoinRunnerThread();
+
+  ASSERT_EQ(stopper_fire_count, 1U);
+  ASSERT_EQ(target_fire_count, 0U);
+  ASSERT_TRUE(target->Expired());
+}
+
+// Reset() re-arms through Stop(), so the same queued completion is waiting for it, and firing on it would report a
+// deadline the caller just moved. Hence the assertion on when the timer fired, not that it did.
+TEST_F(TrellisFixture, ResetTimerDropsAnAlreadyQueuedCompletion) {
+  static constexpr auto kDelayMs = std::chrono::milliseconds(20);
+  static unsigned target_fire_count{0};
+  static bool fired_before_the_new_deadline{false};
+  static trellis::core::time::TimePoint reset_time{};
+  StartRunnerThread();
+
+  auto blocker = GetNode().CreateOneShotTimer(
+      5, [](const trellis::core::time::TimePoint&) { std::this_thread::sleep_for(std::chrono::milliseconds(50)); });
+  auto target = GetNode().CreateOneShotTimer(20, [](const trellis::core::time::TimePoint& now) {
+    ++target_fire_count;
+    // A stale completion lands the instant the loop unblocks, a full delay early
+    fired_before_the_new_deadline = (now - reset_time) < (kDelayMs - std::chrono::milliseconds(5));
+  });
+  auto resetter = GetNode().CreateOneShotTimer(10, [&target](const trellis::core::time::TimePoint& now) {
+    reset_time = now;
+    target->Reset();
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  StopAndJoinRunnerThread();
+
+  ASSERT_NE(reset_time, trellis::core::time::TimePoint{});  // the resetter ran, so reset_time is real
+  ASSERT_EQ(target_fire_count, 1U);
+  ASSERT_FALSE(fired_before_the_new_deadline);
 }

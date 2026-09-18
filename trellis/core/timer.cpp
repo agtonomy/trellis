@@ -27,8 +27,8 @@ namespace core {
 // =============================================================================
 
 TimerImpl::TimerImpl(EventLoop loop, Callback callback, unsigned interval_ms, unsigned delay_ms, TimerKind kind)
-    : loop_{loop},
-      callback_{std::move(callback)},
+    : callback_{std::make_shared<const Callback>(std::move(callback))},
+      loop_{loop},
       interval_ms_{interval_ms},
       delay_ms_(delay_ms),
       kind_{kind},
@@ -52,7 +52,12 @@ void TimerImpl::ArmInitialExpiry() {
   next_expiry_ = time::Now() + std::chrono::milliseconds(RestartDelayMs());
 }
 
-TimerImpl::~TimerImpl() { DeregisterFromLoop(); }
+TimerImpl::~TimerImpl() {
+  // Retires whatever wait is outstanding, which is all that can still reach Fire(). Pending waits need no
+  // cancel(); ~steady_timer gets those a line below.
+  ++*wait_generation_;
+  DeregisterFromLoop();
+}
 
 void TimerImpl::RegisterWithLoop() {
   if (const auto registry = loop_.GetTimerRegistry(); registry != nullptr) {
@@ -89,6 +94,9 @@ void TimerImpl::SetNextExpiry(const time::TimePoint& expiry) {
 
 void TimerImpl::Stop() {
   cancelled_ = true;
+  // cancel() only catches the wait if asio has not queued its completion yet. Retiring the generation catches it
+  // when it has, so a stopped timer cannot fire once more.
+  ++*wait_generation_;
   if (timer_ != nullptr) {
     timer_->cancel();
   }
@@ -97,9 +105,15 @@ void TimerImpl::Stop() {
 bool TimerImpl::Expired() const { return did_fire_.load() || cancelled_.load(); }
 
 void TimerImpl::KickOff() {
+  // A fresh generation first: a Stop() that retired the last wait must not retire this one. Sim-driven timers get
+  // one too, since Fire() compares against it even with no asio wait to arm.
+  const uint64_t generation = ++*wait_generation_;
   if (timer_ != nullptr) {
-    timer_->async_wait([this](const trellis::core::error_code& e) {
-      if (e) {
+    timer_->async_wait([this, wait_generation = wait_generation_, generation](const trellis::core::error_code& e) {
+      // `e` only reports cancellations asio caught in time. One it missed arrives clean, so the generation is what
+      // says whether `this` is still here and still wants this deadline. Read through the shared counter, never
+      // through `this`, which may be destroyed by now.
+      if (e || *wait_generation != generation) {
         return;
       }
       Fire();
@@ -108,7 +122,7 @@ void TimerImpl::KickOff() {
 }
 
 void TimerImpl::Fire(const time::TimePoint& horizon) {
-  if (!ShouldFire()) {
+  if (cancelled_ || !ShouldFire()) {
     return;
   }
   // fire_time is the moment this callback belongs to; horizon is how far the caller is advancing overall. They
@@ -116,12 +130,19 @@ void TimerImpl::Fire(const time::TimePoint& horizon) {
   // Node::UpdateSimulatedClock is stepping: it moves the clock to this timer's own expiry before firing, so the
   // callback sees the slot it was scheduled for while the rearm still learns how many later slots the step
   // passed over. Only RearmPolicy::kSkipAligned reads the horizon; everything else ignores it.
+  //
+  // The callback may destroy this timer, taking every member with it. These copies are what's left: the callback,
+  // so it can finish, and the generation counter, so the check below still has something to read.
+  const auto callback = callback_;
+  const auto wait_generation = wait_generation_;
+  const uint64_t generation = *wait_generation;
   const auto fire_time = time::Now();
   did_fire_ = true;
-  callback_(fire_time);
-  if (!cancelled_) {
-    OnFired(fire_time, horizon);
+  (*callback)(fire_time);
+  if (*wait_generation != generation) {
+    return;  // the callback destroyed, stopped or reset this timer; nothing here left to rearm
   }
+  OnFired(fire_time, horizon);
 }
 
 std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop, unsigned delay_ms, TimerKind kind) {
