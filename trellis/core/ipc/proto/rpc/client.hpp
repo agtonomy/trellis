@@ -180,12 +180,12 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
           RESP_T resp{};
           resp.ParseFromString(response.response());
           callback(kSuccess, &resp);
-          CleanPendingAndProcessNext();
+          FinishPendingRequest();
         },
         [this, callback]() {  // Handle failure
           RESP_T resp{};
           callback(kFailure, &resp);
-          CleanPendingAndProcessNext();
+          FinishPendingRequest();
         },
         [this, callback]() {  // Handle timeout
           RESP_T resp{};
@@ -194,7 +194,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
             trellis::core::error_code ec;
             this->tcp_client_->Cancel(ec);  // Cancel the TCP client to avoid further processing
           }
-          CleanPendingAndProcessNext();
+          FinishPendingRequest();
         },
         timeout_ms);
 
@@ -242,7 +242,10 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     pending_request_.reset();
   }
 
-  void EnqueueProcessNext() {
+  // Hands the next request to a later turn of the loop rather than starting it here. Completing a request can
+  // complete the one behind it -- a queue draining against a dropped connection fails every entry in turn -- and
+  // going through the loop keeps that cascade from nesting one request's start inside the previous one's completion.
+  void ScheduleProcessNext() {
     // ~Client() reaches here while failing its outstanding requests, by which point shared_from_this() throws.
     const std::weak_ptr<Client> weak_self = this->weak_from_this();
     asio::post(*loop_, [weak_self]() {
@@ -252,9 +255,10 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     });
   }
 
-  void CleanPendingAndProcessNext() {
+  // Call when the pending request is done, whatever its outcome. Clears it and lets the next one start.
+  void FinishPendingRequest() {
     CleanPendingRequest();
-    EnqueueProcessNext();
+    ScheduleProcessNext();
   }
 
   // Triggered by a new request or by the completion of the previous one
