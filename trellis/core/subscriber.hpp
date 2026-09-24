@@ -31,6 +31,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <variant>
+#include <vector>
 
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
@@ -174,24 +175,49 @@ class SubscriberImpl : public SubscriberBase,
                         readers = std::move(readers_)]() {});
   }
 
-  /// @brief unregisters from discovery and stops callbacks.
+  /**
+   * @brief Unregisters from discovery and stops callbacks. May be called from any thread, and more than once.
+   *
+   * No callback starts once Stop() has begun. A callback that is already running on the loop may still finish after
+   * Stop() returns.
+   */
   void Stop() {
+    // First, so that deliveries already posted by either transport are dropped instead of reaching the callbacks.
+    stopped_.store(true, std::memory_order_release);
     discovery_->StopReceive(callback_handle_);
+    // The handle is left as it is: UpdateStatistics() may be reading it on the loop right now, and unregistering
+    // twice is harmless.
     discovery_->Unregister(discovery_handle_);
-    discovery_handle_ = discovery::Discovery::kInvalidRegistrationHandle;
-    if (statistics_timer_) {
-      statistics_timer_->Stop();
-    }
-    if (watchdog_timer_) {
-      watchdog_timer_->Stop();
-    }
 
-    for (const auto& r : readers_ | std::views::values) {
-      r->Stop();
-    }
-
+    // StopReceive() has returned, so ReceivePublisher() is not running and cannot start again. That makes the
+    // discovery-owned state below safe to touch from this thread.
     UnsubscribeInProcess();
     inproc_publisher_ids_.clear();
+
+    // Copies, not moves: ReceiveData() and UpdateStatistics() may read these members on the loop until they return.
+    std::vector<std::shared_ptr<ipc::shm::ShmReader>> readers;
+    readers.reserve(readers_.size());
+    for (const auto& reader : readers_ | std::views::values) {
+      readers.push_back(reader);
+    }
+    auto stop_on_loop = [statistics_timer = statistics_timer_, watchdog_timer = watchdog_timer_,
+                         readers = std::move(readers)]() {
+      if (statistics_timer) {
+        statistics_timer->Stop();
+      }
+      if (watchdog_timer) {
+        watchdog_timer->Stop();
+      }
+      for (const auto& reader : readers) {
+        reader->Stop();
+      }
+    };
+    // Timers and readers belong to the loop's thread, or to any thread while the loop is not running (see TimerImpl).
+    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+      stop_on_loop();
+    } else {
+      asio::post(*loop_, std::move(stop_on_loop));
+    }
   }
 
   SubscriberImpl(const SubscriberImpl&) = delete;
@@ -428,6 +454,11 @@ class SubscriberImpl : public SubscriberBase,
    * Handles throttling, parsing, and dispatching to user callbacks.
    */
   void ReceiveData(ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+    // A transport can deliver after Stop(): the in-process bus posts each message ahead of time, and Stop() cannot
+    // recall those. Returning here also keeps the watchdog below from being re-armed after Stop() disarmed it.
+    if (stopped_.load(std::memory_order_acquire)) {
+      return;
+    }
     {
       did_receive_ = true;
 
@@ -536,6 +567,10 @@ class SubscriberImpl : public SubscriberBase,
    * @param now Current timestamp for frequency calculation.
    */
   void UpdateStatistics(const trellis::core::time::TimePoint& now) {
+    // Once stopped, the registration is gone and discovery would log an error for the stale handle.
+    if (stopped_.load(std::memory_order_acquire)) {
+      return;
+    }
     if (frequency_calculator_.UpdateFrequency(now)) {
       // Collect max burst size from all readers
       unsigned max_burst_size = 0;
@@ -577,6 +612,7 @@ class SubscriberImpl : public SubscriberBase,
   /// registered when the first one appears and dropped when the last one goes away.
   std::unordered_set<std::string> inproc_publisher_ids_;
   std::atomic<bool> inproc_active_{false};  ///< Mirrors inproc_bus_ for IsInProcess(), which any thread may call.
+  std::atomic<bool> stopped_{false};        ///< Set by Stop(); read by the loop to drop late deliveries.
   bool did_receive_{false};
   std::unique_ptr<ipc::proto::DynamicMessageCache> dynamic_message_cache_{nullptr};
   std::atomic<unsigned> rate_throttle_interval_ms_{0};

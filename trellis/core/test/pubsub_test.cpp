@@ -381,6 +381,63 @@ TEST_F(TrellisFixture, SubscriberCreatedWhileLoopRunsKeepsLoopAlive) {
   StopAndJoinRunnerThread();  // The marker references a local.
 }
 
+// The same, but for destruction. Each subscriber is destroyed on this thread straight after it is created, while the
+// loop may still be delivering discovery to it or running its statistics timer. A strong reference taken in
+// ReceivePublisher() threw bad_weak_ptr once the count reached zero, which ended Node::Run(). Destroying a timer here
+// while the loop fired it was a use-after-free, which the ASAN build reports.
+TEST_F(TrellisFixture, SubscriberDestroyedWhileLoopRunsKeepsLoopAlive) {
+  constexpr size_t kSubscriberCount{200};
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  for (size_t i = 0; i < kSubscriberCount; ++i) {
+    auto sub = GetNode().CreateSubscriber<test::Test>(
+        "test_topic", [](const time::TimePoint&, const time::TimePoint&, SubscriberImpl<test::Test>::MsgTypePtr) {});
+    sub.reset();
+  }
+
+  // Handlers run in order. When this one runs, every earlier delivery has been handled.
+  std::promise<void> marker_ran;
+  asio::post(*GetNode().GetEventLoop(), [&marker_ran]() { marker_ran.set_value(); });
+  EXPECT_EQ(marker_ran.get_future().wait_for(std::chrono::seconds{5}), std::future_status::ready)
+      << "the event loop stopped while subscribers were being destroyed";
+  StopAndJoinRunnerThread();  // The marker references a local.
+}
+
+// The in-process bus posts each delivery to the subscriber's loop at send time, so deliveries may already be queued
+// when Stop() is called. None of them may reach the callback, or re-arm the watchdog that Stop() disarmed.
+TEST_F(TrellisFixture, SubscriberStopDropsQueuedDeliveries) {
+  constexpr unsigned kWatchdogTimeoutMs{50};
+
+  unsigned receive_count{0};
+  unsigned watchdog_count{0};
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  auto sub = GetNode().CreateSubscriber<test::Test>(
+      "test_topic",
+      [&receive_count](const time::TimePoint&, const time::TimePoint&, SubscriberImpl<test::Test>::MsgTypePtr) {
+        ++receive_count;
+      },
+      kWatchdogTimeoutMs, [&watchdog_count](const time::TimePoint&) { ++watchdog_count; });
+  GetNode().RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  msg.set_id(1);
+  pub->Send(msg);
+  GetNode().RunUntilIdle();
+  ASSERT_EQ(receive_count, 1u);
+
+  pub->Send(msg);  // Queued on the loop, not delivered yet.
+  sub->Stop();
+  GetNode().RunUntilIdle();
+  EXPECT_EQ(receive_count, 1u) << "a delivery queued before Stop() reached the callback";
+
+  GetNode().RunFor(std::chrono::milliseconds{kWatchdogTimeoutMs * 4});
+  EXPECT_EQ(watchdog_count, 0u) << "the watchdog fired after Stop()";
+}
+
 TEST_F(TrellisFixture, PublisherRapidRecycle) {
   constexpr size_t kRecycleCount{10};
   constexpr size_t kMessagesPerCycle{10};
