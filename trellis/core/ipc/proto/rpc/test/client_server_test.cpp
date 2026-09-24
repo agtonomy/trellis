@@ -49,6 +49,19 @@ class TestServiceHandler : public trellis::core::test::TestService {
 };
 static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
 static constexpr auto kTimeoutReconnectTime = std::chrono::milliseconds{400};
+// Records that a handler started, so a test can tell a reply that is genuinely owed from a request that never got
+// dispatched. Request id 2000 makes the base handler sleep, which is what holds the reply back.
+class SlowSignallingHandler : public TestServiceHandler {
+ public:
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure* done) override {
+    entered = true;
+    TestServiceHandler::DoStuff(controller, request, response, done);
+  }
+
+  std::atomic<bool> entered{false};
+};
+
 }  // namespace
 
 using namespace trellis::core::test;
@@ -592,5 +605,69 @@ TEST_F(UnregisterTest, FailsCallsWithoutTimeout) { ExpectAllCallsFail(/* timeout
 // kTestDiscoveryInterval before the management tick that scans for it. 1000 ms is comfortably clear of that 300 ms
 // worst case without making a loaded machine flaky.
 TEST_F(UnregisterTest, FailsCallsBeforeTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 1000); }
+
+// A reply still owed when the event loop stops is lost, because the send is posted to the loop and a stopped loop
+// never runs it. What keeps that from stranding the caller is ~Server() closing the caller's socket, which completes
+// the receive the caller is sitting on with an error. Shutdown therefore has to destroy the Server, not just stop the
+// loop -- a caller left with an open socket gets neither a reply nor an error. This pins the close, since it is the
+// only thing standing between a dropped reply and a caller that waits forever.
+TEST_F(TrellisFixture, ClosesCallerSocketsWhenAReplyIsLostToAStoppedLoop) {
+  StartRunnerThread();
+
+  std::atomic<uint16_t> port{0};
+  const auto handle = GetNode().GetDiscovery()->AsyncReceiveServices(
+      [&port](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+        if (sample.service().sname() == TestService::descriptor()->full_name() &&
+            event == discovery::Discovery::EventType::kNewRegistration) {
+          port = static_cast<uint16_t>(sample.service().tcp_port());
+        }
+      });
+  auto handler = std::make_shared<SlowSignallingHandler>();
+  auto server = GetNode().CreateServiceServer<SlowSignallingHandler>(handler);
+  WaitForDiscovery();
+  ASSERT_NE(port.load(), 0) << "never discovered the server's port";
+
+  // A loop of its own, so stopping the node's loop leaves this socket alone. Stands in for a caller in another
+  // process that is still running.
+  trellis::core::EventLoop caller_loop;
+  network::TCP caller{caller_loop, "127.0.0.1", port.load()};
+
+  // Framed by hand rather than through Client, which shares the node's loop and so would stop along with it.
+  test::Test payload;
+  payload.set_id(2000);
+  payload.set_msg("in flight");
+  discovery::Request request;
+  request.mutable_header()->set_mname("DoStuff");
+  payload.SerializeToString(request.mutable_request());
+  std::string wire;
+  request.SerializeToString(&wire);
+  const uint32_t size = wire.size();
+  caller.Send(&size, sizeof(size));
+  caller.Send(wire.data(), wire.size());
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+  while (!handler->entered.load() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  ASSERT_TRUE(handler->entered.load()) << "the request never reached a handler, so no reply was ever owed";
+
+  StopAndJoinRunnerThread();  // the reply's send is now posted to a loop that will never run again
+  server.reset();             // ~Server() is what has to release the caller
+
+  trellis::core::error_code result;
+  bool completed = false;
+  uint8_t response_header[sizeof(uint32_t)];
+  caller.AsyncReceiveAll(response_header, sizeof(response_header),
+                         [&completed, &result](const trellis::core::error_code& ec, size_t) {
+                           result = ec;
+                           completed = true;
+                         });
+  caller_loop.RunFor(std::chrono::seconds{2});
+
+  EXPECT_TRUE(completed) << "the caller was left waiting with neither a reply nor an error";
+  EXPECT_TRUE(static_cast<bool>(result)) << "expected the closed socket to fail the receive";
+
+  GetNode().GetDiscovery()->StopReceive(handle);
+}
 
 }  // namespace trellis::core::ipc::proto::rpc

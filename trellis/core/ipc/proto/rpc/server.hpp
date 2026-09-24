@@ -31,6 +31,15 @@ namespace trellis::core::ipc::proto::rpc {
 /**
  * @brief Generic gRPC-style RPC server using protobuf and TCP.
  *
+ * Handlers run one at a time on a thread this server owns, not on the event loop. A handler may call out to another
+ * service. It must not block waiting on a reply from this one: the handler thread is already inside the outer call,
+ * so the nested request is never dispatched. ~Server() then joins that thread with no timeout, hanging shutdown.
+ *
+ * Replies go out on the event loop, so a reply still owed when the loop stops is lost. Shutdown must destroy the
+ * Server, not merely stop the loop. ~Server() closes the caller sockets, and nothing else tells a caller in another
+ * process to give up: one left with an open socket sees no reply and no error, and waits forever if it passed
+ * timeout_ms = 0.
+ *
  * @tparam PROTO_SERVICE_T The generated protobuf service class to serve.
  */
 template <typename PROTO_SERVICE_T>
@@ -187,14 +196,20 @@ class Server {
       auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
       memcpy(send_header_buf.get(), &size, sizeof(size));
 
+      // This runs on the RPC thread, but the socket belongs to the event loop, which is already waiting on it for
+      // the next request. Post the send to the socket's own executor so operations are always started from the
+      // thread that owns it. Two replies must still never overlap on one socket, since AsyncSendAll chains partial
+      // sends; rpc::Client keeps one call in flight per socket, so they cannot.
       // We chain together two send attempts
       // 1. Send 4-byte response payload size
       // 2. Send response payload
-      client->AsyncSendAll(send_header_buf->data(), send_header_buf->size(),
-                           [send_header_buf, send_buffer, client](const trellis::core::error_code&, size_t) {
-                             client->AsyncSendAll(send_buffer->data(), send_buffer->size(),
-                                                  [client, send_buffer](const trellis::core::error_code&, size_t) {});
-                           });
+      asio::post(client->GetExecutor(), [client, send_header_buf, send_buffer]() {
+        client->AsyncSendAll(send_header_buf->data(), send_header_buf->size(),
+                             [send_header_buf, send_buffer, client](const trellis::core::error_code&, size_t) {
+                               client->AsyncSendAll(send_buffer->data(), send_buffer->size(),
+                                                    [client, send_buffer](const trellis::core::error_code&, size_t) {});
+                             });
+      });
     });
   }
 

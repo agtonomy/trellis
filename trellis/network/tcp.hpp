@@ -214,6 +214,17 @@ class TCP {
   std::string GetAddress() const { return socket_->local_endpoint().address().to_string(); }
 
   /**
+   * GetExecutor retrieve the executor this socket's asynchronous operations run on
+   *
+   * asio requires that a socket not be operated on from two threads at once. A thread that does not own the socket
+   * posts to this executor to hand an operation to the thread that does, without needing to know which loop the
+   * socket was built against.
+   *
+   * @return the executor belonging to this socket
+   */
+  auto GetExecutor() const { return socket_->get_executor(); }
+
+  /**
    * Cancel all pending events
    */
   void Cancel() { socket_->cancel(); }
