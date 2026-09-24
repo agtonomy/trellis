@@ -131,11 +131,6 @@ class EventLoop {
   bool Stopped() const { return state_->load() == State::kStopped; }
 
   /**
-   * @brief Proxy for asio::io_context::restart()
-   */
-  void Restart() { io_context_->restart(); }
-
-  /**
    * @brief Return a reference to the underlying io_context
    *
    * This overload exists to pass the underlying asio::io_context into asio APIs such as asio::post(). This should not
