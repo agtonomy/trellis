@@ -18,10 +18,12 @@
 #ifndef TRELLIS_UTILS_MCAP_WRITER_SUBSCRIBER_DATA_HPP_
 #define TRELLIS_UTILS_MCAP_WRITER_SUBSCRIBER_DATA_HPP_
 
+#include <cerrno>
 #include <mcap/writer.hpp>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <system_error>
 
 #include "trellis/core/subscriber.hpp"
 #include "trellis/utils/protobuf/file_descriptor.hpp"
@@ -36,8 +38,14 @@ struct FileWriter {
   /// A convenience function for creating FileWriters
   static std::shared_ptr<FileWriter> MakeFileWriter(const std::string_view outfile, ::mcap::McapWriterOptions options) {
     const auto ret = std::make_shared<FileWriter>();
+    errno = 0;
     const auto res = ret->writer.open(outfile, options);
-    if (!res.ok()) throw(std::runtime_error{fmt::format("Failed to open {} for writing: {}", outfile, res.message)});
+    if (!res.ok()) {
+      // mcap leaves fopen's errno out of its message, so add it here.
+      const std::error_code ec{errno, std::generic_category()};
+      throw(std::runtime_error{
+          fmt::format("Failed to open {} for writing: {} ({})", outfile, res.message, ec.message())});
+    }
     return ret;
   }
 };

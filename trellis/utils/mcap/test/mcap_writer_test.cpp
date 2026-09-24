@@ -15,6 +15,7 @@
  *
  */
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <iostream>
@@ -156,4 +157,8 @@ TEST_F(TrellisFixture, McapWriterStatistics) {
   // the following works because there are only two entries in the vectors
   EXPECT_EQ(in_topics.front(), out_topics.front());
   EXPECT_EQ(in_topics.back(), out_topics.back());
+}
+TEST(McapFileWriter, OpenFailureReportsErrno) {
+  EXPECT_THAT([] { trellis::utils::mcap::FileWriter::MakeFileWriter("/nonexistent_dir/out.mcap", {"protobuf"}); },
+              testing::ThrowsMessage<std::runtime_error>(testing::HasSubstr("(No such file or directory)")));
 }
