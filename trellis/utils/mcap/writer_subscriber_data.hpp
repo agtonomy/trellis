@@ -101,9 +101,8 @@ trellis::core::Subscriber<MessageType> SubscriberData<MessageType, OutputMessage
     const core::Config& config, core::EventLoop ev, core::discovery::DiscoveryPtr discovery,
     const std::string_view topic, std::shared_ptr<FileWriter> file_writer) {
   // A bit of a chicken-and-egg problem, we need the callback to be able to access the subscriber to fill in the schema.
-  // This introduces a small race condition that the subscriber may be nullptr when the first message arrives.
-  // Hence, we use a shared ptr to update the data after creating the subscriber, and we guard in the
-  // InitalizeMcapChannel function against data with nullptr subscriber.
+  // The subscriber is recorded from Create()'s before_start hook, so no message arrives first.
+  // InitalizeMcapChannel still guards against a nullptr subscriber.
   const auto subscriber_data = std::shared_ptr<SubscriberData>(new SubscriberData(config, topic, file_writer));
 
   typename core::SubscriberImpl<MessageType>::Callback callback;
@@ -123,11 +122,10 @@ trellis::core::Subscriber<MessageType> SubscriberData<MessageType, OutputMessage
     };
   }
 
-  const trellis::core::Subscriber<MessageType> subscriber =
-      std::make_shared<trellis::core::SubscriberImpl<MessageType>>(
-          ev, std::string{topic}, callback, callback_raw, [](const core::time::TimePoint&) {}, discovery, config);
-
-  subscriber_data->subscriber = subscriber;
+  using Impl = trellis::core::SubscriberImpl<MessageType>;
+  const trellis::core::Subscriber<MessageType> subscriber = Impl::Create(
+      ev, std::string{topic}, callback, callback_raw, [](const core::time::TimePoint&) {}, discovery, config, {}, {},
+      {}, {}, [&subscriber_data](const std::shared_ptr<Impl>& created) { subscriber_data->subscriber = created; });
 
   return subscriber;
 }

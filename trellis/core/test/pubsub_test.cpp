@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <random>
 #include <string>
@@ -355,6 +356,29 @@ TEST_F(TrellisFixture, SubscriberRapidRecycle) {
   }
 
   ASSERT_EQ(receive_count, kMessagesPerCycle * kRecycleCount);
+}
+
+// A subscriber created off the loop thread receives discovery's replay of existing publishers immediately. The
+// replay must not reach it before a shared_ptr owns it; otherwise shared_from_this() throws and Node::Run() exits.
+TEST_F(TrellisFixture, SubscriberCreatedWhileLoopRunsKeepsLoopAlive) {
+  constexpr size_t kSubscriberCount{200};
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_topic");
+  StartRunnerThread();
+  WaitForDiscovery();
+
+  std::vector<Subscriber<test::Test>> subs;
+  for (size_t i = 0; i < kSubscriberCount; ++i) {
+    subs.push_back(GetNode().CreateSubscriber<test::Test>(
+        "test_topic", [](const time::TimePoint&, const time::TimePoint&, SubscriberImpl<test::Test>::MsgTypePtr) {}));
+  }
+
+  // Handlers run in order. When this one runs, every earlier delivery has been handled.
+  std::promise<void> marker_ran;
+  asio::post(*GetNode().GetEventLoop(), [&marker_ran]() { marker_ran.set_value(); });
+  EXPECT_EQ(marker_ran.get_future().wait_for(std::chrono::seconds{5}), std::future_status::ready)
+      << "the event loop stopped while subscribers were being created";
+  StopAndJoinRunnerThread();  // The marker references a local.
 }
 
 TEST_F(TrellisFixture, PublisherRapidRecycle) {

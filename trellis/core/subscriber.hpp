@@ -23,7 +23,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
+#include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -96,7 +99,10 @@ class SubscriberImpl : public SubscriberBase,
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
 
   /**
-   * @brief Construct a subscriber and register for discovery notifications.
+   * @brief Creates a subscriber and starts it. This is the only way to construct one.
+   *
+   * The watchdog and throttle are applied before the subscriber registers with discovery, so neither is changed while
+   * the loop may already be delivering to it.
    *
    * @param loop The event loop for posting callbacks.
    * @param topic The name of the topic to subscribe to.
@@ -105,40 +111,68 @@ class SubscriberImpl : public SubscriberBase,
    * @param update_sim_fn Function to update a simulation clock (can be nullptr).
    * @param discovery Pointer to the discovery service.
    * @param config The configuration tree to optionally pull values from.
+   * @param watchdog_timeout_ms Optional watchdog timeout. Both it and watchdog_callback are needed for a watchdog.
+   * @param watchdog_callback Optional callback for when no message arrives within the timeout. It only fires once a
+   * message has been received.
+   * @param max_frequency Optional maximum frequency to throttle the callback to.
    * @param converter The function to convert from the serializable message
+   * @param before_start Optional hook run with the subscriber after it is configured and before it starts, for a
+   * caller that must record the subscriber before any message can reach it.
+   * @return the started subscriber
    */
-  SubscriberImpl(trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
-                 UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery,
-                 const trellis::core::Config& config, ConverterT converter = {})
-      : loop_{loop},
-        topic_{topic},
-        config_{config},
-        callback_{std::move(callback)},
-        raw_callback_{std::move(raw_callback)},
-        update_sim_fn_{std::move(update_sim_fn)},
-        statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
-            topic, "statistics_update_interval_ms", /* is_publisher = */ false, kDefaultStatisticsUpdateIntervalMs)},
-        discovery_{std::move(discovery)},
-        discovery_handle_{discovery_->RegisterSubscriber<SerializableT>(topic)},
-        subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
-        callback_handle_{discovery::Discovery::kInvalidCallbackHandle},
-        statistics_timer_{std::make_shared<PeriodicTimerImpl>(
-            loop, [this](const time::TimePoint& now) { UpdateStatistics(now); }, statistics_update_interval_ms_, 0,
-            TimerKind::kManagement)},
-        frequency_calculator_{statistics_update_interval_ms_},
-        converter_{std::move(converter)} {
-    // Registered from the constructor body, not the member-initializer list: this callback reads members declared
-    // after callback_handle_, and discovery can deliver to it on the loop thread the moment it is registered -- a
-    // loopback instance does so by replaying the registrations it already holds. Registering last means every
-    // member is constructed before the first delivery can arrive.
-    callback_handle_ = discovery_->AsyncReceivePublishers(
-        [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
-          ReceivePublisher(event, sample);
-        });
+  static std::shared_ptr<SubscriberImpl> Create(
+      trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
+      UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery,
+      const trellis::core::Config& config, std::optional<unsigned> watchdog_timeout_ms = {},
+      TimerImpl::Callback watchdog_callback = {}, std::optional<double> max_frequency = {}, ConverterT converter = {},
+      const std::function<void(const std::shared_ptr<SubscriberImpl>&)>& before_start = {}) {
+    // Not make_shared: it cannot reach the private constructor.
+    const std::shared_ptr<SubscriberImpl> subscriber{
+        new SubscriberImpl(std::move(loop), std::move(topic), std::move(callback), std::move(raw_callback),
+                           std::move(update_sim_fn), std::move(discovery), config, std::move(converter))};
+    if (max_frequency.has_value()) {
+      subscriber->SetMaxFrequencyThrottle(max_frequency.value());
+    }
+    if (watchdog_timeout_ms.has_value() && watchdog_callback != nullptr) {
+      // Built here rather than by the caller because it needs a weak_ptr to the subscriber. It is an application timer
+      // on the caller's loop, the same as one made by Node::CreateTimer.
+      subscriber->watchdog_timer_ = std::make_shared<OneShotTimerImpl>(
+          subscriber->loop_,
+          [watchdog_callback = std::move(watchdog_callback),
+           weak_self = std::weak_ptr<SubscriberImpl>(subscriber)](const time::TimePoint& now) {
+            // Fire only if messages were previously received.
+            const auto self = weak_self.lock();
+            if (self && self->DidReceive()) {
+              watchdog_callback(now);
+            }
+          },
+          watchdog_timeout_ms.value());
+    }
+    if (before_start) {
+      before_start(subscriber);
+    }
+    subscriber->Start();
+    return subscriber;
   }
 
-  /// @brief Destructor calls the Stop method which unregisters from discovery and stops callbacks.
-  ~SubscriberImpl() { Stop(); }
+  /**
+   * @brief Stops the subscriber, then hands its timers and shared memory readers to the loop to be destroyed there.
+   *
+   * Timers and readers must be stopped and destroyed on the loop's thread, or while the loop is not running (see
+   * TimerImpl). The last reference to a subscriber is often dropped on another thread.
+   */
+  ~SubscriberImpl() {
+    Stop();
+    // On the loop's thread, or with the loop stopped, the members can simply be destroyed with the rest.
+    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+      return;
+    }
+    // Nothing on the loop can still be using these. Every path into ReceiveData() and UpdateStatistics() locks a
+    // weak_ptr to this subscriber first, and the discovery callback was removed by Stop(). If the loop never runs
+    // again, asio destroys this handler, and what it owns, when the io_context is destroyed.
+    asio::post(*loop_, [statistics_timer = std::move(statistics_timer_), watchdog_timer = std::move(watchdog_timer_),
+                        readers = std::move(readers_)]() {});
+  }
 
   /// @brief unregisters from discovery and stops callbacks.
   void Stop() {
@@ -183,9 +217,6 @@ class SubscriberImpl : public SubscriberBase,
    */
   bool IsInProcess() const { return inproc_active_.load(std::memory_order_relaxed); }
 
-  /// @brief Sets a watchdog timer that is reset upon each received message.
-  void SetWatchdogTimer(Timer timer) { watchdog_timer_ = std::move(timer); }
-
   /// @return The protobuf descriptor of the dynamic message type, if available.
   const google::protobuf::Descriptor* GetDescriptor() const {
     if (dynamic_message_cache_ == nullptr) {
@@ -210,6 +241,61 @@ class SubscriberImpl : public SubscriberBase,
   statistics::LatencyCalculator::Stats GetLatestLatencyStats() override { return latency_calculator_.GetAndReset(); }
 
  private:
+  /**
+   * @brief Construct a subscriber. Private: Create() constructs one and then starts it.
+   *
+   * @param loop The event loop for posting callbacks.
+   * @param topic The name of the topic to subscribe to.
+   * @param callback Callback invoked on receiving a parsed message (can be nullptr).
+   * @param raw_callback Callback invoked on receiving raw bytes (can be nullptr).
+   * @param update_sim_fn Function to update a simulation clock (can be nullptr).
+   * @param discovery Pointer to the discovery service.
+   * @param config The configuration tree to optionally pull values from.
+   * @param converter The function to convert from the serializable message
+   */
+  SubscriberImpl(trellis::core::EventLoop loop, std::string topic, Callback callback, RawCallback raw_callback,
+                 UpdateSimulatedClockFunction update_sim_fn, std::shared_ptr<discovery::Discovery> discovery,
+                 const trellis::core::Config& config, ConverterT converter = {})
+      : loop_{loop},
+        topic_{topic},
+        config_{config},
+        callback_{std::move(callback)},
+        raw_callback_{std::move(raw_callback)},
+        update_sim_fn_{std::move(update_sim_fn)},
+        statistics_update_interval_ms_{config.GetConfigAttributeForTopic<unsigned>(
+            topic, "statistics_update_interval_ms", /* is_publisher = */ false, kDefaultStatisticsUpdateIntervalMs)},
+        discovery_{std::move(discovery)},
+        discovery_handle_{discovery_->RegisterSubscriber<SerializableT>(topic)},
+        subscriber_id_{discovery_->GetSampleId(discovery_handle_)},
+        callback_handle_{discovery::Discovery::kInvalidCallbackHandle},
+        frequency_calculator_{statistics_update_interval_ms_},
+        converter_{std::move(converter)} {}
+
+  /**
+   * @brief Register for discovery notifications and start the statistics timer.
+   *
+   * Called once by Create(), after a std::shared_ptr owns the subscriber and it is configured.
+   *
+   * Registration cannot happen in the constructor. Discovery may deliver to the callback on the loop thread as soon
+   * as it is registered, before a std::shared_ptr owns the subscriber and weak_from_this() is usable. The statistics
+   * timer fires immediately and has the same constraint.
+   */
+  void Start() {
+    statistics_timer_ = std::make_shared<PeriodicTimerImpl>(
+        loop_,
+        [weak_self = this->weak_from_this()](const time::TimePoint& now) {
+          if (const auto self = weak_self.lock()) {
+            self->UpdateStatistics(now);
+          }
+        },
+        statistics_update_interval_ms_, 0, TimerKind::kManagement);
+    // `this` is safe: Discovery runs this under its callback lock, which Stop()'s StopReceive() waits on and removes.
+    callback_handle_ = discovery_->AsyncReceivePublishers(
+        [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
+          ReceivePublisher(event, sample);
+        });
+  }
+
   using SerializableTypePtr = std::unique_ptr<SerializableT>;
 
   /// @brief True when this subscriber can parse into a reusable concrete member scratch: it converts a concrete
@@ -284,7 +370,7 @@ class SubscriberImpl : public SubscriberBase,
               memory_file_list.push_back(fmt::format("{}_{:03}", memory_file_prefix, i));
             }
 
-            std::weak_ptr<std::remove_reference_t<decltype(*this)>> weak_self = this->shared_from_this();
+            std::weak_ptr<SubscriberImpl> weak_self = this->weak_from_this();
             auto reader = ipc::shm::ShmReader::Create(
                 loop_, subscriber_id_, memory_file_list,
                 [weak_self](ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
@@ -312,8 +398,8 @@ class SubscriberImpl : public SubscriberBase,
     if (inproc_bus_ != nullptr) {
       return;
     }
-    // shared_from_this is valid here because the discovery callback runs after the owning shared_ptr exists.
-    const std::weak_ptr<SubscriberImpl> weak_self = this->shared_from_this();
+
+    const std::weak_ptr<SubscriberImpl> weak_self = this->weak_from_this();
     inproc_bus_ = ipc::InProcessBus::Instance();
     inproc_bus_handle_ = inproc_bus_->Subscribe(
         topic_, loop_, [weak_self](const ipc::shm::ShmFile::SMemFileHeader& header, const void* data, size_t len) {

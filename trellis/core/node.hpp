@@ -199,29 +199,12 @@ class Node {
     // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
     // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
     auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
-    const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
-    Timer watchdog_timer{};
 
-    using RawCallback = typename trellis::core::SubscriberImpl<SerializableT, MsgT, ConverterT>::RawCallback;
-    const auto impl = std::make_shared<SubscriberImpl<SerializableT, MsgT, ConverterT>>(
-        GetEventLoop(), std::string{topic}, callback, RawCallback{}, update_sim_fn, GetDiscovery(), config_, converter);
-    if (max_frequency.has_value()) {
-      impl->SetMaxFrequencyThrottle(max_frequency.value());
-    }
-    if (do_watchdog) {
-      const auto initial_delay_ms = watchdog_timeout_ms.value();
-      auto watchdog_wrapper = [watchdog_callback = std::move(watchdog_callback),
-                               weak_impl = std::weak_ptr<SubscriberImpl<SerializableT, MsgT, ConverterT>>(impl)](
-                                  const time::TimePoint& now) {
-        // Desired behavior is to have the watchdog fire only if messages were previously received
-        auto impl = weak_impl.lock();
-        if (impl && impl->DidReceive()) {
-          watchdog_callback(now);
-        }
-      };
-      auto timer = CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper));
-      impl->SetWatchdogTimer(std::move(timer));
-    }
+    using Impl = SubscriberImpl<SerializableT, MsgT, ConverterT>;
+    const auto impl =
+        Impl::Create(GetEventLoop(), std::string{topic}, std::move(callback), typename Impl::RawCallback{},
+                     std::move(update_sim_fn), GetDiscovery(), config_, watchdog_timeout_ms,
+                     std::move(watchdog_callback), max_frequency, std::move(converter));
     subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
     return impl;
   }
@@ -291,27 +274,10 @@ class Node {
     // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
     // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
     auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
-    const bool do_watchdog = watchdog_timeout_ms.has_value() && watchdog_callback != nullptr;
 
-    const auto impl = std::make_shared<SubscriberImpl<google::protobuf::Message>>(
-        GetEventLoop(), std::string{topic}, SubscriberRawImpl::Callback{}, std::move(callback),
-        std::move(update_sim_fn), GetDiscovery(), config_);
-    if (max_frequency.has_value()) {
-      impl->SetMaxFrequencyThrottle(max_frequency.value());
-    }
-    if (do_watchdog) {
-      const auto initial_delay_ms = watchdog_timeout_ms.value();
-      auto watchdog_wrapper =
-          [watchdog_callback = std::move(watchdog_callback),
-           weak_impl = std::weak_ptr<SubscriberImpl<google::protobuf::Message>>(impl)](const time::TimePoint& now) {
-            // Desired behavior is to have the watchdog fire only if messages were previously received
-            auto impl = weak_impl.lock();
-            if (impl && impl->DidReceive()) {
-              watchdog_callback(now);
-            }
-          };
-      impl->SetWatchdogTimer(CreateOneShotTimer(initial_delay_ms, std::move(watchdog_wrapper)));
-    }
+    const auto impl = SubscriberRawImpl::Create(GetEventLoop(), std::move(topic), SubscriberRawImpl::Callback{},
+                                                std::move(callback), std::move(update_sim_fn), GetDiscovery(), config_,
+                                                watchdog_timeout_ms, std::move(watchdog_callback), max_frequency);
     subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
     return impl;
   }
@@ -350,11 +316,12 @@ class Node {
    *
    * Timers made here are application timers (see TimerKind): their scheduling latency counts toward this node's timer
    * metrics, and a simulated clock drives them if one was already active when they were built. That applies equally to
-   * the timers this class creates on the application's behalf -- health reporting, metrics publication and subscriber
-   * watchdogs all come through this factory. Each is paced by the application's own activity rather than by the passage
-   * of real time, and each is work this node's loop has to get to on time, so a delay is a signal about the application
-   * and belongs in its figures. Only timers that service the process no matter what it is processing are built as
-   * TimerKind::kManagement, and those are constructed directly against an event loop instead of through here.
+   * the timers this class creates on the application's behalf -- health reporting and metrics publication come through
+   * this factory, and a subscriber builds its watchdog on this node's loop the same way. Each is paced by the
+   * application's own activity rather than by the passage of real time, and each is work this node's loop has to get to
+   * on time, so a delay is a signal about the application and belongs in its figures. Only timers that service the
+   * process no matter what it is processing are built as TimerKind::kManagement, and those are constructed directly
+   * against an event loop instead of through here.
    *
    * @tparam TimerType The type of timer to create
    * @tparam Params The parameter types used to create the timer
