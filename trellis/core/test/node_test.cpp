@@ -260,6 +260,41 @@ TEST(TrellisNodeSharedContext, GuestPublisherReachesAHostSubscriber) {
   EXPECT_GT(received, 0u);
 }
 
+// The metrics timer has no initial delay, and its callback reads the publisher the constructor stores alongside it.
+// Its first publish shows the two were wired up in the right order.
+TEST(TrellisNodeSharedContext, GuestPublishesMetrics) {
+  const auto config = SharedContextConfig();
+  Node host("host", config);
+
+  std::optional<trellis::utils::metrics::MetricsGroup> first;
+  auto sub = host.CreateSubscriber<trellis::utils::metrics::MetricsGroup>(
+      "guest_metrics_topic", [&first](const time::TimePoint&, const time::TimePoint&,
+                                      SubscriberImpl<trellis::utils::metrics::MetricsGroup>::MsgTypePtr msg) {
+        if (!first.has_value()) {
+          first = *msg;
+        }
+      });
+
+  Config guest_config = SharedContextConfig();
+  guest_config.Overlay(YAML::Load(R"(
+    trellis:
+      metrics:
+        enabled: true
+        topic: guest_metrics_topic
+        interval_ms: 20
+    )"));
+  Node guest("guest", guest_config, std::nullopt, ContextOf(host));
+
+  RunUntil(host, [&]() { return first.has_value(); });
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->source(), "guest");
+  std::set<std::string> names;
+  for (const auto& measurement : first->measurements()) {
+    names.insert(measurement.name());
+  }
+  EXPECT_TRUE(names.contains("unclean_exit_count"));
+}
+
 // RunUntilIdle is the conductor's quiescence step: it must drain a whole cascade of posted work, however deep, not
 // stop at a fixed count the way RunN does.
 TEST(TrellisNode, RunUntilIdleDrainsAFullCascade) {

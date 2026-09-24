@@ -167,33 +167,37 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
     // Deliberately an application timer rather than a management one. Publication being late is itself evidence that
     // this node's loop is starving, which is what the timer metrics exist to surface, so this timer belongs in the
     // figures rather than excluded from them -- and it was counted before the application/management split existed.
-    metrics_.emplace(
-        trellis::utils::metrics::MetricsPublisher(
-            name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
-        CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
-          metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
-          metrics_->first.AddMeasurement(now, "unclean_exit_count", static_cast<double>(GetUncleanExitCount()));
-          const auto sched_stats = GetAndResetTimerSchedLatencyStats();
-          if (sched_stats.count > 0) {
-            metrics_->first.AddMeasurement(now, "timer_sched_latency_max_us", static_cast<double>(sched_stats.max_us));
-            metrics_->first.AddMeasurement(now, "timer_sched_latency_mean_us", sched_stats.mean_us);
-          }
+    //
+    // The timer is created only once metrics_ holds the publisher. With no initial delay it is due at once, and on a
+    // shared-context node whose host loop is already running on another thread it can fire before this constructor
+    // returns. Created inside the emplace, it would dereference metrics_ before the optional held a value.
+    metrics_.emplace(trellis::utils::metrics::MetricsPublisher(
+                         name_, CreatePublisher<trellis::utils::metrics::MetricsGroup>(metrics_topic)),
+                     nullptr);
+    metrics_->second = CreateTimer(metrics_interval_ms, [this](const time::TimePoint& now) {
+      metrics_->first.AddCounter(now, "timer_overrun_count", static_cast<int64_t>(GetTimerOverrunCount()));
+      metrics_->first.AddMeasurement(now, "unclean_exit_count", static_cast<double>(GetUncleanExitCount()));
+      const auto sched_stats = GetAndResetTimerSchedLatencyStats();
+      if (sched_stats.count > 0) {
+        metrics_->first.AddMeasurement(now, "timer_sched_latency_max_us", static_cast<double>(sched_stats.max_us));
+        metrics_->first.AddMeasurement(now, "timer_sched_latency_mean_us", sched_stats.mean_us);
+      }
 
-          // Collect and publish subscriber latency stats
-          for (const auto& weak_sub : subscribers_) {
-            if (auto sub = weak_sub.lock()) {
-              const auto stats = sub->GetLatestLatencyStats();
-              if (stats.count > 0) {
-                const auto& topic = sub->GetTopic();
-                metrics_->first.AddMeasurement(now, topic + "__latency_min_us", static_cast<double>(stats.min_us));
-                metrics_->first.AddMeasurement(now, topic + "__latency_mean_us", static_cast<double>(stats.mean_us));
-                metrics_->first.AddMeasurement(now, topic + "__latency_max_us", static_cast<double>(stats.max_us));
-              }
-            }
+      // Collect and publish subscriber latency stats
+      for (const auto& weak_sub : subscribers_) {
+        if (auto sub = weak_sub.lock()) {
+          const auto stats = sub->GetLatestLatencyStats();
+          if (stats.count > 0) {
+            const auto& topic = sub->GetTopic();
+            metrics_->first.AddMeasurement(now, topic + "__latency_min_us", static_cast<double>(stats.min_us));
+            metrics_->first.AddMeasurement(now, topic + "__latency_mean_us", static_cast<double>(stats.mean_us));
+            metrics_->first.AddMeasurement(now, topic + "__latency_max_us", static_cast<double>(stats.max_us));
           }
+        }
+      }
 
-          metrics_->first.Publish(now);
-        }));
+      metrics_->first.Publish(now);
+    });
   }
 
   // Only a follower subscribes to the clock topic; a publisher generates time and must not also receive it. A
