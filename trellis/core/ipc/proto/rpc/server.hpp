@@ -50,17 +50,20 @@ class Server {
         rpc_thread_([](asio::io_context& io_context) { io_context.run(); }, std::ref(io_context_)),
         prototype_{prototype},
         discovery_{std::move(discovery)},
-        tcp_server_{loop, /* port = */ 0,
-                    [this](const trellis::core::error_code& ec, network::TCP socket) mutable {
+        tcp_server_{loop, /* port = */ 0, [this](const trellis::core::error_code& ec, network::TCP socket) mutable {
                       if (ec) {
                         return;
                       }
                       auto client = std::make_shared<network::TCP>(std::move(socket));
                       clients_.emplace_back(client);
                       ReceiveNextRequest(client);
-                    }},
-        discovery_handle_{discovery_->RegisterServiceServer(std::string{PROTO_SERVICE_T::descriptor()->full_name()},
-                                                            tcp_server_.GetPort(), methods_)} {}
+                    }} {
+    // Registered here, not in the member-initializer list. Registering publishes our port, and a loopback Discovery
+    // hands it to clients on the loop thread at once. A client can connect, and the accept handler above can run,
+    // before any member later in that list exists.
+    discovery_handle_ = discovery_->RegisterServiceServer(std::string{PROTO_SERVICE_T::descriptor()->full_name()},
+                                                          tcp_server_.GetPort(), methods_);
+  }
 
   /**
    * @brief Destroy the Server instance and clean up clients and threads.
@@ -197,13 +200,15 @@ class Server {
 
   asio::io_context io_context_{};  ///< Background thread context for method execution
   asio::executor_work_guard<asio::io_context::executor_type> work_guard_;  ///< Keeps io_context alive
-  std::thread rpc_thread_;                                        ///< Thread running the RPC handler event loop
-  std::shared_ptr<PROTO_SERVICE_T> prototype_{};                  ///< Protobuf service instance
-  discovery::DiscoveryPtr discovery_;                             ///< Discovery system for registering the service
+  std::thread rpc_thread_;                        ///< Thread running the RPC handler event loop
+  std::shared_ptr<PROTO_SERVICE_T> prototype_{};  ///< Protobuf service instance
+  discovery::DiscoveryPtr discovery_;             ///< Discovery system for registering the service
+  // clients_ before tcp_server_: the accept handler writes here, and can fire as soon as tcp_server_ is built.
+  std::deque<std::weak_ptr<network::TCP>> clients_{};             ///< Active client connections
   network::TCPServer tcp_server_;                                 ///< TCP server for incoming RPC connections
   MethodsMap methods_{GetMethodsFromService(*prototype_.get())};  ///< Map of method metadata
-  discovery::Discovery::RegistrationHandle discovery_handle_;     ///< Handle for unregistering service
-  std::deque<std::weak_ptr<network::TCP>> clients_{};             ///< Active client connections
+  discovery::Discovery::RegistrationHandle discovery_handle_{
+      discovery::Discovery::kInvalidRegistrationHandle};  ///< Handle for unregistering service
 };
 
 }  // namespace trellis::core::ipc::proto::rpc
