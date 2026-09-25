@@ -111,17 +111,19 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
   ~Client() {
     discovery_->StopReceive(callback_handle_);
 
-    // Drop the connection before running a single callback. CallAsync() and ProcessNextRequest() both refuse to
-    // start work without one, so a callback below that issues another call fails inline instead of reaching
-    // shared_from_this(), which throws once destruction has begun and would terminate from a destructor.
+    // Drop the connection before running any callback. Without one, Enqueue() and ProcessNextRequest() fail a call
+    // outright, so a callback below that issues another call fails immediately. It never reaches shared_from_this(),
+    // which throws once destruction starts and would terminate the process from here.
     if (tcp_client_) {
       DropConnection();
     }
 
-    // A user callback that throws here would escape the destructor and terminate the process.
+    // A user callback that throws here would escape the destructor and terminate the process. No pending-request
+    // cleanup is needed: respond() only calls the user back, and CleanPendingRequest() below covers the one request
+    // that was in flight.
     const auto fail = [](const std::shared_ptr<QueuedRequest>& request) {
       try {
-        request->failure_fn();
+        request->respond(kFailure, nullptr);
       } catch (const std::exception& e) {
         trellis::core::Log::Error("Callback for service {} threw while failing a call during client destruction: {}",
                                   PROTO_SERVICE_T::descriptor()->full_name(), e.what());
@@ -136,8 +138,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     std::queue<std::shared_ptr<QueuedRequest>> queued;
     queued.swap(queued_requests_);
     if (pending_request_) {
-      const auto request = pending_request_;  // failure_fn() resets pending_request_
-      fail(request);
+      fail(pending_request_);
     }
     CleanPendingRequest();
     while (!queued.empty()) {
@@ -160,12 +161,6 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
    */
   template <typename REQ_T, typename RESP_T>
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
-    if (!tcp_client_) {
-      RESP_T resp{};
-      callback(kFailure, &resp);
-      return;
-    }
-
     // Populate request message and serialize it to generate our payload
     discovery::Request request_msg;
     request_msg.mutable_header()->set_mname(std::string(method));
@@ -173,55 +168,46 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     auto request_buffer = std::make_shared<std::string>();
     request_msg.SerializeToString(request_buffer.get());
 
-    // Create request
+    // The responder only reports the outcome to the user's callback. Clearing the pending request and starting the
+    // next one is left to whoever reports the outcome.
     auto queued_request = std::make_shared<QueuedRequest>(
-        loop_, request_buffer,
-        [this, callback](const discovery::Response& response) {  // Handle successful response
+        std::move(request_buffer),
+        [callback = std::move(callback)](ServiceCallStatus status, const discovery::Response* response) {
           RESP_T resp{};
-          resp.ParseFromString(response.response());
-          callback(kSuccess, &resp);
-          FinishPendingRequest();
-        },
-        [this, callback]() {  // Handle failure
-          RESP_T resp{};
-          callback(kFailure, &resp);
-          FinishPendingRequest();
-        },
-        [this, callback]() {  // Handle timeout
-          RESP_T resp{};
-          callback(kTimedOut, &resp);
-          if (this->tcp_client_) {
-            trellis::core::error_code ec;
-            this->tcp_client_->Cancel(ec);  // Cancel the TCP client to avoid further processing
+          if (response != nullptr) {
+            resp.ParseFromString(response->response());
           }
-          FinishPendingRequest();
+          callback(status, &resp);
         },
         timeout_ms);
 
-    queued_requests_.push(queued_request);
-    ProcessNextRequest();
+    Enqueue(std::move(queued_request));
   }
 
  private:
   struct QueuedRequest {
-    using SuccessFn = std::function<void(const discovery::Response& response)>;
-    using FailureFn = std::function<void()>;
-    using TimeoutFn = std::function<void()>;
+    /// Reports a call's outcome to the user. `response` carries the server's reply for kSuccess, null otherwise.
+    /// Touches no client state.
+    using RespondFn = std::function<void(ServiceCallStatus status, const discovery::Response* response)>;
 
     std::shared_ptr<std::string> request_buffer;  ///< Buffer for the request payload
-    SuccessFn success_fn;                         ///< Function to handle success with response
-    FailureFn failure_fn;                         ///< Function to handle failure
-    TimeoutFn timeout_fn;                         ///< Function to handle timeout
+    RespondFn respond;                            ///< Reports the outcome to the user's callback
     const unsigned timeout_ms;                    ///< Timeout in milliseconds
 
-    QueuedRequest(trellis::core::EventLoop loop, std::shared_ptr<std::string> request_buffer, SuccessFn success_fn,
-                  FailureFn failure_fn, TimeoutFn timeout_fn, unsigned timeout_ms)
-        : request_buffer(request_buffer),
-          success_fn(std::move(success_fn)),
-          failure_fn(std::move(failure_fn)),
-          timeout_fn(std::move(timeout_fn)),
-          timeout_ms(timeout_ms) {}
+    QueuedRequest(std::shared_ptr<std::string> request_buffer, RespondFn respond, unsigned timeout_ms)
+        : request_buffer(std::move(request_buffer)), respond(std::move(respond)), timeout_ms(timeout_ms) {}
   };
+
+  // Fails the request immediately if there is no connection, otherwise queues it.
+  void Enqueue(std::shared_ptr<QueuedRequest> request) {
+    if (!tcp_client_) {
+      // Never became pending, so there is nothing to clean up after reporting it.
+      request->respond(kFailure, nullptr);
+      return;
+    }
+    queued_requests_.push(std::move(request));
+    ProcessNextRequest();
+  }
 
   // Closing the socket lets the in-flight request fail on the event loop. Discovery calls us holding its callback
   // lock, so user callbacks must not run here, and an exception would take down Node::Run().
@@ -282,8 +268,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
 
     if (!tcp_client_) {
       // Nothing can complete this request without a connection. Failing it schedules the next, which fails too.
-      auto request = pending_request_;  // failure_fn() resets pending_request_
-      request->failure_fn();
+      pending_request_->respond(kFailure, nullptr);
+      FinishPendingRequest();
       return;
     }
 
@@ -309,7 +295,12 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
             const auto self = weak_self.lock();
             const auto timed_out = weak_request.lock();
             if (self && timed_out && self->pending_request_ == timed_out) {
-              timed_out->timeout_fn();
+              timed_out->respond(kTimedOut, nullptr);
+              if (self->tcp_client_) {
+                trellis::core::error_code ec;
+                self->tcp_client_->Cancel(ec);  // Cancel the TCP client to avoid further processing
+              }
+              self->FinishPendingRequest();
             }
           },
           request->timeout_ms, TimerKind::kManagement);
@@ -333,7 +324,9 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
           if (!self || self->pending_request_ != request) {
             return;  // client gone, or this request already completed
           } else if (ec) {
-            request->failure_fn();  // operation_aborted lands here too: a closed socket has to fail the request
+            // operation_aborted lands here too: a closed socket has to fail the request
+            request->respond(kFailure, nullptr);
+            self->FinishPendingRequest();
             return;
           }
           // We sent the 4-byte length to the server, now let's send the actual payload
@@ -343,7 +336,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                               if (!self || self->pending_request_ != request) {
                                 return;
                               } else if (ec) {
-                                request->failure_fn();
+                                request->respond(kFailure, nullptr);
+                                self->FinishPendingRequest();
                                 return;
                               }
                               // We sent the payload to the server, now let's receive the 4-byte length from the server
@@ -356,7 +350,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                                     if (!self || self->pending_request_ != request) {
                                       return;
                                     } else if (ec) {
-                                      request->failure_fn();
+                                      request->respond(kFailure, nullptr);
+                                      self->FinishPendingRequest();
                                       return;
                                     }
 
@@ -376,17 +371,19 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                                           if (!self || self->pending_request_ != request) {
                                             return;
                                           } else if (ec) {
-                                            request->failure_fn();
+                                            request->respond(kFailure, nullptr);
+                                            self->FinishPendingRequest();
                                             return;
                                           }
 
                                           discovery::Response response;
                                           response.ParseFromArray(receive_buffer->data(), bytes_received);
                                           if (response.header().status() == discovery::ServiceHeader::failed) {
-                                            request->failure_fn();
+                                            request->respond(kFailure, nullptr);
                                           } else {
-                                            request->success_fn(response);
+                                            request->respond(kSuccess, &response);
                                           }
+                                          self->FinishPendingRequest();
                                         });
                                   });
                             });

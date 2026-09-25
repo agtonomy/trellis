@@ -29,6 +29,8 @@ namespace trellis::core::ipc::proto::rpc {
 namespace {
 
 static constexpr unsigned kLargeMessageTestSize = 4194304u;
+static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
+static constexpr auto kTimeoutReconnectTime = std::chrono::milliseconds{400};
 
 class TestServiceHandler : public trellis::core::test::TestService {
  public:
@@ -47,8 +49,6 @@ class TestServiceHandler : public trellis::core::test::TestService {
     }
   }
 };
-static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
-static constexpr auto kTimeoutReconnectTime = std::chrono::milliseconds{400};
 // Records that a handler started, so a test can tell a reply that is genuinely owed from a request that never got
 // dispatched. Request id 2000 makes the base handler sleep, which is what holds the reply back.
 class SlowSignallingHandler : public TestServiceHandler {
@@ -79,8 +79,8 @@ TEST_F(TrellisFixture, BasicSingleServiceCall) {
   test::Test request;
   request.set_id(1337);
   request.set_msg("this is a test request");
-  unsigned success_count{0};
-  unsigned fail_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> fail_count{0};
   client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                  if (status == kSuccess) {
@@ -95,8 +95,8 @@ TEST_F(TrellisFixture, BasicSingleServiceCall) {
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
 
-  EXPECT_EQ(success_count, 1);
-  EXPECT_EQ(fail_count, 0);
+  EXPECT_EQ(success_count.load(), 1u);
+  EXPECT_EQ(fail_count.load(), 0u);
 }
 
 TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
@@ -108,15 +108,15 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
 
   WaitForDiscovery();
 
-  unsigned success_count{0};
-  unsigned fail_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> fail_count{0};
 
   for (int i = 0; i < 5; ++i) {
     test::Test request;
     request.set_id(i);
     request.set_msg("repeat");
     client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
-                                                 [&](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                 [&, i](ServiceCallStatus status, const test::TestTwo* resp) {
                                                    if (status == kSuccess) {
                                                      EXPECT_EQ(resp->foo(), i);
                                                      EXPECT_EQ(resp->bar(), "Echo: repeat");
@@ -129,8 +129,8 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
   }
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(success_count, 5);
-  EXPECT_EQ(fail_count, 0);
+  EXPECT_EQ(success_count.load(), 5u);
+  EXPECT_EQ(fail_count.load(), 0u);
 }
 
 TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
@@ -147,7 +147,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
     req1.set_id(1);
     req1.set_msg("first");
 
-    unsigned success_count = 0;
+    std::atomic<unsigned> success_count{0};
     client->CallAsync<test::Test, test::TestTwo>("DoStuff", req1,
                                                  [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                    if (status == kSuccess) {
@@ -158,7 +158,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
                                                  });
 
     std::this_thread::sleep_for(kServiceCallWaitTime);
-    EXPECT_EQ(success_count, 1);
+    EXPECT_EQ(success_count.load(), 1u);
   }
 
   // Old server destructs here; now create a new one
@@ -171,7 +171,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
   req2.set_id(2);
   req2.set_msg("second");
 
-  unsigned success_count = 0;
+  std::atomic<unsigned> success_count{0};
   client->CallAsync<test::Test, test::TestTwo>("DoStuff", req2,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                  if (status == kSuccess) {
@@ -182,7 +182,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
                                                });
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(success_count, 1);
+  EXPECT_EQ(success_count.load(), 1u);
 }
 
 TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
@@ -199,7 +199,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
     req1.set_id(10);
     req1.set_msg("first client");
 
-    unsigned success_count = 0;
+    std::atomic<unsigned> success_count{0};
     client1->CallAsync<test::Test, test::TestTwo>("DoStuff", req1,
                                                   [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                     if (status == kSuccess) {
@@ -210,7 +210,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
                                                   });
 
     std::this_thread::sleep_for(kServiceCallWaitTime);
-    EXPECT_EQ(success_count, 1);
+    EXPECT_EQ(success_count.load(), 1u);
   }
 
   // Old client destructs here; now create a new one
@@ -221,7 +221,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
   req2.set_id(20);
   req2.set_msg("second client");
 
-  unsigned success_count = 0;
+  std::atomic<unsigned> success_count{0};
   client2->CallAsync<test::Test, test::TestTwo>("DoStuff", req2,
                                                 [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                   if (status == kSuccess) {
@@ -232,7 +232,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
                                                 });
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(success_count, 1);
+  EXPECT_EQ(success_count.load(), 1u);
 }
 
 TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
@@ -248,8 +248,8 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
   request.set_id(42);
   request.set_msg("invalid method");
 
-  unsigned success_count = 0;
-  unsigned fail_count = 0;
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> fail_count{0};
 
   client->CallAsync<test::Test, test::TestTwo>("UnknownMethod", request,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
@@ -261,8 +261,8 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
                                                });
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(success_count, 0);
-  EXPECT_EQ(fail_count, 1);
+  EXPECT_EQ(success_count.load(), 0u);
+  EXPECT_EQ(fail_count.load(), 1u);
 }
 
 TEST_F(TrellisFixture, BackToBackCallSucceeds) {
@@ -278,8 +278,8 @@ TEST_F(TrellisFixture, BackToBackCallSucceeds) {
   test::Test request;
   request.set_id(1337);
   request.set_msg("this is a test request");
-  unsigned success_count{0};
-  unsigned fail_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> fail_count{0};
   client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                  if (status == kSuccess) {
@@ -306,8 +306,8 @@ TEST_F(TrellisFixture, BackToBackCallSucceeds) {
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
 
-  EXPECT_EQ(success_count, 2);
-  EXPECT_EQ(fail_count, 0);
+  EXPECT_EQ(success_count.load(), 2u);
+  EXPECT_EQ(fail_count.load(), 0u);
 }
 
 TEST_F(TrellisFixture, LargeRequestResponse) {
@@ -323,8 +323,8 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
   test::Test request;
   request.set_id(100);  // special value to return a large message
   request.set_msg(std::string(kLargeMessageTestSize, 'X'));
-  unsigned success_count{0};
-  unsigned fail_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> fail_count{0};
   client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
                                                [&](ServiceCallStatus status, const test::TestTwo* resp) {
                                                  if (status == kSuccess) {
@@ -340,8 +340,8 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
 
-  EXPECT_EQ(success_count, 1);
-  EXPECT_EQ(fail_count, 0);
+  EXPECT_EQ(success_count.load(), 1u);
+  EXPECT_EQ(fail_count.load(), 0u);
 }
 
 TEST_F(TrellisFixture, LongRunningCallTimeout) {
@@ -357,7 +357,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
   test::Test request;
   request.set_id(2000);
   request.set_msg("this is a test request");
-  unsigned callback_count{0};
+  std::atomic<unsigned> callback_count{0};
   client->CallAsync<test::Test, test::TestTwo>(
       "DoStuff", request,
       [&](ServiceCallStatus status, const test::TestTwo* resp) {
@@ -367,7 +367,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
       /* timeout_ms = */ 100);
 
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(callback_count, 1);
+  EXPECT_EQ(callback_count.load(), 1u);
 
   // Wait some additional time for the underlying socket to reconnect
   std::this_thread::sleep_for(kTimeoutReconnectTime);
@@ -383,7 +383,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
       },
       /* timeout_ms = */ 100);
   std::this_thread::sleep_for(kServiceCallWaitTime);
-  EXPECT_EQ(callback_count, 1);
+  EXPECT_EQ(callback_count.load(), 1u);
 }
 
 TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
@@ -395,9 +395,9 @@ TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
 
   WaitForDiscovery();
 
-  unsigned success_count{0};
-  unsigned timeout_count{0};
-  unsigned fail_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> timeout_count{0};
+  std::atomic<unsigned> fail_count{0};
 
   // Make multiple calls rapidly with varying response times and timeouts. they should all succeed, even though the
   // first one takes longer
@@ -423,9 +423,9 @@ TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
   // Wait longer to account for the 500ms delay plus processing time
   std::this_thread::sleep_for(std::chrono::milliseconds{800});
 
-  EXPECT_EQ(success_count, 3);  // all three calls should succeed
-  EXPECT_EQ(timeout_count, 0);
-  EXPECT_EQ(fail_count, 0);
+  EXPECT_EQ(success_count.load(), 3u);  // all three calls should succeed
+  EXPECT_EQ(timeout_count.load(), 0u);
+  EXPECT_EQ(fail_count.load(), 0u);
 }
 
 TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
@@ -439,9 +439,9 @@ TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
 
   WaitForDiscovery();
 
-  unsigned timeout_count{0};
-  unsigned success_count{0};
-  unsigned correlation_errors{0};
+  std::atomic<unsigned> timeout_count{0};
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> correlation_errors{0};
 
   // First call: will timeout but the server will eventually complete and send a response
   test::Test request1;
@@ -460,7 +460,7 @@ TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
   // Wait for both the client timeout (100ms) and the server handler (500ms) to complete.
   // This ensures the stale response is sitting in the socket buffer before the second call.
   std::this_thread::sleep_for(std::chrono::milliseconds{600});
-  EXPECT_EQ(timeout_count, 1);
+  EXPECT_EQ(timeout_count.load(), 1u);
 
   // Second call: should receive its own response, not the stale one from the first call
   test::Test request2;
@@ -489,9 +489,9 @@ TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
 
   std::this_thread::sleep_for(std::chrono::milliseconds{300});
 
-  EXPECT_EQ(timeout_count, 1);
-  EXPECT_EQ(success_count, 1);
-  EXPECT_EQ(correlation_errors, 0) << "Response did not match the request - possible stale response received";
+  EXPECT_EQ(timeout_count.load(), 1u);
+  EXPECT_EQ(success_count.load(), 1u);
+  EXPECT_EQ(correlation_errors.load(), 0u) << "Response did not match the request - possible stale response received";
 }
 
 // The loop stops before the client is released, as it does when an app shuts down.
@@ -579,7 +579,7 @@ class UnregisterTest : public TrellisFixture {
     const auto unregistered_at = std::chrono::steady_clock::now();
     GetNode().GetDiscovery()->Unregister(handle);
     const auto deadline = unregistered_at + std::chrono::seconds{2};
-    while (fail_count < 3 && std::chrono::steady_clock::now() < deadline) {
+    while (fail_count.load() < 3 && std::chrono::steady_clock::now() < deadline) {
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
     }
     const auto elapsed = std::chrono::steady_clock::now() - unregistered_at;
