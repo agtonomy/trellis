@@ -236,5 +236,38 @@ TEST_F(SimClockFixture, TimerCallbackCanCreateTimer) {
   EXPECT_TRUE(nested);
 }
 
+// Stop() called off the loop leaves stopping the watchdog to the loop. A watchdog whose deadline passes before the
+// loop gets there must still not reach the callback. The simulated clock fires the watchdog inside the handler that
+// is running when Stop() returns, ahead of that queued stop, which is the ordering asio timers cannot pin down.
+TEST_F(SimClockFixture, WatchdogDoesNotFireAfterStopFromAnotherThread) {
+  CreateNode(Node::SimClockRole::kPublisher);
+  constexpr auto kWatchdogTimeout = 100ms;
+
+  unsigned received{0};
+  unsigned watchdog_fired{0};
+  auto pub = node_->CreatePublisher<SimClock>("sim_clock_test_watchdog");
+  auto sub = node_->CreateSubscriber<SimClock>(
+      "sim_clock_test_watchdog",
+      [&received](const time::TimePoint&, const time::TimePoint&, std::unique_ptr<SimClock>) { ++received; },
+      static_cast<unsigned>(kWatchdogTimeout.count()), [&watchdog_fired](const time::TimePoint&) { ++watchdog_fired; });
+
+  auto t = time::Now();
+  t += 1000ms;
+  node_->UpdateSimulatedClock(t);  // first advance only rebases the timers
+  node_->RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  pub->Send(SimClock{}, t);  // the watchdog only fires once a message has been received
+  node_->RunUntilIdle();
+  ASSERT_EQ(received, 1u);
+
+  asio::post(*node_->GetEventLoop(), [&]() {
+    std::thread([&sub]() { sub->Stop(); }).join();
+    node_->UpdateSimulatedClock(t + 2 * kWatchdogTimeout);  // on the loop thread, so the step runs inline
+  });
+  node_->RunUntilIdle();
+  EXPECT_EQ(watchdog_fired, 0u) << "the watchdog fired after Stop() returned";
+}
+
 }  // namespace
 }  // namespace trellis::core

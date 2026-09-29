@@ -141,9 +141,10 @@ class SubscriberImpl : public SubscriberBase,
           subscriber->loop_,
           [watchdog_callback = std::move(watchdog_callback),
            weak_self = std::weak_ptr<SubscriberImpl>(subscriber)](const time::TimePoint& now) {
-            // Fire only if messages were previously received.
+            // Fire only if messages were previously received, and never after Stop(): called off the loop, Stop()
+            // leaves stopping this timer to the loop, and a deadline that has already passed can fire first.
             const auto self = weak_self.lock();
-            if (self && self->DidReceive()) {
+            if (self && !self->stopped_.load(std::memory_order_acquire) && self->DidReceive()) {
               watchdog_callback(now);
             }
           },
