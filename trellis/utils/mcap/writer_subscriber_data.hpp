@@ -34,6 +34,9 @@ namespace trellis::utils::mcap {
 struct FileWriter {
   ::mcap::McapWriter writer = {};
   std::mutex mutex = {};
+  /// Set under `mutex` once the owning WriterImpl has closed the file. A subscriber callback already running when that
+  /// happens must drop its message: writing to a closed file fails, and the failure throws out of the event loop.
+  bool closed = false;
 
   /// A convenience function for creating FileWriters
   static std::shared_ptr<FileWriter> MakeFileWriter(const std::string_view outfile, ::mcap::McapWriterOptions options) {
@@ -142,6 +145,7 @@ template <typename MessageType, typename OutputMessageType, typename Converter>
 void SubscriberData<MessageType, OutputMessageType, Converter>::Write(const core::time::TimePoint& stamp,
                                                                       const uint8_t* data, size_t len) {
   const auto lock = std::lock_guard{file_writer->mutex};
+  if (file_writer->closed) return;
   if (!initialized) TryInitializeMcapChannel();
   if (initialized) WriteRawMessage(stamp, reinterpret_cast<const std::byte*>(data), len);
 }
@@ -150,6 +154,7 @@ template <typename MessageType, typename OutputMessageType, typename Converter>
 void SubscriberData<MessageType, OutputMessageType, Converter>::Write(const core::time::TimePoint& stamp,
                                                                       const MessageType& msg) {
   const std::lock_guard lock{file_writer->mutex};
+  if (file_writer->closed) return;
   if (!initialized) TryInitializeMcapChannel();
 
   if (initialized) {

@@ -18,6 +18,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <future>
 #include <iostream>
 
 #include "mcap/reader.hpp"
@@ -90,6 +91,34 @@ TEST_F(TrellisFixture, McapWriterBasic) {
 
   ASSERT_EQ(chan1_count, kNumMessagesPerChannel);
   ASSERT_EQ(chan2_count, kNumMessagesPerChannel);
+}
+
+// Each writer is destroyed on this thread while the loop may be running its flush timer, which fires every
+// millisecond. A flush in progress held the file open past the destructor, so the file could still be unfinished
+// right after the writer was gone.
+TEST_F(TrellisFixture, McapWriterDestroyedWhileLoopRunsClosesItsFile) {
+  constexpr size_t kWriterCount{50};
+  const std::string outfile{::testing::TempDir() + "mcap_writer_destroyed_off_loop.mcap"};
+
+  StartRunnerThread();
+  for (size_t i = 0; i < kWriterCount; ++i) {
+    {
+      trellis::utils::mcap::Writer writer(GetNode(), {"mcap_writer_test_topic"}, outfile,
+                                          ::mcap::McapWriterOptions("protobuf"), std::chrono::milliseconds{1});
+      std::this_thread::sleep_for(std::chrono::microseconds{(i % 8) * 250});
+    }
+    ::mcap::McapReader reader;
+    ASSERT_TRUE(reader.open(outfile).ok());
+    ASSERT_TRUE(reader.readSummary(::mcap::ReadSummaryMethod::NoFallbackScan).ok())
+        << "the file was not finished when the writer was destroyed";
+  }
+
+  // Handlers run in order. When this one runs, every earlier flush has returned.
+  std::promise<void> marker_ran;
+  asio::post(*GetNode().GetEventLoop(), [&marker_ran]() { marker_ran.set_value(); });
+  EXPECT_EQ(marker_ran.get_future().wait_for(std::chrono::seconds{5}), std::future_status::ready)
+      << "the event loop stopped while writers were being destroyed";
+  StopAndJoinRunnerThread();  // The marker references a local.
 }
 
 TEST_F(TrellisFixture, McapWriterStatistics) {

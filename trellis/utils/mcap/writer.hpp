@@ -129,17 +129,30 @@ WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(
 template <typename MessageType, typename OutputMessageType, typename Converter>
 WriterImpl<MessageType, OutputMessageType, Converter>::~WriterImpl() {
   if (flush_timer_) {
-    flush_timer_->Stop();
-    flush_timer_->Fire();
+    // A timer must be stopped and destroyed on its loop's thread, or while the loop is not running (see TimerImpl), and
+    // a writer is often destroyed on another thread. Until the loop gets to it the timer may still fire, and then skips
+    // the file that is closed below.
+    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+      flush_timer_->Stop();
+    } else {
+      asio::post(*loop_, [timer = std::move(flush_timer_)]() { timer->Stop(); });
+    }
   }
 
   // Clear subscribers explicitly
   subscribers_.clear();
 
+  if (file_writer_ == nullptr) {
+    return;  // moved from
+  }
+  // Closed here rather than when the last reference to the FileWriter goes: a subscriber callback or flush already
+  // running on the loop holds one, and the file must be complete once the writer is destroyed.
+  const auto lock = std::lock_guard{file_writer_->mutex};
   if (on_destruction_callback_ != nullptr) {
-    const auto lock = std::lock_guard{file_writer_->mutex};
     on_destruction_callback_(file_writer_->writer.statistics(), topics_);
   }
+  file_writer_->writer.close();
+  file_writer_->closed = true;
 }
 
 template <typename MessageType, typename OutputMessageType, typename Converter>
@@ -156,7 +169,9 @@ void WriterImpl<MessageType, OutputMessageType, Converter>::Initialize(core::Nod
         loop_,
         [file_writer = this->file_writer_](const core::time::TimePoint&) {  // flush the writer
           const auto lock = std::lock_guard{file_writer->mutex};
-          file_writer->writer.closeLastChunk();
+          if (!file_writer->closed) {
+            file_writer->writer.closeLastChunk();
+          }
         },
         static_cast<unsigned>(flush_interval_ms.count()), 0, core::TimerKind::kManagement);
   }
