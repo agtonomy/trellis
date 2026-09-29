@@ -212,6 +212,25 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     ProcessNextRequest();
   }
 
+  // Reconnects to the same server on a new socket. If the connect fails there is no connection until the next
+  // discovery heartbeat reports the server again, which the discovery callback reconnects on.
+  void ReplaceConnection() {
+    if (!tcp_client_) {
+      return;
+    }
+    const auto port = tcp_client_->GetRemotePort();
+    DropConnection();
+    if (!port.has_value()) {
+      return;
+    }
+    try {
+      tcp_client_ = std::make_shared<network::TCP>(loop_, "127.0.0.1", port.value());
+    } catch (const std::exception& e) {
+      trellis::core::Log::Warn("Failed to reconnect to service {} on port {} after a timeout: {}",
+                               PROTO_SERVICE_T::descriptor()->full_name(), port.value(), e.what());
+    }
+  }
+
   // Closing the socket lets the in-flight request fail on the event loop. Discovery calls us holding its callback
   // lock, so user callbacks must not run here, and an exception would take down Node::Run().
   void DropConnection() {
@@ -299,21 +318,13 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
             const auto timed_out = weak_request.lock();
             if (self && timed_out && self->pending_request_ == timed_out) {
               timed_out->respond(kTimedOut, nullptr);
-              if (self->tcp_client_) {
-                trellis::core::error_code ec;
-                self->tcp_client_->Cancel(ec);  // Cancel the TCP client to avoid further processing
-              }
+              // The server may still answer, and on this socket that reply would be read as the next call's.
+              self->ReplaceConnection();
               self->FinishPendingRequest();
             }
           },
           request->timeout_ms, TimerKind::kManagement);
     }
-
-    // Drain any stale data from the receive buffer immediately before sending.
-    // This handles cases where a previous request timed out but the server eventually
-    // sent a response that is still sitting in the socket buffer.
-    // TODO (bsirang) We should implement request/response ID tracking to avoid this situation entirely.
-    tcp->DrainReceiveBuffer();
 
     // We chain together 4 events:
     // 1. Send 4-byte request payload size

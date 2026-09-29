@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <future>
+#include <utility>
 
 #include "trellis/core/ipc/proto/rpc/client.hpp"
 #include "trellis/core/ipc/proto/rpc/server.hpp"
@@ -62,6 +63,17 @@ class SlowSignallingHandler : public TestServiceHandler {
 
   std::atomic<bool> entered{false};
 };
+
+// Runs `fn` on the node's loop and waits for it, so a test drives the client from the thread that owns it.
+template <typename Fn>
+void RunOnLoop(Node& node, Fn&& fn) {
+  std::promise<void> done;
+  asio::post(*node.GetEventLoop(), [&]() {
+    fn();
+    done.set_value();
+  });
+  done.get_future().wait();
+}
 
 }  // namespace
 
@@ -493,6 +505,47 @@ TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
   EXPECT_EQ(timeout_count.load(), 1u);
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(correlation_errors.load(), 0u) << "Response did not match the request - possible stale response received";
+}
+
+// The second call goes out while the timed-out call's reply is still owed. Sharing a socket, that late reply arrived
+// after the second request and was read as the second call's response.
+TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
+  StartRunnerThread();
+
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+  WaitForDiscovery();
+
+  std::promise<ServiceCallStatus> first;
+  RunOnLoop(GetNode(), [&]() {
+    test::Test request;
+    request.set_id(2000);  // the handler sleeps 500ms before answering
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request, [&first](ServiceCallStatus status, const test::TestTwo*) { first.set_value(status); },
+        /* timeout_ms = */ 100);
+  });
+  auto first_status = first.get_future();
+  ASSERT_EQ(first_status.wait_for(std::chrono::seconds{2}), std::future_status::ready);
+  ASSERT_EQ(first_status.get(), kTimedOut);
+
+  std::promise<std::pair<ServiceCallStatus, float>> second;
+  RunOnLoop(GetNode(), [&]() {
+    test::Test request;
+    request.set_id(9999);
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request,
+        [&second](ServiceCallStatus status, const test::TestTwo* response) {
+          second.set_value({status, response->foo()});
+        },
+        /* timeout_ms = */ 2000);
+  });
+  auto second_result = second.get_future();
+  ASSERT_EQ(second_result.wait_for(std::chrono::seconds{3}), std::future_status::ready);
+  const auto [status, foo] = second_result.get();
+  EXPECT_EQ(status, kSuccess);
+  EXPECT_EQ(foo, 9999.0f) << "the second call got the timed-out call's reply";
+  StopAndJoinRunnerThread();  // The promises are locals.
 }
 
 // The loop stops before the client is released, as it does when an app shuts down.
