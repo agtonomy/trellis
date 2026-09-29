@@ -18,6 +18,7 @@
 #ifndef TRELLIS_CORE_OUTBOX_HPP_
 #define TRELLIS_CORE_OUTBOX_HPP_
 
+#include <memory>
 #include <optional>
 
 #include "trellis/core/constraints.hpp"
@@ -99,29 +100,58 @@ class AsyncSender {
   AsyncSender operator=(AsyncSender&&) = delete;
 
   AsyncSender(Node& node, Args&& args)
-      : pub_{node.CreatePublisher<SerializableType, MsgType, ConverterType>(std::move(args.topic),
-                                                                            std::move(args.converter))},
-        timer_{node.CreateTimer(std::move(args.rate_ms), [this](const time::TimePoint&) { PublishMsg(); })} {}
+      : loop_{node.GetEventLoop()},
+        state_{std::make_shared<State>(node.CreatePublisher<SerializableType, MsgType, ConverterType>(
+            std::move(args.topic), std::move(args.converter)))},
+        // Weak rather than `this`: the sender may be destroyed on another thread while this callback runs on the loop.
+        timer_{node.CreateTimer(std::move(args.rate_ms),
+                                [weak_state = std::weak_ptr<State>(state_)](const time::TimePoint&) {
+                                  if (const auto state = weak_state.lock()) {
+                                    state->PublishMsg();
+                                  }
+                                })} {}
+
+  /**
+   * @brief Hands the timer to the loop to be stopped and destroyed there.
+   *
+   * A timer must be stopped and destroyed on its loop's thread, or while the loop is not running (see TimerImpl). The
+   * owning Outbox is often destroyed on another thread.
+   */
+  ~AsyncSender() {
+    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+      return;
+    }
+    // Until this runs, the timer may still fire; its callback finds the state gone and publishes nothing.
+    asio::post(*loop_, [timer = std::move(timer_)]() { timer->Stop(); });
+  }
 
   /**
    * @brief Store the message to be published on the next timer tick.
    *
    * Passing `std::nullopt` suppresses the next publication.
    */
-  void UpdateMsg(std::optional<MsgType>&& msg) { opt_msg_ = std::move(msg); }
+  void UpdateMsg(std::optional<MsgType>&& msg) { state_->opt_msg = std::move(msg); }
 
  private:
-  std::optional<MsgType> opt_msg_;
-  Publisher<SerializableType, MsgType, ConverterType> pub_;
-  Timer timer_;
+  /// What the timer callback touches. Shared so the callback can hold it weakly and outlive the sender safely.
+  struct State {
+    explicit State(Publisher<SerializableType, MsgType, ConverterType> publisher) : pub{std::move(publisher)} {}
 
-  /// Publishes the stored message (if present) and clears it.
-  void PublishMsg() {
-    if (opt_msg_.has_value()) {
-      pub_->Send(opt_msg_.value());
-      opt_msg_.reset();
+    /// Publishes the stored message (if present) and clears it.
+    void PublishMsg() {
+      if (opt_msg.has_value()) {
+        pub->Send(opt_msg.value());
+        opt_msg.reset();
+      }
     }
-  }
+
+    std::optional<MsgType> opt_msg;
+    Publisher<SerializableType, MsgType, ConverterType> pub;
+  };
+
+  EventLoop loop_;
+  std::shared_ptr<State> state_;
+  Timer timer_;
 };
 
 /**
