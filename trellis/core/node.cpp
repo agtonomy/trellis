@@ -18,13 +18,13 @@
 #include "trellis/core/node.hpp"
 
 #include <memory>
-#include <queue>
 #include <stdexcept>
 #include <thread>
 
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/utils.hpp"
 #include "trellis/core/sim_controller.hpp"
+#include "trellis/core/simulated_timers.hpp"
 #include "trellis/core/timer_options_config.hpp"
 #include "trellis/core/timer_registry.hpp"
 
@@ -419,106 +419,32 @@ void Node::StepSimulatedClock(const time::TimePoint& new_time) {
   if (!time::IsSimulatedClockEnabled()) {
     return;
   }
-  auto existing_time = time::Now();
-  bool reset_timers{false};
-  if (new_time >= existing_time) {
-    const auto registry = ev_loop_.GetTimerRegistry();
-    // Only timers the simulated clock drives belong here. Anything else is driven by asio and its expiry is a
-    // steady clock reading, so comparing it against simulated time would be comparing two unrelated epochs -- and
-    // since a non-simulated Reload() advances expiry by a single interval, catching such a timer up would spin once
-    // per interval across the gap between those epochs.
-    //
-    // Deliberately not filtered by owner, unlike the metrics collection above. Time is process-global, so a step
-    // has to carry every timer in the registry, including those of siblings on this loop. That is what lets a host
-    // advance its tenants' timers without each of them subscribing to the clock topic.
-    std::vector<TimerRegistry::Entry> entries;
-    for (const auto& entry : registry->GetEntries()) {
-      if (entry.timer->IsSimulationDriven()) {
-        entries.push_back(entry);
-      }
-    }
-    if (!entries.empty()) {
-      if (time::TimePointToMilliseconds(existing_time) != 0) {
-        // A queued timer holds its expiry by value: pop() and push() re-heapify, which runs the comparator against
-        // other queued timers, and a callback fired below may have destroyed one of those. The comparator must
-        // therefore never dereference, and every dereference of a popped timer is guarded by its registration
-        // handle, which -- unlike an address -- the allocator cannot recycle onto a different timer.
-        struct QueuedTimer {
-          TimerImpl* timer{nullptr};
-          TimerRegistry::RegistrationHandle handle{TimerRegistry::kInvalidRegistrationHandle};
-          time::TimePoint expiry;
-        };
-        // Timers sharing an expiry fire in creation order. Handles are monotonic, so ordering on them gives that,
-        // and it keeps the sequence reproducible across runs -- entries arrive here in the registry map's iteration
-        // order, which is unspecified and shifts with its rehash history.
-        auto timer_comp = [](const QueuedTimer& a, const QueuedTimer& b) {
-          return a.expiry != b.expiry ? a.expiry > b.expiry : a.handle > b.handle;
-        };
-        std::priority_queue<QueuedTimer, std::vector<QueuedTimer>, decltype(timer_comp)> expired_timers(timer_comp);
-
-        // First find all the non-cancelled timers that are expiring before our new_time
-        for (const auto& entry : entries) {
-          const auto expiry = entry.timer->GetExpiry();
-          if (!entry.timer->IsCancelled() && new_time >= expiry) {
-            expired_timers.push(QueuedTimer{.timer = entry.timer, .handle = entry.handle, .expiry = expiry});
-          }
-        }
-
-        // Step forward in time while firing the timers that are expiring until there are no more timers to fire
-        while (!expired_timers.empty()) {
-          const auto top = expired_timers.top();
-          expired_timers.pop();
-          // An earlier callback may have destroyed this timer, which deregisters it
-          if (!registry->Contains(top.handle)) {
-            continue;
-          }
-          // Move our simulated time up to the expiration time of this timer, so the callback sees the
-          // moment it was scheduled for, and tell the timer how far we are stepping to so its rearm can
-          // account for the slots between here and there.
-          //
-          // Note that advancing to each expiry in turn means no timer is ever dispatched late here, so
-          // passing the target is a deliberate choice rather than a measurement: a caller stepping well
-          // past a timer's expiry is treated as that timer having fallen behind. That is what lets a
-          // rearm policy mean the same thing in a replay as it does on a real clock. Only
-          // RearmPolicy::kSkipAligned acts on it; kCatchUp replays every slot either way.
-          time::SetSimulatedTime(top.expiry);
-          top.timer->Fire(new_time);  // Fire the timer (which updates the expiry time also)
-
-          // The callback we just ran may have destroyed this timer too
-          if (!registry->Contains(top.handle) || top.timer->GetType() == TimerImpl::Type::kOneShot) {
-            continue;
-          }
-          // If our expiry time is still earlier than our new_time, put it back in the queue for another go.
-          // The cancelled check matters as much as the expiry one: firing skips the rearm for a timer whose
-          // callback stopped it, and the rearm is the only thing that advances a periodic timer's expiry, so
-          // without it this re-queues the same timer against the same expiry forever.
-          const auto next_expiry = top.timer->GetExpiry();
-          if (!top.timer->IsCancelled() && new_time >= next_expiry) {
-            expired_timers.push(QueuedTimer{.timer = top.timer, .handle = top.handle, .expiry = next_expiry});
-          }
-        }
-      } else {
-        // This is our first jump forward in time, reset all the timers so their expiry times are sane
-        reset_timers = true;
-      }
-    }
-    time::SetSimulatedTime(new_time);
-    // If we need to reset timers, it needs to happen after the new time is updated. Reusing the entries read above
-    // is safe here because this branch is mutually exclusive with the one that fires callbacks, so nothing has run
-    // that could have destroyed a timer since.
-    if (reset_timers) {
-      for (const auto& entry : entries) {
-        // Only re-base timers that are still pending. Reset() clears both did_fire_ and cancelled_, so
-        // resetting an already-expired timer (a one-shot that fired, or any timer explicitly stopped)
-        // would silently bring it back to life. This mirrors the !IsCancelled() guard in the fire path.
-        if (!entry.timer->Expired()) {
-          entry.timer->Reset();
-        }
-      }
-    }
-  } else {
+  const auto existing_time = time::Now();
+  if (new_time < existing_time) {
     Log::Debug("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
                time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
+    return;
+  }
+
+  // Deliberately not filtered by owner, unlike the metrics collection above. Time is process-global, so a step has to
+  // carry every timer in the registry, including those of siblings on this loop. That is what lets a host advance its
+  // tenants' timers without each of them subscribing to the clock topic.
+  const auto registry = ev_loop_.GetTimerRegistry();
+  if (time::TimePointToMilliseconds(existing_time) != 0) {
+    StepSimulatedTimers(*registry, new_time);
+    return;
+  }
+
+  // This is our first jump forward in time, so reset the timers the simulated clock drives: their expiry times were
+  // computed against a clock that had never been set. It has to happen after the new time is set.
+  time::SetSimulatedTime(new_time);
+  for (const auto& entry : registry->GetEntries()) {
+    // Only re-base timers that are still pending. Reset() clears both did_fire_ and cancelled_, so resetting an
+    // already-expired timer (a one-shot that fired, or any timer explicitly stopped) would silently bring it back to
+    // life.
+    if (entry.timer->IsSimulationDriven() && !entry.timer->Expired()) {
+      entry.timer->Reset();
+    }
   }
 }
 

@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <thread>
 
 #include "trellis/core/node.hpp"
@@ -184,6 +185,30 @@ TEST(TrellisSimulatedClock, TimerDestroyedByAnotherCallbackDuringTheSameJumpIsSk
   ASSERT_EQ(victim, nullptr);
   // Released before its own expiry came up, and the walk must not have touched it afterwards
   ASSERT_EQ(victim_ticks, 0U);
+}
+
+TEST(TrellisSimulatedClock, TimerCreatedByACallbackFiresInTheSameUpdate) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time
+
+  trellis::core::Node node("test_simtime", {});
+
+  trellis::core::OneShotTimer armed_by_callback;
+  std::optional<trellis::core::time::TimePoint> second_fired_at;
+  auto first = node.CreateOneShotTimer(120u, [&](const trellis::core::time::TimePoint&) {
+    armed_by_callback = node.CreateOneShotTimer(
+        100u, [&second_fired_at](const trellis::core::time::TimePoint& now) { second_fired_at = now; });
+  });
+
+  // The first update just resets the timers
+  trellis::core::time::TimePoint time{trellis::core::time::Now() + std::chrono::milliseconds(1000)};
+  node.UpdateSimulatedClock(time);
+  node.RunOnce();
+
+  node.UpdateSimulatedClock(time + std::chrono::milliseconds(280));
+  node.RunOnce();
+
+  ASSERT_EQ(second_fired_at, time + std::chrono::milliseconds(220));
 }
 
 TEST(TrellisSimulatedClock, ManagementTimersRunOnWallTimeUnderASimulatedClock) {

@@ -114,6 +114,22 @@ cc_library(
 )
 
 cc_library(
+    name = "core_simulated_timers",
+    srcs = [
+        "simulated_timers.cpp",
+    ],
+    hdrs = [
+        "simulated_timers.hpp",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_time",
+        ":core_timer",
+        ":core_timer_registry",
+    ],
+)
+
+cc_library(
     name = "core_proto_utils",
     hdrs = [
         "proto_utils.hpp",
@@ -215,6 +231,7 @@ cc_library(
         ":core_proto",
         ":core_proto_utils",
         ":core_publisher",
+        ":core_simulated_timers",
         ":core_subscriber",
         ":core_time",
         ":core_timer_options_config",
