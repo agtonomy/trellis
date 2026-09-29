@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <future>
 
 #include "trellis/core/ipc/proto/rpc/client.hpp"
 #include "trellis/core/ipc/proto/rpc/server.hpp"
@@ -606,6 +607,26 @@ TEST_F(UnregisterTest, FailsCallsWithoutTimeout) { ExpectAllCallsFail(/* timeout
 // worst case without making a loaded machine flaky.
 TEST_F(UnregisterTest, FailsCallsBeforeTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 1000); }
 
+// When called on the loop's thread with no connection, CallAsync() invokes the callback with kFailure before it
+// returns.
+TEST_F(TrellisFixture, CallOnLoopWithoutConnectionFailsInline) {
+  StartRunnerThread();
+
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  std::promise<bool> failed_inline;
+  asio::post(*GetNode().GetEventLoop(), [&]() {
+    bool failed = false;
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", test::Test{},
+        [&failed](ServiceCallStatus status, const test::TestTwo*) { failed = status == kFailure; });
+    failed_inline.set_value(failed);
+  });
+
+  auto future = failed_inline.get_future();
+  ASSERT_EQ(future.wait_for(std::chrono::seconds{1}), std::future_status::ready);
+  EXPECT_TRUE(future.get());
+}
+
 // A reply still owed when the event loop stops is lost, because the send is posted to the loop and a stopped loop
 // never runs it. What keeps that from stranding the caller is ~Server() closing the caller's socket, which completes
 // the receive the caller is sitting on with an error. Shutdown therefore has to destroy the Server, not just stop the
@@ -668,6 +689,49 @@ TEST_F(TrellisFixture, ClosesCallerSocketsWhenAReplyIsLostToAStoppedLoop) {
   EXPECT_TRUE(static_cast<bool>(result)) << "expected the closed socket to fail the receive";
 
   GetNode().GetDiscovery()->StopReceive(handle);
+}
+
+// An app that drives the loop in steps with RunN() or RunUntilIdle(), rather than handing a thread to Run(), makes its
+// calls between steps, while nothing is running the loop. Pins that such a call waits for the next step and is then
+// sent and answered.
+TEST_F(TrellisFixture, CallsMadeBetweenLoopStepsStillGoOut) {
+  // Declared before the client: ~Client() runs the callback that references these.
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> other_count{0};
+
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+
+  // Step the loop through discovery so the client has a connection before the call is made. Nothing here can observe
+  // the connection directly, so step for several discovery periods rather than waiting on it.
+  const auto connected_by = std::chrono::steady_clock::now() + std::chrono::milliseconds{5 * kTestDiscoveryTimeout};
+  while (std::chrono::steady_clock::now() < connected_by) {
+    GetNode().RunUntilIdle();
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  }
+
+  test::Test request;
+  request.set_id(7);
+  request.set_msg("stepped");
+  client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
+                                               [&](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                 if (status == kSuccess && resp->bar() == "Echo: stepped") {
+                                                   ++success_count;
+                                                 } else {
+                                                   ++other_count;
+                                                 }
+                                               });
+  EXPECT_EQ(success_count.load(), 0u) << "a call made between steps should wait for the next one";
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+  while (success_count.load() + other_count.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+    GetNode().RunUntilIdle();
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+
+  EXPECT_EQ(success_count.load(), 1u) << "stepping the loop should have sent the call and delivered its reply";
+  EXPECT_EQ(other_count.load(), 0u);
 }
 
 }  // namespace trellis::core::ipc::proto::rpc

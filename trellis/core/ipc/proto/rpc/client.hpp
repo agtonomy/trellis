@@ -152,12 +152,15 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
    * @brief Asynchronously call a method on the remote service. If there is already a call from this client in progress,
    * it will be queued.
    *
+   * With no connection, the callback is invoked with kFailure before CallAsync() returns.
+   *
    * @tparam REQ_T The request protobuf message type.
    * @tparam RESP_T The expected response protobuf message type.
    * @param method Name of the method to invoke.
    * @param request The request message object.
    * @param callback A callback to handle the response.
-   * @param timeout_ms Timeout in milliseconds; 0 means the call waits indefinitely for a response.
+   * @param timeout_ms Timeout in milliseconds; 0 waits indefinitely. The clock starts when the request goes out, not
+   *        when CallAsync() returns, so time spent queued does not count against it.
    */
   template <typename REQ_T, typename RESP_T>
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
