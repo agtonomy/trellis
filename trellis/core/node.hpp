@@ -112,6 +112,10 @@ class Node {
    * does. The hosted node cannot do it itself, because its Run() would drive every sibling's work from a call that
    * its own Stop() can no longer end. The second is that the host has to outlive its tenants: its destructor stops
    * the loop, which leaves any node still running on that loop with an io_context that never runs another handler.
+   *
+   * A hosted node belongs to the host loop's thread. Construct it, use it and destroy it on that thread, or while the
+   * loop is not running: its timers carry TimerImpl's thread rules, and the node keeps state such as its subscriber
+   * list that the loop reads without a lock.
    */
   struct SharedContext {
     EventLoop loop;

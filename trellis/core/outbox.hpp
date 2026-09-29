@@ -67,6 +67,9 @@ concept _Sender = requires {
  * at which messages are computed (i.e., when the outbound messages need to be rate limited). The consumer will only
  * receive the latest value and must be able to tolerate up to one full timer period of latency.
  *
+ * Threads: UpdateMsg() stores a message that the timer reads on the node's event loop, so call it on the loop's thread.
+ * Destroy the sender there too, or while the loop is not running; its timer carries TimerImpl's thread rules.
+ *
  * This class supports opt-in automatic conversion from native C++ types to protobuf messages. Callers may specify a
  * native message type that is convertible to the serializable type. By default, ADL is used to find a `ToProto`
  * function that performs the conversion from the native type to the serializable type. Alternately, the caller may
@@ -159,6 +162,8 @@ class AsyncSender {
  *
  * Use this sender when the publish rate is controlled externally (e.g., by a timer or event).
  *
+ * Threads: UpdateMsg() publishes on the calling thread, under the same rules as PublisherImpl::Send().
+ *
  * This class supports opt-in automatic conversion from native C++ types to protobuf messages. Callers may specify a
  * native message type that is convertible to the serializable type. By default, ADL is used to find a `ToProto`
  * function that performs the conversion from the native type to the serializable type. Alternately, the caller may
@@ -217,6 +222,8 @@ class ImmediateSender {
  * `std::optional<MsgType>` — one per sender in the same order as the template parameters.
  *
  * This class supports opt-in automatic conversion from native C++ types to protobuf messages via the senders.
+ *
+ * Threads: UpdateMsgs() and destruction follow the rules of each sender type; see AsyncSender and ImmediateSender.
  *
  * @tparam SenderType... One or more types satisfying the @ref _Sender concept.
  */

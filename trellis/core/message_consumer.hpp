@@ -59,6 +59,10 @@ struct Index<T, std::tuple<U, Types...>> {
  * means that the user can interact with the messages freely (without threading concerns) from any message consumer
  * callbacks or any other callback running on the given event loop (such as timers)
  *
+ * Threads: Size(), Newest() and TimedOut() read state the loop writes, so call them on the loop's thread. Destroy the
+ * consumer there too, or while the loop is not running: destroying it elsewhere can free a FIFO that a delivery is
+ * writing to. SetMaxFrequencyThrottle() is safe from any thread.
+ *
  * There are two high-level usage patterns for this module. The first pattern is to use a callback to consume messages
  * off of the underlying FIFO as they come in. The other pattern is to call Newest<MsgT>() to access the most recent
  * message. For a given message type, these patterns should not be mixed.

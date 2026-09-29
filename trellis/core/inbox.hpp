@@ -148,6 +148,11 @@ concept IsReceiveType = requires {
  *
  * This class supports opt-in automatic conversion to native C++ types from protobuf messages via the receivers.
  *
+ * Threads: subscriber callbacks write into the inbox on the node's event loop. GetMessagesCopy is the only method safe
+ * to call from another thread; call everything else, including Send, on the loop's thread. Construct and destroy the
+ * inbox there too, or while the loop is not running: destroying it elsewhere can free a buffer that a delivery is
+ * writing to.
+ *
  * @tparam ReceiveTypes the message receive types which should be IsReceiveTypes, which are specializations of the
  * templates Latest, NLatest, AllLatest, or Loopback.
  */

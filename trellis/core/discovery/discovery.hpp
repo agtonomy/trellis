@@ -42,6 +42,11 @@ namespace trellis::core::discovery {
  *
  * This discovery mechanism enables automatic connection of publishers and
  * subscribers using shared memory without prior configuration.
+ *
+ * Threads: callbacks run on the event loop. Register(), Unregister(), the AsyncReceive*() methods, StopReceive(),
+ * UpdatePubSubStats() and GetSampleId() are safe from any thread. The sample queries (the Get*Samples() methods and
+ * FindResolvableTopicSample()) read caches the loop updates without a lock, so call them on the loop's thread or while
+ * the loop is not running.
  */
 class Discovery {
  public:
