@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <functional>
 #include <future>
 #include <utility>
 
@@ -51,6 +52,22 @@ class TestServiceHandler : public trellis::core::test::TestService {
     }
   }
 };
+// Service handlers run on the server's own thread, so a call made inside a handler comes from off the event loop.
+class NestedCallHandler : public TestServiceHandler {
+ public:
+  explicit NestedCallHandler(std::function<void()> on_outer_call) : on_outer_call_{std::move(on_outer_call)} {}
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure* done) override {
+    if (request->id() == 1) {
+      on_outer_call_();
+    }
+    TestServiceHandler::DoStuff(controller, request, response, done);
+  }
+
+ private:
+  std::function<void()> on_outer_call_;
+};
+
 // Records that a handler started, so a test can tell a reply that is genuinely owed from a request that never got
 // dispatched. Request id 2000 makes the base handler sleep, which is what holds the reply back.
 class SlowSignallingHandler : public TestServiceHandler {
@@ -660,6 +677,105 @@ TEST_F(UnregisterTest, FailsCallsWithoutTimeout) { ExpectAllCallsFail(/* timeout
 // worst case without making a loaded machine flaky.
 TEST_F(UnregisterTest, FailsCallsBeforeTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 1000); }
 
+TEST_F(TrellisFixture, CallFromServiceHandler) {
+  StartRunnerThread();
+
+  std::atomic<unsigned> outer_success_count{0};
+  std::atomic<unsigned> nested_success_count{0};
+  std::atomic<unsigned> fail_count{0};
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<NestedCallHandler>([&]() {
+    test::Test nested;
+    nested.set_id(2);
+    nested.set_msg("nested");
+    // Usually queues behind the outer call, which is still pending. It goes straight out if the outer reply lands
+    // first; either way it must be answered.
+    client->CallAsync<test::Test, test::TestTwo>("DoStuff", nested,
+                                                 [&](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                   if (status == kSuccess && resp->bar() == "Echo: nested") {
+                                                     ++nested_success_count;
+                                                   } else {
+                                                     ++fail_count;
+                                                   }
+                                                 });
+  });
+  auto server = GetNode().CreateServiceServer<NestedCallHandler>(handler);
+  WaitForDiscovery();
+
+  test::Test outer;
+  outer.set_id(1);
+  outer.set_msg("outer");
+  client->CallAsync<test::Test, test::TestTwo>("DoStuff", outer,
+                                               [&](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                 if (status == kSuccess && resp->bar() == "Echo: outer") {
+                                                   ++outer_success_count;
+                                                 } else {
+                                                   ++fail_count;
+                                                 }
+                                               });
+  std::this_thread::sleep_for(kServiceCallWaitTime);
+  StopAndJoinRunnerThread();  // the callbacks reference locals of this function
+
+  EXPECT_EQ(outer_success_count.load(), 1u);
+  EXPECT_EQ(nested_success_count.load(), 1u);
+  EXPECT_EQ(fail_count.load(), 0u);
+}
+
+// A call made from another thread still gets exactly one callback if the client is destroyed before the loop picks
+// the call up.
+TEST_F(TrellisFixture, FailsHandedOffCallsOnDestruction) {
+  std::atomic<unsigned> fail_count{0};
+  std::atomic<unsigned> other_count{0};
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+
+  // The loop is not running, so this call counts as coming from another thread and waits for the loop to pick it up.
+  client->CallAsync<test::Test, test::TestTwo>("DoStuff", test::Test{},
+                                               [&](ServiceCallStatus status, const test::TestTwo*) {
+                                                 if (status == kFailure) {
+                                                   ++fail_count;
+                                                 } else {
+                                                   ++other_count;
+                                                 }
+                                               });
+  EXPECT_EQ(fail_count.load(), 0u) << "a call from off the loop should not be answered before the loop sees it";
+
+  client.reset();
+  EXPECT_EQ(fail_count.load(), 1u);
+  EXPECT_EQ(other_count.load(), 0u);
+}
+
+// Retrying from a failure callback is ordinary, and during teardown the retry arrives from the destroying thread
+// after ~Client() has already closed the hand-off list. Nothing will drain that list again, so the CallAsync() making
+// the retry has to answer it inline; that is the only thing keeping the one-callback guarantee once the list closes.
+TEST_F(TrellisFixture, AnswersRetriesMadeDuringDestruction) {
+  static constexpr unsigned kRetries = 3;
+  std::atomic<unsigned> fail_count{0};
+  std::atomic<unsigned> other_count{0};
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  // reset() nulls the shared_ptr before ~Client() runs, so the retry needs its own handle on the client.
+  auto* const raw_client = client.get();
+
+  std::function<void(ServiceCallStatus, const test::TestTwo*)> on_response = [&](ServiceCallStatus status,
+                                                                                 const test::TestTwo*) {
+    if (status == kFailure) {
+      ++fail_count;
+    } else {
+      ++other_count;
+    }
+    if (fail_count.load() < kRetries) {
+      raw_client->CallAsync<test::Test, test::TestTwo>("DoStuff", test::Test{}, on_response);
+    }
+  };
+
+  // The loop is not running, so this call waits for the loop to pick it up and ~Client() is what fails it.
+  raw_client->CallAsync<test::Test, test::TestTwo>("DoStuff", test::Test{}, on_response);
+  ASSERT_EQ(fail_count.load(), 0u);
+
+  client.reset();
+  EXPECT_EQ(fail_count.load(), kRetries);
+  EXPECT_EQ(other_count.load(), 0u);
+}
+
 // When called on the loop's thread with no connection, CallAsync() invokes the callback with kFailure before it
 // returns.
 TEST_F(TrellisFixture, CallOnLoopWithoutConnectionFailsInline) {
@@ -742,6 +858,64 @@ TEST_F(TrellisFixture, ClosesCallerSocketsWhenAReplyIsLostToAStoppedLoop) {
   EXPECT_TRUE(static_cast<bool>(result)) << "expected the closed socket to fail the receive";
 
   GetNode().GetDiscovery()->StopReceive(handle);
+}
+
+// The hand-off list and its mutex exist so that several threads can call at once, and nothing covered that: every
+// other test in this file calls from one thread. Each call carries its own id and checks the reply against it, so a
+// queue damaged or crossed by concurrent pushes shows up as a wrong answer rather than only as a missing one.
+TEST_F(TrellisFixture, ConcurrentCallsFromSeveralThreads) {
+  static constexpr unsigned kThreads = 4;
+  static constexpr unsigned kCallsPerThread = 5;
+  static constexpr unsigned kExpected = kThreads * kCallsPerThread;
+  // Clear of the ids TestServiceHandler treats specially: 100 asks for a 4MB reply, 2000 sleeps.
+  static constexpr int kIdBase = 10000;
+
+  // Declared before the client: ~Client() runs the callbacks that reference these.
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> mismatch_count{0};
+  std::atomic<unsigned> other_count{0};
+
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+  WaitForDiscovery();
+
+  std::vector<std::thread> callers;
+  for (unsigned t = 0; t < kThreads; ++t) {
+    callers.emplace_back([&, t]() {
+      for (unsigned i = 0; i < kCallsPerThread; ++i) {
+        const int id = kIdBase + static_cast<int>(t * kCallsPerThread + i);
+        test::Test request;
+        request.set_id(id);
+        request.set_msg("concurrent");
+        client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
+                                                     [&, id](ServiceCallStatus status, const test::TestTwo* resp) {
+                                                       if (status != kSuccess) {
+                                                         ++other_count;
+                                                       } else if (static_cast<int>(resp->foo()) != id) {
+                                                         ++mismatch_count;
+                                                       } else {
+                                                         ++success_count;
+                                                       }
+                                                     });
+      }
+    });
+  }
+  for (auto& caller : callers) {
+    caller.join();
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  while (success_count.load() + mismatch_count.load() + other_count.load() < kExpected &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{5});
+  }
+  StopAndJoinRunnerThread();  // the callbacks reference locals of this function
+
+  EXPECT_EQ(success_count.load(), kExpected) << "every call should get exactly one successful callback";
+  EXPECT_EQ(mismatch_count.load(), 0u) << "a reply was matched to the wrong request";
+  EXPECT_EQ(other_count.load(), 0u);
 }
 
 // An app that drives the loop in steps with RunN() or RunUntilIdle(), rather than handing a thread to Run(), makes its

@@ -20,7 +20,10 @@
 
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <queue>
+#include <utility>
+#include <vector>
 
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -36,6 +39,13 @@ namespace trellis::core::ipc::proto::rpc {
  * callback: destruction fails whatever is still outstanding with kFailure, invoking those callbacks synchronously
  * on the destroying thread before the destructor returns. Owners whose callbacks capture `this` must release the
  * client before the members those callbacks touch are destroyed.
+ *
+ * CallAsync() is the only member safe to call off the event loop; everything else belongs to the loop's thread. A
+ * call made on that thread starts at once. A call from any other thread is handed to the loop and starts there.
+ *
+ * Callbacks run on the loop's thread, with two exceptions during teardown. ~Client() fails outstanding calls on the
+ * destroying thread, and a call handed off while the destructor runs is failed on its own caller's thread. Neither
+ * covers a CallAsync() that starts after the destructor returns; callers must be done with the client by then.
  *
  * Destroy a Client on the thread running its event loop, or once that loop has stopped. Teardown closes the socket
  * and cancels the timeout timer without synchronizing against a running loop.
@@ -112,8 +122,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     discovery_->StopReceive(callback_handle_);
 
     // Drop the connection before running any callback. Without one, Enqueue() and ProcessNextRequest() fail a call
-    // outright, so a callback below that issues another call fails immediately. It never reaches shared_from_this(),
-    // which throws once destruction starts and would terminate the process from here.
+    // outright, so a callback below that calls back in from the loop's thread fails immediately. It never reaches
+    // shared_from_this(), which throws once destruction starts and would terminate the process from here.
     if (tcp_client_) {
       DropConnection();
     }
@@ -146,13 +156,31 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
       queued.pop();
       fail(request);
     }
+
+    // Fail the calls from other threads that the loop never picked up. One take is enough because the list closes
+    // under the same lock that guards a push: any call reaching that lock later answers itself on its own thread
+    // instead of adding here. Nothing a callback below does can refill it.
+    std::vector<std::shared_ptr<QueuedRequest>> incoming;
+    {
+      const std::lock_guard lock{incoming_mutex_};
+      closed_ = true;
+      incoming = std::exchange(incoming_requests_, {});
+    }
+    for (const auto& request : incoming) {
+      fail(request);
+    }
   }
 
   /**
    * @brief Asynchronously call a method on the remote service. If there is already a call from this client in progress,
    * it will be queued.
    *
-   * With no connection, the callback is invoked with kFailure before CallAsync() returns.
+   * Safe to call from any thread. When called on the loop's thread with no connection, the callback is invoked with
+   * kFailure before CallAsync() returns. When called from any other thread, the call is handed to the loop, which
+   * checks the connection when it picks the call up.
+   *
+   * One thread's calls go out in the order it made them. Order across threads is not guaranteed, and a call made on
+   * the loop's thread starts ahead of any call already handed off but not yet picked up.
    *
    * @tparam REQ_T The request protobuf message type.
    * @tparam RESP_T The expected response protobuf message type.
@@ -160,10 +188,11 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
    * @param request The request message object.
    * @param callback A callback to handle the response.
    * @param timeout_ms Timeout in milliseconds; 0 waits indefinitely. The clock starts when the request goes out, not
-   *        when CallAsync() returns, so time spent queued does not count against it.
+   *        when CallAsync() returns, so time spent queued or waiting for the loop does not count against it.
    */
   template <typename REQ_T, typename RESP_T>
   void CallAsync(std::string_view method, REQ_T request, ResponseCallback<RESP_T> callback, unsigned timeout_ms = 0) {
+    // Building the request does not touch any client state, so it is safe to do on the caller's thread.
     // Populate request message and serialize it to generate our payload
     discovery::Request request_msg;
     request_msg.mutable_header()->set_mname(std::string(method));
@@ -171,8 +200,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     auto request_buffer = std::make_shared<std::string>();
     request_msg.SerializeToString(request_buffer.get());
 
-    // The responder only reports the outcome to the user's callback. Clearing the pending request and starting the
-    // next one is left to whoever reports the outcome.
+    // The responder captures only the user's callback, so it may run on any thread. Clearing the pending request and
+    // starting the next one is left to whoever reports the outcome, and that code always runs on the loop's thread.
     auto queued_request = std::make_shared<QueuedRequest>(
         std::move(request_buffer),
         [callback = std::move(callback)](ServiceCallStatus status, const discovery::Response* response) {
@@ -184,13 +213,64 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
         },
         timeout_ms);
 
-    Enqueue(std::move(queued_request));
+    // No Stopped() guard, unlike the same test in timer.cpp: a stopped loop simply never picks the call up, and
+    // ~Client() fails it. Treating it as off-loop is what makes that happen.
+    if ((*loop_).get_executor().running_in_this_thread()) {
+      Enqueue(std::move(queued_request));
+    } else {
+      // Called from another thread. Add the call to incoming_requests_ and post a task to start it on the loop. If the
+      // client is destroyed before that task runs, the task does nothing and ~Client() fails the call instead.
+      //
+      // One task drains the whole list, so only the call that finds the list empty needs to post. A non-empty list
+      // already has a task behind it: pushes and takes share this lock, and every take empties the list.
+      bool accepted = false;
+      bool needs_post = false;
+      {
+        const std::lock_guard lock{incoming_mutex_};
+        if (!closed_) {
+          needs_post = incoming_requests_.empty();
+          incoming_requests_.push_back(std::move(queued_request));
+          accepted = true;
+        }
+      }
+
+      if (!accepted) {
+        // ~Client() has taken the list for the last time, so nothing else will answer this call. Fail it here, on the
+        // caller's thread and outside the lock. That is what holds the one-callback guarantee through teardown.
+        queued_request->respond(kFailure, nullptr);
+        return;
+      }
+
+      if (needs_post) {
+        // Weak, not shared: a failure callback can reach CallAsync() from inside ~Client(), where shared_from_this()
+        // throws. ProcessNextRequest() wants that throw, to catch a client never owned by a shared_ptr. The cost here
+        // is that such a client never sends a handed-off call, though ~Client() still fails it.
+        asio::post(*loop_, [weak_self = this->weak_from_this()]() {
+          if (const auto self = weak_self.lock()) {
+            // Moves calls from other threads onto the queue in hand-off order, which is the order they were pushed
+            // under incoming_mutex_ above rather than the order they were made.
+            {
+              std::vector<std::shared_ptr<QueuedRequest>> incoming;
+              {
+                // Released before Enqueue(): it runs user callbacks which may hand off a new call from a non-loop
+                // thread
+                const std::lock_guard lock{self->incoming_mutex_};
+                incoming = std::exchange(self->incoming_requests_, {});
+              }
+              for (auto& request : incoming) {
+                self->Enqueue(std::move(request));
+              }
+            }
+          }
+        });
+      }
+    }
   }
 
  private:
   struct QueuedRequest {
     /// Reports a call's outcome to the user. `response` carries the server's reply for kSuccess, null otherwise.
-    /// Touches no client state.
+    /// Touches no client state, so it can run on any thread.
     using RespondFn = std::function<void(ServiceCallStatus status, const discovery::Response* response)>;
 
     std::shared_ptr<std::string> request_buffer;  ///< Buffer for the request payload
@@ -201,7 +281,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
         : request_buffer(std::move(request_buffer)), respond(std::move(respond)), timeout_ms(timeout_ms) {}
   };
 
-  // Fails the request immediately if there is no connection, otherwise queues it.
+  // Must run on the loop's thread. Fails the request immediately if there is no connection, otherwise queues it.
   void Enqueue(std::shared_ptr<QueuedRequest> request) {
     if (!tcp_client_) {
       // Never became pending, so there is nothing to clean up after reporting it.
@@ -405,13 +485,16 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
   }
 
  private:
-  trellis::core::EventLoop loop_;                               ///< Event loop to run the client on
-  discovery::DiscoveryPtr discovery_;                           ///< Pointer to the discovery service
-  discovery::Discovery::CallbackHandle callback_handle_;        ///< Handle for the discovery callback
-  std::shared_ptr<network::TCP> tcp_client_;                    ///< Active TCP client, if connected
-  std::queue<std::shared_ptr<QueuedRequest>> queued_requests_;  ///< Queue of requests
-  std::shared_ptr<QueuedRequest> pending_request_;              ///< Currently processing request, if any
-  core::Timer pending_timer_;                                   ///< Timer for pending request, if any
+  trellis::core::EventLoop loop_;                                  ///< Event loop to run the client on
+  discovery::DiscoveryPtr discovery_;                              ///< Pointer to the discovery service
+  discovery::Discovery::CallbackHandle callback_handle_;           ///< Handle for the discovery callback
+  std::shared_ptr<network::TCP> tcp_client_;                       ///< Active TCP client, if connected
+  std::queue<std::shared_ptr<QueuedRequest>> queued_requests_;     ///< Queue of requests
+  std::shared_ptr<QueuedRequest> pending_request_;                 ///< Currently processing request, if any
+  core::Timer pending_timer_;                                      ///< Timer for pending request, if any
+  std::mutex incoming_mutex_;                                      ///< Guards incoming_requests_ and closed_
+  std::vector<std::shared_ptr<QueuedRequest>> incoming_requests_;  ///< Calls from other threads waiting for the loop
+  bool closed_{false};                                             ///< Set by ~Client(); no more calls may hand off
 };
 
 }  // namespace trellis::core::ipc::proto::rpc
