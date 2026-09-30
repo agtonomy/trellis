@@ -60,7 +60,8 @@ class ShmReadWriteLock {
    * @brief Constructs a shared memory read-write lock.
    *
    * @param handle Name of the shared memory segment backing the lock.
-   * @param owner If true, this instance is responsible for unlinking the named shm region.
+   * @param owner If true, this instance creates the lock if needed and unlinks it on destruction. If false, it only
+   * opens an existing lock, and IsInitialized() is false when there is none.
    * @param config Configuration object for reading IPC settings (uid/gid).
    */
   ShmReadWriteLock(std::string handle, bool owner, const trellis::core::Config& config);

@@ -41,3 +41,12 @@ cc_test(
         "@fmt",
     ],
 )
+
+cc_test(
+    name = "shm_read_write_lock_test",
+    srcs = ["shm_read_write_lock_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/shm:shm_read_write_lock",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

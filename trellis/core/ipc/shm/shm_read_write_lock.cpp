@@ -78,13 +78,17 @@ ShmReadWriteLock::NamedRwLock* OpenRwLock(std::string handle) {
     return nullptr;
   }
 
-  ShmReadWriteLock::NamedRwLock* rw = static_cast<ShmReadWriteLock::NamedRwLock*>(
-      mmap(nullptr, sizeof(ShmReadWriteLock::NamedRwLock), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+  void* const mapped = mmap(nullptr, sizeof(ShmReadWriteLock::NamedRwLock), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   ::close(fd);
-  return rw;
+  return mapped == MAP_FAILED ? nullptr : static_cast<ShmReadWriteLock::NamedRwLock*>(mapped);
 }
 
 ShmReadWriteLock::NamedRwLock* CreateOrOpenRwLock(std::string handle, bool owner, const trellis::core::Config& config) {
+  // Only the owner may create the lock. A reader that created a missing one would lock a mutex its writer never sees,
+  // and, not being the owner, would never unlink it.
+  if (!owner) {
+    return OpenRwLock(handle);
+  }
   auto rw = CreateRwLock(handle, config);
   if (rw == nullptr) {
     rw = OpenRwLock(handle);
