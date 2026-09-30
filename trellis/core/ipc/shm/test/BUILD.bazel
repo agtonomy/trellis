@@ -28,3 +28,16 @@ cc_test(
         "@fmt",
     ],
 )
+
+cc_test(
+    name = "shm_borrow_test",
+    srcs = ["shm_borrow_test.cpp"],
+    deps = [
+        "//trellis/core/ipc:borrowed_payload",
+        "//trellis/core/ipc/shm:shm_file",
+        "//trellis/core/ipc/shm:shm_read_write_lock",
+        "//trellis/core/ipc/shm:shm_writer",
+        "@com_google_googletest//:gtest_main",
+        "@fmt",
+    ],
+)

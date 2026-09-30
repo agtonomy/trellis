@@ -37,6 +37,7 @@
 #include "trellis/core/converters.hpp"
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/ipc/borrowed_payload.hpp"
 #include "trellis/core/ipc/in_process_bus.hpp"
 #include "trellis/core/ipc/proto/dynamic_message_cache.hpp"
 #include "trellis/core/ipc/shm/shm_reader.hpp"
@@ -400,9 +401,11 @@ class SubscriberImpl : public SubscriberBase,
             std::weak_ptr<SubscriberImpl> weak_self = this->weak_from_this();
             auto reader = ipc::shm::ShmReader::Create(
                 loop_, subscriber_id_, memory_file_list,
-                [weak_self](ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+                [weak_self](ipc::shm::ShmFile::SMemFileHeader header, ipc::BorrowedPayload payload) {
                   if (auto self = weak_self.lock()) {
-                    self->ReceiveData(header, data, len);
+                    // The borrow is released here rather than handed on: delivery reads the bytes inline, and the
+                    // read lock ShmReader holds across this callback already keeps them stable for that.
+                    self->ReceiveData(header, payload.data(), payload.size());
                   }
                 },
                 config_);

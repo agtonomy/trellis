@@ -143,9 +143,26 @@ TEST(ShmFile, FreshSlotPassesHeaderSizeCheck) {
   ShmFile reader(handle, false, 0, config);
   ASSERT_TRUE(reader.IsInitialized());
   // hdr_size is stamped at creation, not first write: the version check must not throw on a never-written slot
-  EXPECT_EQ(reader.GetFileHeader().hdr_size, sizeof(ShmFile::SMemFileHeader));
-  const auto read_info = reader.GetReadInfo();
-  EXPECT_EQ(read_info.size, 0U);
+  const auto borrow_info = reader.Borrow();
+  EXPECT_EQ(borrow_info.header.hdr_size, sizeof(ShmFile::SMemFileHeader));
+  EXPECT_EQ(borrow_info.payload.size(), 0U);
+}
+
+TEST(ShmFile, ReaderOfAFullSlotMapsExactlyTheFile) {
+  const trellis::core::Config config;
+  const auto handle = UniqueHandle("full_slot");
+  ShmFile owner(handle, true, kRequestedSize, config);
+  const size_t capacity = owner.GetWriteInfo().size;
+  // A payload that fills the slot, then a data_size one byte past it, the way corruption would leave it
+  owner.SetHeader(capacity);
+  owner.SetFileHeader(capacity + 1, /* sequence = */ 1, trellis::core::time::Now(), /* writer_id = */ 1);
+
+  // A reader that sizes its mapping from cur_data_size plus the combined header size double-counts the SMemFileHeader
+  // and maps past the page-aligned file, so Borrow()'s bounds check accepts the corrupt size and reads an unbacked page
+  ShmFile reader(handle, false, 0, config);
+  ASSERT_TRUE(reader.IsInitialized());
+  EXPECT_EQ(reader.GetWriteInfo().size, capacity);
+  EXPECT_THROW(reader.Borrow(), std::runtime_error);
 }
 
 TEST(ShmFile, MissingSegmentHoldsNoFd) {

@@ -49,8 +49,11 @@ class ShmGenerationTest : public ::testing::Test {
  protected:
   void CreateWriter(size_t num_buffers) {
     slots_.clear();
-    writer_ = std::make_unique<ShmWriter>(::testing::UnitTest::GetInstance()->current_test_info()->name(), loop_,
-                                          ::getpid(), num_buffers, kInitialBufferSize, config_);
+    // The pid keeps concurrent runs of the same test apart: ShmWriter unlinks every segment sharing its node name
+    // prefix, and the fixture's readers open their slots lazily
+    writer_ = std::make_unique<ShmWriter>(
+        fmt::format("{}_{}", ::testing::UnitTest::GetInstance()->current_test_info()->name(), ::getpid()), loop_,
+        ::getpid(), num_buffers, kInitialBufferSize, config_);
   }
 
   ShmWriter& Writer() { return *writer_; }
@@ -67,7 +70,7 @@ class ShmGenerationTest : public ::testing::Test {
     return *it->second;
   }
 
-  uint64_t GenerationOf(size_t index) { return Slot(index).GetFileHeader().generation; }
+  uint64_t GenerationOf(size_t index) { return Slot(index).Borrow().header.generation; }
 
   void Write(std::string_view bytes) {
     auto info = writer_->GetWriteAccess(bytes.size());
@@ -118,12 +121,12 @@ TEST_F(ShmGenerationTest, GenerationIsOddWhileWriteIsInProgress) {
 TEST_F(ShmGenerationTest, AbandonedWriteAdvancesGenerationAndInvalidatesTheSequence) {
   CreateWriter(/* num_buffers = */ 1);
   Write("original");
-  const auto after_write = Slot(0).GetFileHeader();
+  const auto after_write = Slot(0).Borrow().header;
   ASSERT_GT(after_write.sequence, 0U);
 
   WriteAndAbandon("clobbered by a partial serialize");
 
-  const auto after_abandon = Slot(0).GetFileHeader();
+  const auto after_abandon = Slot(0).Borrow().header;
   EXPECT_EQ(after_abandon.generation, after_write.generation + 2);
   EXPECT_EQ(after_abandon.generation % 2, 0U);
   // The clobbered bytes no longer match the committed header, so the sequence is zeroed: a reader draining a stale
@@ -134,7 +137,7 @@ TEST_F(ShmGenerationTest, AbandonedWriteAdvancesGenerationAndInvalidatesTheSeque
 
   // The next successful write re-stamps the real sequence over the zeroed one, so readers deliver it again
   Write("retry");
-  EXPECT_EQ(Slot(0).GetFileHeader().sequence, after_write.sequence + 1);
+  EXPECT_EQ(Slot(0).Borrow().header.sequence, after_write.sequence + 1);
 }
 
 TEST_F(ShmGenerationTest, GenerationSurvivesGrowingTheSlot) {
@@ -149,7 +152,7 @@ TEST_F(ShmGenerationTest, GenerationSurvivesGrowingTheSlot) {
   Write(big);
 
   EXPECT_EQ(GenerationOf(0), at_rest + 2);
-  EXPECT_EQ(Slot(0).GetFileHeader().data_size, big.size());
+  EXPECT_EQ(Slot(0).Borrow().header.data_size, big.size());
 }
 
 TEST_F(ShmGenerationTest, AbandonThenRetryReusesTheSlotAndKeepsParityEven) {
@@ -165,7 +168,7 @@ TEST_F(ShmGenerationTest, AbandonThenRetryReusesTheSlotAndKeepsParityEven) {
 
   EXPECT_EQ(GenerationOf(1), slot_one + 4);
   EXPECT_EQ(GenerationOf(1) % 2, 0U);
-  EXPECT_EQ(Slot(1).GetFileHeader().data_size, retry.size());
+  EXPECT_EQ(Slot(1).Borrow().header.data_size, retry.size());
   // The abandoned write must not advance the ring: the retry lands on the slot it clobbered
   EXPECT_EQ(GenerationOf(0), slot_zero);
 }

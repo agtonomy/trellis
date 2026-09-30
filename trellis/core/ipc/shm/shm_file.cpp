@@ -27,6 +27,7 @@
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/ipc/shm/mapping.hpp"
@@ -100,15 +101,16 @@ std::shared_ptr<Mapping> Map(const int fd, const bool owner, const size_t reques
     header->cur_data_size = sizeof(ShmFile::SMemFileHeader);
     header->max_data_size = map_size - ShmFile::kCombinedHeaderSize;
     // SMemFileHeader is never constructed over the zero-filled pages, so its default initializer never runs. Stamp
-    // hdr_size here so GetReadInfo's version check doesn't misfire on a never-written slot.
+    // hdr_size here so Borrow's version check doesn't misfire on a never-written slot.
     ShmFile::SMemFileHeader* file_header =
         reinterpret_cast<ShmFile::SMemFileHeader*>(static_cast<uint8_t*>(map->Addr()) + sizeof(ShmFile::ShmHeader));
     file_header->hdr_size = sizeof(ShmFile::SMemFileHeader);
   } else {
     // Each process, whether owner or not, has to decide how large of a region of memory to map into the process'
     // address space. In the case of a non-owner (reader), we use the header metadata to know how much memory to map.
-    const auto cur_size = header->cur_data_size + ShmFile::kCombinedHeaderSize;
-    map = std::make_shared<Mapping>(fd, owner, cur_size);
+    // This is the file size the owner set and the size Borrow() remaps to, so the mapping never extends past the file
+    // and its bounds check can't admit a data_size that reaches an unbacked page.
+    map = std::make_shared<Mapping>(fd, owner, header->max_data_size + ShmFile::kCombinedHeaderSize);
   }
   return map;
 }
@@ -171,15 +173,15 @@ void ShmFile::Resize(const size_t requested_size) {
   header->max_data_size = total_size - kCombinedHeaderSize;
 }
 
-ShmFile::ReadInfo ShmFile::GetReadInfo() {
+ShmFile::BorrowInfo ShmFile::Borrow() {
   if (map_ == nullptr) {
-    throw std::runtime_error("ShmFile::GetReadInfo called while unmapped");
+    throw std::runtime_error("ShmFile::Borrow called while unmapped");
   }
 
   {  // First sanity check header and remap if needed
     const ShmHeader& header = *reinterpret_cast<const ShmHeader*>(static_cast<uint8_t*>(map_->Addr()));
     if (header.header_size != sizeof(ShmHeader)) {
-      throw std::logic_error("ShmFile::GetReadInfo Inconsistency in header size!");
+      throw std::logic_error("ShmFile::Borrow Inconsistency in header size!");
     }
 
     // We have to check the header every time and remap accordingly because the shared memory region size is adjusted at
@@ -194,12 +196,25 @@ ShmFile::ReadInfo ShmFile::GetReadInfo() {
   // Sanity check that writer and readers have the same header size.
   if (memfile_header.hdr_size != sizeof(SMemFileHeader)) {
     throw std::runtime_error(
-        fmt::format("ShmFile::GetReadInfo file header size mismatch for {}: shared memory reports {}, this build "
+        fmt::format("ShmFile::Borrow file header size mismatch for {}: shared memory reports {}, this build "
                     "expects {}. Mixed shared memory versions are not supported.",
                     handle_, memfile_header.hdr_size, sizeof(SMemFileHeader)));
   }
 
-  return ReadInfo{.data = base + kCombinedHeaderSize, .size = memfile_header.data_size};
+  // `data_size` comes from the slot rather than from this process, and the borrowed bytes are read after the read
+  // lock is dropped, so a corrupt slot would otherwise become an out-of-mapping read (SIGBUS) instead of an error.
+  // Compared by subtraction (Map() guarantees Size() >= kCombinedHeaderSize) because adding to a corrupt data_size
+  // near 2^64 would wrap and pass the check.
+  if (memfile_header.data_size > map_->Size() - kCombinedHeaderSize) {
+    throw std::runtime_error(fmt::format("ShmFile::Borrow data size {} for {} exceeds the {}-byte mapping",
+                                         memfile_header.data_size, handle_, map_->Size()));
+  }
+
+  // Aliasing shared_ptr: points at the payload, shares ownership of the mapping it lives in
+  std::shared_ptr<const uint8_t> data{map_, base + kCombinedHeaderSize};
+  return BorrowInfo{.header = memfile_header,
+                    .payload = BorrowedPayload{std::move(data), memfile_header.data_size, memfile_header.sequence,
+                                               &memfile_header.generation}};
 }
 
 void ShmFile::BeginWriteGeneration() {
@@ -252,7 +267,5 @@ ShmFile::SMemFileHeader& ShmFile::GetMutableFileHeader() const {
   }
   return *reinterpret_cast<SMemFileHeader*>(static_cast<uint8_t*>(map_->Addr()) + sizeof(ShmHeader));
 }
-
-const ShmFile::SMemFileHeader& ShmFile::GetFileHeader() const { return GetMutableFileHeader(); }
 
 }  // namespace trellis::core::ipc::shm

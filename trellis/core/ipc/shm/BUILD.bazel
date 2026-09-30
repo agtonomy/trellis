@@ -5,6 +5,7 @@ cc_library(
     srcs = ["shm_read_write_lock.cpp"],
     hdrs = ["shm_read_write_lock.hpp"],
     linkopts = ["-lrt"],
+    visibility = ["//trellis/core/ipc/shm/test:__pkg__"],
     deps = [
         "//trellis/core:core_config",
         "//trellis/core:core_time",
@@ -34,6 +35,7 @@ cc_library(
         ":mapping",
         "//trellis/core:core_config",
         "//trellis/core:core_time",
+        "//trellis/core/ipc:borrowed_payload",
         "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc:utils",
         "//trellis/utils/umask_guard",
@@ -50,6 +52,7 @@ cc_library(
         ":shm_file",
         ":shm_read_write_lock",
         "//trellis/core:core_config",
+        "//trellis/core/ipc:borrowed_payload",
         "//trellis/core/ipc/unix:socket_event",
     ],
 )

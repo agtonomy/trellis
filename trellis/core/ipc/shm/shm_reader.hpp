@@ -22,6 +22,7 @@
 #include <string>
 
 #include "trellis/core/config.hpp"
+#include "trellis/core/ipc/borrowed_payload.hpp"
 #include "trellis/core/ipc/shm/shm_file.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/ipc/unix/socket_event.hpp"
@@ -34,18 +35,21 @@ namespace trellis::core::ipc::shm {
  * `ShmReader` listens on a Unix domain socket for events indicating that new data has been written
  * into a shared memory region. It uses shared memory file objects to read the data and employs
  * a shared reader-writer lock to synchronize access with the writer. On data receipt, a user-defined
- * callback is invoked with a pointer to the data and its metadata.
+ * callback is invoked with the header and a BorrowedPayload. Reads inside the callback are protected by the read lock;
+ * reads after it are governed by the payload's validity contract.
  */
 class ShmReader {
  public:
   /**
    * @brief Callback function type invoked when new data is received.
    *
+   * Invoked with the slot read lock held. The payload may be retained past the callback, subject to the
+   * BorrowedPayload consumer contract.
+   *
    * @param header The metadata header associated with the received data.
-   * @param data Pointer to the data buffer in shared memory.
-   * @param size Size of the data in bytes.
+   * @param payload A borrow of the data in shared memory.
    */
-  using Callback = std::function<void(ShmFile::SMemFileHeader, const void*, size_t)>;
+  using Callback = std::function<void(ShmFile::SMemFileHeader, BorrowedPayload)>;
 
   /**
    * @brief Metrics struct that aggregates metrics from the underlying SocketEvent.

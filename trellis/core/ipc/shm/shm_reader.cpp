@@ -75,8 +75,8 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
   if (lock.TryLockRead()) {
     ShmReadWriteLock::UnlockGuard guard{lock};
 
-    auto read_info = file.GetReadInfo();
-    const auto& header = file.GetFileHeader();
+    auto borrow_info = file.Borrow();
+    const auto& header = borrow_info.header;
     // Extra sanity check to make sure we don't call back with old data
     if (header.sequence > last_header_.sequence) {
       if (num_current_dropped_messages_ > 0) {
@@ -84,7 +84,9 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
                                  num_current_dropped_messages_, header.sequence);
         num_current_dropped_messages_ = 0;
       }
-      if (receive_callback_) receive_callback_(header, read_info.data, read_info.size);
+      if (receive_callback_) {
+        receive_callback_(header, std::move(borrow_info.payload));
+      }
       last_header_ = header;
     } else {
       // In the case that the writer wrapped around all of the buffers and overwrote a buffer before the reader had a

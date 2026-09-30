@@ -355,6 +355,7 @@ cc_library(
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc:in_process_bus",
         "//trellis/core/ipc/proto:dynamic_message_cache",
+        "//trellis/core/ipc:borrowed_payload",
         "//trellis/core/ipc/shm:shm_reader",
         "//trellis/core/statistics:frequency_calculator",
         "//trellis/core/statistics:latency_calculator",

@@ -26,6 +26,7 @@
 #include <type_traits>
 
 #include "trellis/core/config.hpp"
+#include "trellis/core/ipc/borrowed_payload.hpp"
 #include "trellis/core/ipc/shm/mapping.hpp"
 #include "trellis/core/time.hpp"
 
@@ -40,14 +41,6 @@ namespace trellis::core::ipc::shm {
  */
 class ShmFile {
  public:
-  /**
-   * @brief Provides const access to the shared memory region for reading.
-   */
-  struct ReadInfo {
-    const void* data;  ///< Pointer to the data read.
-    size_t size;       ///< Size of the data read.
-  };
-
   /**
    * @brief Provides access to the shared memory region for writing.
    */
@@ -78,7 +71,9 @@ class ShmFile {
     uint64_t writer_id = 0;                      ///< ID of the writer process.
     /// Seqlock counter for this slot: odd while a write is in progress, even at rest. Writers increment it through
     /// std::atomic_ref under the slot's write lock. Readers copy this struct by value through the reader callback,
-    /// reading this word non-atomically, which is race-free because they hold the slot's read lock.
+    /// reading this word non-atomically, which is race-free because they hold the slot's read lock. A BorrowedPayload
+    /// outlives that lock, so it reads the word in place through std::atomic_ref instead. Kept a plain uint64_t so
+    /// this struct stays trivially copyable.
     uint64_t generation = 0;
   };
 
@@ -136,13 +131,22 @@ class ShmFile {
   bool IsInitialized() const { return fd_ >= 0 && Mapped(); }
 
   /**
-   * @brief Get the pointer and length to the shared memory buffer for the purpose of reading
-   *
-   * Remaps first if the writer has grown the region.
-   *
-   * @return A ReadInfo structure containing the data pointer and size.
+   * @brief The current contents of this slot: the header to read now, and the payload to keep reading afterwards.
    */
-  ReadInfo GetReadInfo();
+  struct BorrowInfo {
+    SMemFileHeader header;    ///< Copy of the file header, stable while the read lock is held.
+    BorrowedPayload payload;  ///< Pins the mapping, so it stays readable after the read lock is released.
+  };
+
+  /**
+   * @brief Remaps if the writer has grown the region, then borrows the current payload.
+   *
+   * The caller must hold this slot's read lock. The returned payload keeps the mapping alive for as long as it is held,
+   * and its IsStillValid() reports whether the writer has since overwritten the bytes.
+   *
+   * @return A BorrowInfo describing the current contents.
+   */
+  BorrowInfo Borrow();
 
   /**
    * @brief Opens the seqlock window on this slot, marking the payload as being rewritten.
@@ -211,12 +215,6 @@ class ShmFile {
    * @return A WriteInfo structure containing writable buffer and size.
    */
   WriteInfo GetWriteInfo();
-
-  /** getter method for the file header.
-   *
-   * @return the SMemFileHeader
-   */
-  const SMemFileHeader& GetFileHeader() const;
 
  private:
   /** private getter method for the header.
