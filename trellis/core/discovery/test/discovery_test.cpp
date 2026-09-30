@@ -138,6 +138,8 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredBeforeCallback) {
   Discovery discovery("test_node", ev,
                       trellis::core::Config(YAML::Load(std::string(test_config_loopback_no_heartbeat))));
   discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  // Deliver the registration while no callback exists, so only the replay on adding one can report it.
+  ev.RunFor(std::chrono::milliseconds(10));
   unsigned receive_count{0};
   discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
     ++receive_count;
