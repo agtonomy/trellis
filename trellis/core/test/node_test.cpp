@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <functional>
+#include <future>
 #include <optional>
 #include <set>
 #include <string>
@@ -260,8 +261,8 @@ TEST(TrellisNodeSharedContext, GuestPublisherReachesAHostSubscriber) {
   EXPECT_GT(received, 0u);
 }
 
-// The metrics timer has no initial delay, and its callback reads the publisher the constructor stores alongside it.
-// Its first publish shows the two were wired up in the right order.
+// A guest with metrics enabled publishes them on its configured topic. The loop runs on this thread, so the metrics
+// timer cannot fire during construction here; GuestBuiltWhileHostLoopRunsSurvivesItsMetricsTimer covers that.
 TEST(TrellisNodeSharedContext, GuestPublishesMetrics) {
   const auto config = SharedContextConfig();
   Node host("host", config);
@@ -293,6 +294,36 @@ TEST(TrellisNodeSharedContext, GuestPublishesMetrics) {
     names.insert(measurement.name());
   }
   EXPECT_TRUE(names.contains("unclean_exit_count"));
+}
+
+// The host's loop runs on another thread while each guest is built, so the guest's metrics timer, due at once, can
+// fire before the constructor returns. Created before metrics_ held its publisher, it read an empty optional and
+// crashed the process. Guests are destroyed on the loop, the thread their timers belong to.
+TEST(TrellisNodeSharedContext, GuestBuiltWhileHostLoopRunsSurvivesItsMetricsTimer) {
+  constexpr int kGuests{200};
+  const auto config = SharedContextConfig();
+  Node host("host", config);
+  std::thread runner([&host]() { host.Run(); });
+
+  Config guest_config = SharedContextConfig();
+  guest_config.Overlay(YAML::Load(R"(
+    trellis:
+      metrics:
+        enabled: true
+        topic: guest_metrics_topic
+        interval_ms: 20
+    )"));
+  for (int i = 0; i < kGuests; ++i) {
+    auto guest = std::make_unique<Node>("guest", guest_config, std::nullopt, ContextOf(host));
+    std::promise<void> destroyed;
+    asio::post(*host.GetEventLoop(), [&guest, &destroyed]() {
+      guest.reset();
+      destroyed.set_value();
+    });
+    destroyed.get_future().wait();
+  }
+  host.Stop();
+  runner.join();
 }
 
 // RunUntilIdle is the conductor's quiescence step: it must drain a whole cascade of posted work, however deep, not
