@@ -411,11 +411,12 @@ void Node::UpdateSimulatedClock(const time::TimePoint& new_time) {
   // since timers must not fire off the loop thread. Subscribers, always on the loop thread, call
   // StepSimulatedClock directly to guarantee the synchronous advance before message delivery.
   if (time::IsSimulatedClockEnabled()) {
-    asio::dispatch(*ev_loop_, [this, new_time]() { StepSimulatedClock(new_time); });
+    asio::dispatch(*ev_loop_,
+                   [registry = ev_loop_.GetTimerRegistry(), new_time]() { StepSimulatedClock(registry, new_time); });
   }
 }
 
-void Node::StepSimulatedClock(const time::TimePoint& new_time) {
+void Node::StepSimulatedClock(const std::shared_ptr<TimerRegistry>& registry, const time::TimePoint& new_time) {
   if (!time::IsSimulatedClockEnabled()) {
     return;
   }
@@ -429,7 +430,6 @@ void Node::StepSimulatedClock(const time::TimePoint& new_time) {
   // Deliberately not filtered by owner, unlike the metrics collection above. Time is process-global, so a step has to
   // carry every timer in the registry, including those of siblings on this loop. That is what lets a host advance its
   // tenants' timers without each of them subscribing to the clock topic.
-  const auto registry = ev_loop_.GetTimerRegistry();
   if (time::TimePointToMilliseconds(existing_time) != 0) {
     StepSimulatedTimers(*registry, new_time);
     return;

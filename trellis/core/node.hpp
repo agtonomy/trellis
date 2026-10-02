@@ -202,7 +202,9 @@ class Node {
       std::optional<double> max_frequency = {}, ConverterT converter = {}) {
     // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
     // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
-    auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
+    auto update_sim_fn = [registry = ev_loop_.GetTimerRegistry()](const time::TimePoint& time) {
+      StepSimulatedClock(registry, time);
+    };
 
     using Impl = SubscriberImpl<SerializableT, MsgT, ConverterT>;
     const auto impl =
@@ -277,7 +279,9 @@ class Node {
                                     std::optional<double> max_frequency = {}) {
     // Subscribers run on the event loop thread, so step the clock synchronously: this advances simulated
     // time to the message's send_time before the message is delivered (see SubscriberImpl::ReceiveData).
-    auto update_sim_fn = [this](const time::TimePoint& time) { StepSimulatedClock(time); };
+    auto update_sim_fn = [registry = ev_loop_.GetTimerRegistry()](const time::TimePoint& time) {
+      StepSimulatedClock(registry, time);
+    };
 
     const auto impl = SubscriberRawImpl::Create(GetEventLoop(), std::move(topic), SubscriberRawImpl::Callback{},
                                                 std::move(callback), std::move(update_sim_fn), GetDiscovery(), config_,
@@ -637,8 +641,9 @@ class Node {
   // Synchronously advance the simulated clock to new_time, firing any timers due in between. This is the
   // body behind UpdateSimulatedClock (which posts a call to it). The subscriber receive path calls it
   // directly because it already runs on the event loop thread; off-thread callers must go through the
-  // posted UpdateSimulatedClock instead. No-op when the simulated clock is disabled.
-  void StepSimulatedClock(const time::TimePoint& new_time);
+  // posted UpdateSimulatedClock instead. No-op when the simulated clock is disabled. It is static and takes the
+  // registry so that work queued on a shared loop can run it after the node that queued it is gone.
+  static void StepSimulatedClock(const std::shared_ptr<TimerRegistry>& registry, const time::TimePoint& new_time);
 
   // Helper to determine if we should not be running anymore
   bool ShouldRun();

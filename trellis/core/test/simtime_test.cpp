@@ -401,3 +401,20 @@ TEST(TrellisSimulatedClock, SkipAlignedDropsMissedSlotsUnderASimulatedClock) {
   // The nine slots that were dropped are still counted as missed
   ASSERT_EQ(timer->GetOverrunCount(), 9U);
 }
+
+// Called off the loop, a shared-context guest's UpdateSimulatedClock is queued on the host's loop. The guest can be
+// gone before the host runs it, which used to step the clock through the destroyed guest (the ASAN build reports it).
+TEST(TrellisSimulatedClock, GuestClockUpdateStillStepsAfterTheGuestIsDestroyed) {
+  trellis::core::Node host("test_simtime_host", {}, trellis::core::Node::SimClockRole::kPublisher);
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time
+
+  const trellis::core::time::TimePoint target{std::chrono::milliseconds(1000)};
+  {
+    trellis::core::Node guest("test_simtime_guest", {}, trellis::core::Node::SimClockRole::kPublisher,
+                              trellis::core::Node::SharedContext{host.GetEventLoop(), host.GetDiscovery()});
+    guest.UpdateSimulatedClock(target);  // not on the loop's thread, so this is queued
+  }
+  host.RunUntilIdle();
+
+  ASSERT_EQ(trellis::core::time::Now(), target);
+}
