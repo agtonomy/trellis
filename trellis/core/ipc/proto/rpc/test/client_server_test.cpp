@@ -81,17 +81,6 @@ class SlowSignallingHandler : public TestServiceHandler {
   std::atomic<bool> entered{false};
 };
 
-// Runs `fn` on the node's loop and waits for it, so a test drives the client from the thread that owns it.
-template <typename Fn>
-void RunOnLoop(Node& node, Fn&& fn) {
-  std::promise<void> done;
-  asio::post(*node.GetEventLoop(), [&]() {
-    fn();
-    done.set_value();
-  });
-  done.get_future().wait();
-}
-
 }  // namespace
 
 using namespace trellis::core::test;
@@ -535,7 +524,7 @@ TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
   WaitForDiscovery();
 
   std::promise<ServiceCallStatus> first;
-  RunOnLoop(GetNode(), [&]() {
+  RunOnLoop([&]() {
     test::Test request;
     request.set_id(2000);  // the handler sleeps 500ms before answering
     client->CallAsync<test::Test, test::TestTwo>(
@@ -547,7 +536,7 @@ TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
   ASSERT_EQ(first_status.get(), kTimedOut);
 
   std::promise<std::pair<ServiceCallStatus, float>> second;
-  RunOnLoop(GetNode(), [&]() {
+  RunOnLoop([&]() {
     test::Test request;
     request.set_id(9999);
     client->CallAsync<test::Test, test::TestTwo>(

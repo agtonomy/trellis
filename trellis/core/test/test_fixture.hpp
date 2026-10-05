@@ -21,10 +21,9 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <future>
 #include <thread>
-#include <type_traits>
 
+#include "trellis/core/event_loop.hpp"
 #include "trellis/core/node.hpp"
 
 namespace trellis {
@@ -105,10 +104,7 @@ class TrellisFixture : public ::testing::Test {
    */
   template <typename Fn>
   auto RunOnLoop(Fn&& fn) {
-    std::packaged_task<std::invoke_result_t<Fn&>()> task{std::forward<Fn>(fn)};
-    auto result = task.get_future();
-    asio::post(*node_->GetEventLoop(), [&task]() { task(); });
-    return result.get();
+    return RunOnEventLoop(node_->GetEventLoop(), std::forward<Fn>(fn));
   }
 
   /**

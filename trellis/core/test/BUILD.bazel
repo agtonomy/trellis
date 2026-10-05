@@ -19,6 +19,7 @@ cc_library(
     hdrs = ["test_fixture.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        "//trellis/core:core_event_loop",
         "//trellis/core:core_node",
         "@com_google_googletest//:gtest_main",
     ],

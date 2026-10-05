@@ -19,7 +19,12 @@
 #define TRELLIS_CORE_EVENT_LOOP_HPP_
 
 #include <asio.hpp>
+#include <atomic>
+#include <chrono>
+#include <future>
 #include <memory>
+#include <optional>
+#include <type_traits>
 
 #include "trellis/core/timer_options.hpp"
 
@@ -206,6 +211,58 @@ class EventLoop {
   // Opaque and never dereferenced, so it may point at an object that is still being constructed
   const void* owner_{nullptr};
 };
+
+/**
+ * @brief Run work on an event loop and block until it returns
+ *
+ * For a thread other than the loop's, such as a service callback, that needs a result computed against state only the
+ * loop may touch. Dispatched rather than posted, so a call from the loop itself runs inline instead of waiting on
+ * itself.
+ *
+ * Blocks for as long as the loop takes to run the work, which is forever if the loop never runs it again. A caller
+ * that can be left waiting through shutdown should pass a stop flag to the overload below.
+ *
+ * @param loop the loop to run the work on
+ * @param work the work to run
+ * @return what the work returned; an exception the work threw is rethrown here
+ */
+template <typename WORK_T>
+std::invoke_result_t<WORK_T> RunOnEventLoop(const EventLoop& loop, WORK_T work) {
+  auto task = std::packaged_task<std::invoke_result_t<WORK_T>()>{std::move(work)};
+  auto result = task.get_future();
+  asio::dispatch(*loop, [task = std::move(task)]() mutable { task(); });
+  return result.get();
+}
+
+/**
+ * @brief Run work on an event loop and block until it returns, or until `stopping` is set
+ *
+ * As the overload above, except that it gives up once `stopping` is set, which is how a caller that is torn down after
+ * its loop has stopped avoids waiting on work that will never run: set the flag before joining the thread that waits.
+ *
+ * The work must own what it uses rather than refer into the caller's frame: on giving up this returns while the work
+ * may still be queued, and the loop may yet run it.
+ *
+ * @param loop the loop to run the work on
+ * @param work the work to run, which must return a value
+ * @param stopping checked every `poll_period` while waiting
+ * @param poll_period how long a waiter can take to notice `stopping`
+ * @return what the work returned, or nullopt if `stopping` was set before it ran; an exception the work threw is
+ *         rethrown here
+ */
+template <typename WORK_T>
+  requires(!std::is_void_v<std::invoke_result_t<WORK_T>>)
+std::optional<std::invoke_result_t<WORK_T>> RunOnEventLoop(
+    const EventLoop& loop, WORK_T work, const std::atomic<bool>& stopping,
+    std::chrono::milliseconds poll_period = std::chrono::milliseconds{100}) {
+  auto task = std::packaged_task<std::invoke_result_t<WORK_T>()>{std::move(work)};
+  auto result = task.get_future();
+  asio::dispatch(*loop, [task = std::move(task)]() mutable { task(); });
+  while (result.wait_for(poll_period) != std::future_status::ready) {
+    if (stopping) return std::nullopt;
+  }
+  return result.get();
+}
 
 }  // namespace core
 }  // namespace trellis

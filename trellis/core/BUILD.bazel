@@ -300,6 +300,7 @@ cc_library(
     deps = [
         ":core_constraints",
         ":core_converters",
+        ":core_event_loop",
         ":core_node",
         ":core_stamped_message",
         "//trellis/containers:dynamic_ring_buffer",

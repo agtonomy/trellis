@@ -22,6 +22,7 @@
 #include "trellis/containers/ring_buffer.hpp"
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
+#include "trellis/core/event_loop.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/stamped_message.hpp"
 #include "trellis/core/subscriber.hpp"
@@ -292,15 +293,11 @@ class Inbox {
    * @return OwningMessages for each topic.
    */
   OwningMessages GetMessagesCopy(const time::TimePoint& time) const {
-    auto promise = std::promise<OwningMessages>{};
-    auto future = promise.get_future();
-    // Queue the promise to be fulfilled on the event loop, as this function may be called from a different thread.
-    // Dispatch is used in case GetMessagesCopy was called from the event loop to prevent deadlock.
-    asio::dispatch(*ev_, [this, time, promise = std::move(promise)]() mutable {
-      promise.set_value(std::apply(
-          [&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); }, receivers_));
+    // Run on the event loop, as this function may be called from a different thread.
+    return RunOnEventLoop(ev_, [this, time]() {
+      return std::apply([&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); },
+                        receivers_);
     });
-    return future.get();  // Blocks until the promise is fulfilled.
   }
 
   /// @brief A convenient helper for InboxReturnType.

@@ -612,12 +612,7 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
                                                     ElementsAre(OwningMessageIs(kT0, TestIs("hello"))),
                                                     Optional(OwningMessageIs<std::string>(kT0 + 2ms, StrEq("howdy")))));
 
-  auto promise = std::promise<decltype(inbox)::OwningMessages>{};
-  auto future = promise.get_future();
-  asio::post(*GetNode().GetEventLoop(), [&inbox, promise = std::move(promise)]() mutable {
-    return promise.set_value(inbox.GetMessagesCopy(kT0));
-  });
-  const auto result = future.get();
+  const auto result = RunOnLoop([&] { return inbox.GetMessagesCopy(kT0); });
   ASSERT_THAT(result, FieldsAre(Optional(OwningMessageIs(kT0, TestIs("hello"))),
                                 ElementsAre(OwningMessageIs(kT0 + 1ms, TestTwoIs("there"))),
                                 ElementsAre(OwningMessageIs(kT0, TestIs("hello"))),
