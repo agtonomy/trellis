@@ -89,13 +89,15 @@ class SubscriberImpl : public SubscriberBase,
 
   /**
    * @brief Callback type for raw, unparsed messages.
+   *
+   * The payload may be held past the callback, subject to the ipc::BorrowedPayload consumer contract.
+   *
    * @param now The time the message was received.
    * @param msgtime The time the message was sent (embedded in header).
-   * @param data Pointer to raw message bytes.
-   * @param size Length of the message.
+   * @param payload A borrow of the raw message bytes.
    */
   using RawCallback =
-      std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t*, size_t)>;
+      std::function<void(const time::TimePoint& now, const time::TimePoint& msgtime, ipc::BorrowedPayload payload)>;
 
   /// @brief Optional function to update a simulated clock when a message is received.
   using UpdateSimulatedClockFunction = std::function<void(const time::TimePoint&)>;
@@ -337,6 +339,17 @@ class SubscriberImpl : public SubscriberBase,
   /// otherwise an empty std::monostate
   using ConverterScratch = std::conditional_t<kCanUseScratch, SerializableT, std::monostate>;
 
+  /// @brief The receive callback for both transports. It holds only a weak reference, so a message still queued after
+  /// this subscriber is destroyed is dropped.
+  auto MakeReceiveCallback() {
+    return [weak_self = this->weak_from_this()](const ipc::shm::ShmFile::SMemFileHeader& header,
+                                                ipc::BorrowedPayload payload) {
+      if (const auto self = weak_self.lock()) {
+        self->ReceiveData(header, std::move(payload));
+      }
+    };
+  }
+
   /**
    * @brief Handles discovery events for publishers.
    *
@@ -398,17 +411,8 @@ class SubscriberImpl : public SubscriberBase,
               memory_file_list.push_back(fmt::format("{}_{:03}", memory_file_prefix, i));
             }
 
-            std::weak_ptr<SubscriberImpl> weak_self = this->weak_from_this();
-            auto reader = ipc::shm::ShmReader::Create(
-                loop_, subscriber_id_, memory_file_list,
-                [weak_self](ipc::shm::ShmFile::SMemFileHeader header, ipc::BorrowedPayload payload) {
-                  if (auto self = weak_self.lock()) {
-                    // The borrow is released here rather than handed on: delivery reads the bytes inline, and the
-                    // read lock ShmReader holds across this callback already keeps them stable for that.
-                    self->ReceiveData(header, payload.data(), payload.size());
-                  }
-                },
-                config_);
+            auto reader =
+                ipc::shm::ShmReader::Create(loop_, subscriber_id_, memory_file_list, MakeReceiveCallback(), config_);
             // Only add the reader to the container if it was properly initialized
             if (reader && reader->IsInitialized()) {
               readers_.emplace(topic_id, std::move(reader));
@@ -429,15 +433,8 @@ class SubscriberImpl : public SubscriberBase,
       return;
     }
 
-    const std::weak_ptr<SubscriberImpl> weak_self = this->weak_from_this();
     inproc_bus_ = ipc::InProcessBus::Instance();
-    inproc_bus_handle_ = inproc_bus_->Subscribe(
-        topic_, loop_, [weak_self](const ipc::shm::ShmFile::SMemFileHeader& header, const void* data, size_t len) {
-          const std::shared_ptr<SubscriberImpl> self = weak_self.lock();
-          if (self != nullptr) {
-            self->ReceiveData(header, data, len);
-          }
-        });
+    inproc_bus_handle_ = inproc_bus_->Subscribe(topic_, loop_, MakeReceiveCallback());
     inproc_active_.store(true, std::memory_order_relaxed);
   }
 
@@ -457,7 +454,7 @@ class SubscriberImpl : public SubscriberBase,
    *
    * Handles throttling, parsing, and dispatching to user callbacks.
    */
-  void ReceiveData(ipc::shm::ShmFile::SMemFileHeader header, const void* data, size_t len) {
+  void ReceiveData(const ipc::shm::ShmFile::SMemFileHeader& header, ipc::BorrowedPayload payload) {
     // A transport can deliver after Stop(): the in-process bus posts each message ahead of time, and Stop() cannot
     // recall those. Returning here also keeps the watchdog below from being re-armed after Stop() disarmed it.
     if (stopped_.load(std::memory_order_acquire)) {
@@ -513,7 +510,7 @@ class SubscriberImpl : public SubscriberBase,
         msg = owned_msg.get();
       }
 
-      if (!msg->ParseFromArray(data, len)) {
+      if (!msg->ParseFromArray(payload.data(), payload.size())) {
         throw std::runtime_error(
             fmt::format("Failed to parse proto from topic {} and writer_id {}", topic_, header.writer_id));
       }
@@ -537,8 +534,9 @@ class SubscriberImpl : public SubscriberBase,
     frequency_calculator_.IncrementCount();
     latency_calculator_.RecordLatency(receive_time, send_time);
 
+    // Moved last; the parse above, if any, is done with it
     if (raw_callback_) {
-      raw_callback_(receive_time, send_time, static_cast<const uint8_t*>(data), len);
+      raw_callback_(receive_time, send_time, std::move(payload));
     }
 
     if (callback_) {

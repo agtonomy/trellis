@@ -69,10 +69,13 @@ void InProcessBus::Publish(const std::string& topic, const shm::ShmFile::SMemFil
   if (it == routes_.end()) {
     return;
   }
-  // Each handler copies the shared_ptr, so the payload outlives this call.
+  // Each handler copies the shared_ptr, so the payload outlives this call. A borrow is move-only, so each handler
+  // builds its own.
   for (const TopicRoutes::value_type& entry : it->second.Routes()) {
     const Route& route = entry.second;
-    asio::post(*route.loop, [fn = route.fn, header, payload]() { fn(header, payload->data(), payload->size()); });
+    asio::post(*route.loop, [fn = route.fn, header, payload]() {
+      fn(header, BorrowedPayload::Immutable({payload, payload->data()}, payload->size(), header.sequence));
+    });
   }
 }
 

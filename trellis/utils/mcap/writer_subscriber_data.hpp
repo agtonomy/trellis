@@ -123,7 +123,9 @@ trellis::core::Subscriber<MessageType> SubscriberData<MessageType, OutputMessage
     // since the input and output are the same type, nothing needs to be known about the message type and a raw callback
     // can be used.
     callback_raw = [subscriber_data](const core::time::TimePoint&, const core::time::TimePoint& stamp,
-                                     const uint8_t* data, size_t len) { subscriber_data->Write(stamp, data, len); };
+                                     core::ipc::BorrowedPayload payload) {
+      subscriber_data->Write(stamp, payload.data(), payload.size());
+    };
   } else {
     // since the input and output types are not the same, the Write method is used that takes type information so that a
     // pre-write conversion can be done.

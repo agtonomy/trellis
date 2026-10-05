@@ -27,6 +27,7 @@ cc_library(
     hdrs = ["in_process_bus.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        ":borrowed_payload",
         "//trellis/core:core_event_loop",
         "//trellis/core/ipc/shm:shm_file",
         "@asio",

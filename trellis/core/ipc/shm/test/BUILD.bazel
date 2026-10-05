@@ -36,6 +36,7 @@ cc_test(
         "//trellis/core/ipc:borrowed_payload",
         "//trellis/core/ipc/shm:shm_file",
         "//trellis/core/ipc/shm:shm_read_write_lock",
+        "//trellis/core/ipc/shm:shm_reader",
         "//trellis/core/ipc/shm:shm_writer",
         "@com_google_googletest//:gtest_main",
         "@fmt",

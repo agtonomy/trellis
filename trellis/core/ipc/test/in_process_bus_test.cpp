@@ -28,7 +28,7 @@ namespace {
 constexpr std::string_view kTopic = "/dummy/route_count_topic";
 
 InProcessBus::ReceiveFn NoopReceiver() {
-  return [](const shm::ShmFile::SMemFileHeader&, const void*, size_t) {};
+  return [](const shm::ShmFile::SMemFileHeader&, BorrowedPayload) {};
 }
 
 TEST(InProcessBusRouteCount, TracksSubscribeAndUnsubscribe) {

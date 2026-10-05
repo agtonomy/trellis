@@ -37,6 +37,7 @@
 
 #include "trellis/core/ipc/borrowed_payload.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
+#include "trellis/core/ipc/shm/shm_reader.hpp"
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 
 namespace trellis::core::ipc::shm {
@@ -501,6 +502,42 @@ TEST_F(ShmBorrowTest, SeqlockDetectsEveryTornOrLappedBorrow) {
   EXPECT_GT(invalidated, 0U) << "no borrow was ever lapped; the test window is not exercising the invalid case";
   EXPECT_EQ(corrupt_while_valid, 0U) << "a borrow reported valid but its payload checksum did not match, out of "
                                      << validated << " validated and " << invalidated << " invalidated borrows";
+}
+
+// Short by necessity: the test name and reader id go into the notification socket path, capped at 108 bytes
+TEST_F(ShmBorrowTest, ReaderBorrowOutlivesTheCallback) {
+  constexpr size_t kNumBuffers = 3;
+  constexpr int kMaxPolls = 200;
+  const std::string reader_id = "r";
+  CreateWriter(kNumBuffers);
+
+  std::vector<std::string> handles;
+  for (size_t i = 0; i < kNumBuffers; ++i) {
+    handles.push_back(SlotHandle(Writer().GetMemoryFilePrefix(), i));
+  }
+  std::vector<BorrowedPayload> held;
+  const auto reader = ShmReader::Create(
+      loop_, reader_id, handles,
+      [&held](ShmFile::SMemFileHeader, BorrowedPayload payload) { held.push_back(std::move(payload)); }, config_);
+  ASSERT_TRUE(reader->IsInitialized());
+  // The writer drops a reader whose notification socket is not bound yet, so the reader has to exist first
+  Writer().AddReader(reader_id);
+
+  // Drain after each write so every message is delivered before the next one can lap its slot
+  for (size_t i = 0; i <= kNumBuffers; ++i) {
+    Write(fmt::format("message {}", i));
+    for (int poll = 0; poll < kMaxPolls && held.size() <= i; ++poll) {
+      loop_.PollOne();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_EQ(held.size(), i + 1) << "message " << i << " was not delivered";
+  }
+
+  EXPECT_FALSE(held[0].IsStillValid()) << "message " << kNumBuffers << " rewrote slot 0 while its borrow was held";
+  for (size_t i = 1; i <= kNumBuffers; ++i) {
+    EXPECT_EQ(BytesOf(held[i]), fmt::format("message {}", i));
+    EXPECT_TRUE(held[i].IsStillValid());
+  }
 }
 
 }  // namespace

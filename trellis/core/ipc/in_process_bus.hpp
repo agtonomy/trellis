@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "trellis/core/event_loop.hpp"
+#include "trellis/core/ipc/borrowed_payload.hpp"
 #include "trellis/core/ipc/shm/shm_file.hpp"
 
 namespace trellis::core::ipc {
@@ -48,10 +49,9 @@ class InProcessBus {
    * @brief Signature of SubscriberImpl::ReceiveData.
    *
    * @param header The header synthesized by the publisher.
-   * @param data Pointer to the serialized message.
-   * @param size Size of the data in bytes.
+   * @param payload An immutable borrow of the serialized message.
    */
-  using ReceiveFn = std::function<void(const shm::ShmFile::SMemFileHeader&, const void*, size_t)>;
+  using ReceiveFn = std::function<void(const shm::ShmFile::SMemFileHeader&, BorrowedPayload)>;
 
   /// The subscription handle that is used for bookkeeping active subscriptions.
   using Handle = int;
@@ -97,7 +97,7 @@ class InProcessBus {
    *
    * @param topic The topic to publish to.
    * @param header The header to deliver alongside the payload.
-   * @param payload The serialized message, kept alive until every delivery completes.
+   * @param payload The serialized message, kept alive until every delivery completes and every borrow is released.
    */
   void Publish(const std::string& topic, const shm::ShmFile::SMemFileHeader& header,
                std::shared_ptr<const std::vector<uint8_t>> payload);

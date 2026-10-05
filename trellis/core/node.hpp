@@ -262,6 +262,9 @@ class Node {
    * @brief CreateRawSubscriber create a handle to a raw subscriber. A raw subscriber can be used to receive the raw
    * message payload before deserialization.
    *
+   * The callback receives an ipc::BorrowedPayload, which may be held past the callback subject to its consumer
+   * contract.
+   *
    * @param topic the topic name to subscribe to
    * @param callback the function to call for every new inbound message
    * @param watchdog_timeout_ms optional timeout in milliseconds for a watchdog

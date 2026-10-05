@@ -305,9 +305,9 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
   auto pub = GetNode().CreatePublisher<test::Test>("test_raw_sub_topic");
   auto sub = GetNode().CreateRawSubscriber(
       "test_raw_sub_topic",
-      [&receive_count](const time::TimePoint& now, const time::TimePoint& msgtime, const uint8_t* data, size_t len) {
+      [&receive_count](const time::TimePoint& now, const time::TimePoint& msgtime, ipc::BorrowedPayload payload) {
         test::Test proto;
-        if (proto.ParseFromArray(data, len)) {
+        if (proto.ParseFromArray(payload.data(), payload.size())) {
           ASSERT_EQ(proto.id(), receive_count);
           ++receive_count;
         }
@@ -327,6 +327,38 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
     pub->Send(test_msg);
   }
   ASSERT_TRUE(WaitUntil([&receive_count]() { return receive_count == 10U; })) << "received " << receive_count;
+}
+
+TEST_F(TrellisFixture, RawSubscriberPayloadOutlivesTheCallback) {
+  constexpr unsigned kMessageCount{10};
+  std::vector<ipc::BorrowedPayload> held;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_raw_hold_topic");
+  auto sub = GetNode().CreateRawSubscriber(
+      "test_raw_hold_topic", [&held](const time::TimePoint&, const time::TimePoint&, ipc::BorrowedPayload payload) {
+        held.push_back(std::move(payload));
+      });
+
+  GetNode().RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  for (unsigned i = 0; i < kMessageCount; ++i) {
+    test::Test test_msg;
+    test_msg.set_id(i);
+    pub->Send(test_msg);
+  }
+  GetNode().RunUntilIdle();
+
+  // Every message was delivered through the in-process bus, whose buffers are never rewritten, so each borrow still
+  // parses to the message it carried after its callback has returned
+  ASSERT_EQ(held.size(), kMessageCount);
+  EXPECT_EQ(held[0].size(), 0u) << "id = 0 with no other fields set should serialize to an empty payload";
+  for (unsigned i = 0; i < kMessageCount; ++i) {
+    test::Test proto;
+    ASSERT_TRUE(proto.ParseFromArray(held[i].data(), held[i].size()));
+    EXPECT_EQ(proto.id(), i);
+    EXPECT_TRUE(held[i].IsStillValid());
+  }
 }
 
 TEST_F(TrellisFixture, SubscriberRapidRecycle) {
@@ -752,8 +784,8 @@ TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
 
   auto pub = GetNode().CreatePublisher<test::Test>("test_sb_topic");
   auto sub = GetNode().CreateRawSubscriber(
-      "test_sb_topic", [&received_len](const time::TimePoint&, const time::TimePoint&, const uint8_t*, size_t len) {
-        received_len = len;
+      "test_sb_topic", [&received_len](const time::TimePoint&, const time::TimePoint&, ipc::BorrowedPayload payload) {
+        received_len = payload.size();
       });
 
   StartRunnerThread();
