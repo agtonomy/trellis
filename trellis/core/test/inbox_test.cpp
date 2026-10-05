@@ -133,7 +133,8 @@ TEST_F(TrellisFixture, InboxNoMessages) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Eq(std::nullopt), Eq(std::nullopt))) << "No messages sent!";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }), FieldsAre(Eq(std::nullopt), Eq(std::nullopt)))
+      << "No messages sent!";
 }
 
 TEST_F(TrellisFixture, InboxMessagesReceived) {
@@ -151,8 +152,9 @@ TEST_F(TrellisFixture, InboxMessagesReceived) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))),
-                                                Optional(StampedMessageIs(kT0, TestTwoIs("there")))))
+  ASSERT_THAT(
+      RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+      FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))), Optional(StampedMessageIs(kT0, TestTwoIs("there")))))
       << "Messages sent at receive time, so are still valid.";
 }
 
@@ -171,7 +173,8 @@ TEST_F(TrellisFixture, InboxBareMessagesReceived) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetBareMessages(kT0), FieldsAre(Optional(TestIs("hello")), Optional(TestTwoIs("there"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0); }),
+              FieldsAre(Optional(TestIs("hello")), Optional(TestTwoIs("there"))))
       << "Messages sent at receive time, so are still valid.";
 }
 
@@ -188,7 +191,8 @@ TEST_F(TrellisFixture, InboxBareMessageTimeout) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(Eq(std::nullopt))) << "Message has timed out.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 101ms); }), FieldsAre(Eq(std::nullopt)))
+      << "Message has timed out.";
 }
 
 TEST_F(TrellisFixture, InboxNLatestBareMessages) {
@@ -205,9 +209,10 @@ TEST_F(TrellisFixture, InboxNLatestBareMessages) {
   pub->Send(MakeTest("hello1"), kT0 + 1ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 2ms), FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 2ms); }),
+              FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
       << "Both messages are within the timeout window.";
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(ElementsAre(TestIs("hello1"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 101ms); }), FieldsAre(ElementsAre(TestIs("hello1"))))
       << "Oldest message has timed out.";
 }
 
@@ -225,9 +230,10 @@ TEST_F(TrellisFixture, InboxAllLatestBareMessages) {
   pub->Send(MakeTest("hello1"), kT0 + 1ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 2ms), FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 2ms); }),
+              FieldsAre(ElementsAre(TestIs("hello"), TestIs("hello1"))))
       << "Both messages are within the timeout window.";
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 101ms), FieldsAre(ElementsAre(TestIs("hello1"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 101ms); }), FieldsAre(ElementsAre(TestIs("hello1"))))
       << "Oldest message has timed out.";
 }
 
@@ -246,7 +252,7 @@ TEST_F(TrellisFixture, InboxMessageTimeout) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms),
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 101ms); }),
               FieldsAre(Eq(std::nullopt), Optional(StampedMessageIs(kT0 + 1ms, TestTwoIs("there")))))
       << "First message has timed out by 1ms.";
 }
@@ -271,8 +277,9 @@ TEST_F(TrellisFixture, InboxMissedMessages) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 2ms), FieldsAre(Optional(StampedMessageIs(kT0 + 1ms, TestIs("good"))),
-                                                      Optional(StampedMessageIs(kT0 + 1ms, TestTwoIs("bye")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 2ms); }),
+              FieldsAre(Optional(StampedMessageIs(kT0 + 1ms, TestIs("good"))),
+                        Optional(StampedMessageIs(kT0 + 1ms, TestTwoIs("bye")))))
       << "Only the latest messages are reported.";
 }
 
@@ -291,8 +298,9 @@ TEST_F(TrellisFixture, InboxMultipleTopicsSameType) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))),
-                                                Optional(StampedMessageIs(kT0, TestIs("there")))))
+  ASSERT_THAT(
+      RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+      FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello"))), Optional(StampedMessageIs(kT0, TestIs("there")))))
       << "One inbox output per topic.";
 }
 
@@ -310,7 +318,8 @@ TEST_F(TrellisFixture, InboxMovable) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox2.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox2.GetMessages(kT0); }),
+              FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
       << "An inbox can be safely moved!";
 }
 
@@ -325,7 +334,7 @@ TEST_F(TrellisFixture, InboxNLatestEmpty) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(IsEmpty())) << "No messages in N latest.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }), FieldsAre(IsEmpty())) << "No messages in N latest.";
 }
 
 TEST_F(TrellisFixture, InboxNLatestNotFull) {
@@ -341,7 +350,8 @@ TEST_F(TrellisFixture, InboxNLatestNotFull) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
       << "Only 1 message has been sent, so we only get one back.";
 }
 
@@ -361,9 +371,10 @@ TEST_F(TrellisFixture, InboxNLatestFull) {
   pub->Send(MakeTest("hello2"), kT0 + 2ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 3ms), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")),
-                                                                  StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
-                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+  ASSERT_THAT(
+      RunOnLoop([&] { return inbox.GetMessages(kT0 + 3ms); }),
+      FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                            StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
       << "Multiple messages received, multiple messages returned.";
 }
 
@@ -385,9 +396,10 @@ TEST_F(TrellisFixture, InboxNLatestOverflow) {
   pub->Send(MakeTest("hello3"), kT0 + 3ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 4ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
-                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")),
-                                                                  StampedMessageIs(kT0 + 3ms, TestIs("hello3")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 4ms); }),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")),
+                                    StampedMessageIs(kT0 + 3ms, TestIs("hello3")))))
       << "Messages more than 3 old are dropped.";
 }
 
@@ -407,8 +419,9 @@ TEST_F(TrellisFixture, InboxNLatestTimeout) {
   pub->Send(MakeTest("hello2"), kT0 + 2ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
-                                                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 101ms); }),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
       << "The oldest message has timed out.";
 }
 
@@ -423,7 +436,7 @@ TEST_F(TrellisFixture, InboxAllLatestEmpty) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(IsEmpty())) << "No messages in all latest.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }), FieldsAre(IsEmpty())) << "No messages in all latest.";
 }
 
 TEST_F(TrellisFixture, InboxAllLatestOne) {
@@ -439,7 +452,8 @@ TEST_F(TrellisFixture, InboxAllLatestOne) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")))))
       << "Only 1 message has been sent, so we only get one back.";
 }
 
@@ -459,9 +473,10 @@ TEST_F(TrellisFixture, InboxAllLatestMany) {
   pub->Send(MakeTest("hello2"), kT0 + 2ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 3ms), FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")),
-                                                                  StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
-                                                                  StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+  ASSERT_THAT(
+      RunOnLoop([&] { return inbox.GetMessages(kT0 + 3ms); }),
+      FieldsAre(ElementsAre(StampedMessageIs(kT0, TestIs("hello")), StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                            StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
       << "Multiple messages received, multiple messages returned.";
 }
 
@@ -481,8 +496,9 @@ TEST_F(TrellisFixture, InboxAllLatestTimeout) {
   pub->Send(MakeTest("hello2"), kT0 + 2ms);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
-                                                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 101ms); }),
+              FieldsAre(ElementsAre(StampedMessageIs(kT0 + 1ms, TestIs("hello1")),
+                                    StampedMessageIs(kT0 + 2ms, TestIs("hello2")))))
       << "The oldest message has timed out.";
 }
 
@@ -499,8 +515,9 @@ TEST_F(TrellisFixture, InboxSimpleLoopback) {
   inbox.Send(MakeTest("hello"), kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
-  ASSERT_THAT(inbox.GetMessages(kT0 + 100ms), FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
+  ASSERT_THAT(RunOnLoop([&] { return recv_cnt; }), Eq(1)) << "Message was sent.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 100ms); }),
+              FieldsAre(Optional(StampedMessageIs(kT0, TestIs("hello")))))
       << "Message stored.";
 }
 
@@ -517,8 +534,9 @@ TEST_F(TrellisFixture, InboxSimpleLoopbackTimeout) {
   inbox.Send(MakeTest("hello"), kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
-  ASSERT_THAT(inbox.GetMessages(kT0 + 101ms), FieldsAre(Eq(std::nullopt))) << "Message timed out.";
+  ASSERT_THAT(RunOnLoop([&] { return recv_cnt; }), Eq(1)) << "Message was sent.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 101ms); }), FieldsAre(Eq(std::nullopt)))
+      << "Message timed out.";
 }
 
 TEST_F(TrellisFixture, InboxBareLoopback) {
@@ -534,8 +552,9 @@ TEST_F(TrellisFixture, InboxBareLoopback) {
   inbox.Send(MakeTest("hello"), kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(recv_cnt, Eq(1)) << "Message was sent.";
-  ASSERT_THAT(inbox.GetBareMessages(kT0 + 100ms), FieldsAre(Optional(TestIs("hello")))) << "Message stored.";
+  ASSERT_THAT(RunOnLoop([&] { return recv_cnt; }), Eq(1)) << "Message was sent.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0 + 100ms); }), FieldsAre(Optional(TestIs("hello"))))
+      << "Message stored.";
 }
 
 namespace {
@@ -564,8 +583,9 @@ TEST_F(TrellisFixture, InboxSerializingLoopback) {
   inbox.Send(std::string{"hello"}, kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(latest, StrEq("hello")) << "Message was sent.";
-  ASSERT_THAT(inbox.GetMessages(kT0 + 100ms), FieldsAre(Optional(StampedMessageIs<std::string>(kT0, StrEq("hello")))))
+  ASSERT_THAT(RunOnLoop([&] { return latest; }), StrEq("hello")) << "Message was sent.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0 + 100ms); }),
+              FieldsAre(Optional(StampedMessageIs<std::string>(kT0, StrEq("hello")))))
       << "Message stored.";
 }
 
@@ -665,10 +685,12 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedSingle) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0), Optional(StampedMessageIs(kT0, TestIs("hello"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages<Latest<test::Test>>(kT0); }),
+              Optional(StampedMessageIs(kT0, TestIs("hello"))))
       << "A single selected type is returned unwrapped when it is the first receive type.";
 
-  ASSERT_THAT(inbox.GetMessages<Latest<TestTwo>>(kT0), Optional(StampedMessageIs(kT0, TestTwoIs("there"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages<Latest<TestTwo>>(kT0); }),
+              Optional(StampedMessageIs(kT0, TestTwoIs("there"))))
       << "A single selected type is returned unwrapped when it is the second receive type.";
 }
 
@@ -688,7 +710,7 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedReversed) {
   WaitForSendReceive();
 
   ASSERT_THAT(
-      (inbox.GetMessages<Latest<TestTwo>, Latest<test::Test>>(kT0)),
+      (RunOnLoop([&] { return inbox.GetMessages<Latest<TestTwo>, Latest<test::Test>>(kT0); })),
       FieldsAre(Optional(StampedMessageIs(kT0, TestTwoIs("there"))), Optional(StampedMessageIs(kT0, TestIs("hello")))))
       << "Selected order is preserved in the returned tuple, regardless of the ReceiveTypes order.";
 }
@@ -710,12 +732,13 @@ TEST_F(TrellisFixture, InboxTemplatedMixedVariants) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT((inbox.GetMessages<NLatest<TestTwo, 3>, Loopback<TestTwo>>(kT0)),
+  ASSERT_THAT((RunOnLoop([&] { return inbox.GetMessages<NLatest<TestTwo, 3>, Loopback<TestTwo>>(kT0); })),
               FieldsAre(ElementsAre(StampedMessageIs(kT0, TestTwoIs("there"))),
                         Optional(StampedMessageIs(kT0, TestTwoIs("howdy")))))
       << "Selection across mixed receive variants returns the matching subset in the given order.";
 
-  ASSERT_THAT(inbox.GetMessages<AllLatest<test::Test>>(kT0), ElementsAre(StampedMessageIs(kT0, TestIs("hello"))))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages<AllLatest<test::Test>>(kT0); }),
+              ElementsAre(StampedMessageIs(kT0, TestIs("hello"))))
       << "Single AllLatest selection is returned unwrapped even when another receive type shares the same "
          "MessageType.";
 }
@@ -733,7 +756,7 @@ TEST_F(TrellisFixture, InboxAdlDefaultFromProto) {
   pub->Send(MakeTest("adl works"), kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0),
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
               FieldsAre(Optional(StampedMessageIs<arbitrary::Test>(kT0, ArbitraryTestIs("adl works")))))
       << "FromProto was discovered via ADL with no explicit converter passed.";
 }
@@ -753,8 +776,10 @@ TEST_F(TrellisFixture, InboxAdlDefaultToProtoLoopback) {
   inbox.Send(arbitrary::Test{.id = 0, .msg = "loopback adl"}, kT0);
   WaitForSendReceive();
 
-  ASSERT_THAT(recv, StrEq("loopback adl")) << "ToProto was discovered via ADL on the publish path.";
-  ASSERT_THAT(inbox.GetBareMessages(kT0), FieldsAre(Optional(ArbitraryTestIs("loopback adl"))))
+  ASSERT_THAT(RunOnLoop([&] { return recv; }), StrEq("loopback adl"))
+      << "ToProto was discovered via ADL on the publish path.";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetBareMessages(kT0); }),
+              FieldsAre(Optional(ArbitraryTestIs("loopback adl"))))
       << "The native message is also stored in the loopback receiver.";
 }
 
@@ -772,7 +797,7 @@ TEST_F(TrellisFixture, InboxGetMessagesTemplatedRespectsTimeout) {
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages<Latest<test::Test>>(kT0 + 101ms), Eq(std::nullopt))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages<Latest<test::Test>>(kT0 + 101ms); }), Eq(std::nullopt))
       << "Selected message respects the configured timeout.";
 }
 

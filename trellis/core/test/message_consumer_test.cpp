@@ -19,6 +19,8 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
@@ -64,6 +66,7 @@ TEST_F(TrellisFixture, MultipleMsgTypesEachWithCallbacks) {
 
   WaitForSendReceive();
 
+  StopAndJoinRunnerThread();  // The loop wrote the counts, and destroying the consumer must not race it.
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }
@@ -104,15 +107,17 @@ TEST_F(TrellisFixture, DuplicateMessageTypes) {
 
   WaitForSendReceive();
 
+  StopAndJoinRunnerThread();  // The loop wrote the counts, and destroying the consumer must not race it.
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }
 
 TEST_F(TrellisFixture, MultiMsgTypesWithBothCallbacks) {
-  static unsigned receive_count_1{0};
-  static unsigned receive_count_2{0};
-  static unsigned watchdog_count_1{0};
-  static unsigned watchdog_count_2{0};
+  // Atomic because they are read mid-test, while the loop is still delivering.
+  static std::atomic<unsigned> receive_count_1{0};
+  static std::atomic<unsigned> receive_count_2{0};
+  static std::atomic<unsigned> watchdog_count_1{0};
+  static std::atomic<unsigned> watchdog_count_2{0};
   static constexpr unsigned watchdog1_timeout_ms = 1000U;
   static constexpr unsigned watchdog2_timeout_ms = 1000U;
   static constexpr unsigned num_burst_messages = 10U;
@@ -183,6 +188,7 @@ TEST_F(TrellisFixture, MultiMsgTypesWithBothCallbacks) {
   // Wait for watchdog
   std::this_thread::sleep_for(std::chrono::milliseconds(std::max(watchdog1_timeout_ms, watchdog2_timeout_ms) * 2));
 
+  StopAndJoinRunnerThread();  // The loop wrote the counts, and destroying the consumer must not race it.
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);
 
@@ -231,6 +237,7 @@ TEST_F(TrellisFixture, RoundTripConversionEachWithCallbacks) {
 
   WaitForSendReceive();
 
+  StopAndJoinRunnerThread();  // The loop wrote the counts, and destroying the consumer must not race it.
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }
@@ -274,6 +281,7 @@ TEST_F(TrellisFixture, ConvertingDuplicateMessageTypes) {
 
   WaitForSendReceive();
 
+  StopAndJoinRunnerThread();  // The loop wrote the counts, and destroying the consumer must not race it.
   ASSERT_EQ(receive_count_1, num_burst_messages);
   ASSERT_EQ(receive_count_2, num_burst_messages);
 }

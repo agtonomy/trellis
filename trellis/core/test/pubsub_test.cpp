@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <iostream>
@@ -185,8 +186,8 @@ TEST_F(TrellisFixture, PublisherMessageSizeIncreases) {
 }
 
 TEST_F(TrellisFixture, SubscriberWatchdogTimeout) {
-  unsigned receive_count{0};
-  unsigned watchdog_count{0};
+  std::atomic<unsigned> receive_count{0};
+  std::atomic<unsigned> watchdog_count{0};
 
   auto pub = GetNode().CreatePublisher<test::Test>("test_watchdog_topic");
   auto sub = GetNode().CreateSubscriber<test::Test>(
@@ -299,7 +300,7 @@ TEST_F(TrellisFixture, SendReturnsTimestamp) {
 }
 
 TEST_F(TrellisFixture, RawSubscriberBasicTest) {
-  unsigned receive_count{0};
+  std::atomic<unsigned> receive_count{0};
 
   auto pub = GetNode().CreatePublisher<test::Test>("test_raw_sub_topic");
   auto sub = GetNode().CreateRawSubscriber(
@@ -325,9 +326,7 @@ TEST_F(TrellisFixture, RawSubscriberBasicTest) {
     test_msg.set_msg("hello world");
     pub->Send(test_msg);
   }
-  // Give the event loop some time before checking the result
-  std::this_thread::sleep_for(kProcessEventsWaitTime);
-  ASSERT_EQ(receive_count, 10U);
+  ASSERT_TRUE(WaitUntil([&receive_count]() { return receive_count == 10U; })) << "received " << receive_count;
 }
 
 TEST_F(TrellisFixture, SubscriberRapidRecycle) {
@@ -749,7 +748,7 @@ TEST(PublisherBufferSize, CreateThrowsWhenInitialBufferSizeExceedsMax) {
 TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
   // Comfortably past the 10 KiB default initial_buffer_size so the slot has to grow
   const std::string payload(64 * 1024, 'z');
-  size_t received_len{0};
+  std::atomic<size_t> received_len{0};
 
   auto pub = GetNode().CreatePublisher<test::Test>("test_sb_topic");
   auto sub = GetNode().CreateRawSubscriber(
@@ -763,8 +762,7 @@ TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
 
   pub->SendBytes(payload.data(), payload.size());
 
-  std::this_thread::sleep_for(kProcessEventsWaitTime);
-  ASSERT_EQ(received_len, payload.size());
+  ASSERT_TRUE(WaitUntil([&]() { return received_len == payload.size(); })) << "received " << received_len << " bytes";
 }
 
 TEST_F(TrellisFixture, SendAlternatesLargeAndSmallMessages) {

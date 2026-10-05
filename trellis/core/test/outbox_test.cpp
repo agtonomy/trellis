@@ -127,11 +127,11 @@ TEST_F(TrellisFixture, OutboxNoMessages) {
 
   WaitForDiscovery();
 
-  outbox.UpdateMsgs(Outbox<ImmediateSender<test::Test>>::Messages{});
+  RunOnLoop([&] { outbox.UpdateMsgs(Outbox<ImmediateSender<test::Test>>::Messages{}); });
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Eq(std::nullopt))) << "No messages sent!";
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }), FieldsAre(Eq(std::nullopt))) << "No messages sent!";
 }
 
 TEST_F(TrellisFixture, OutboxMessages) {
@@ -142,11 +142,11 @@ TEST_F(TrellisFixture, OutboxMessages) {
 
   WaitForDiscovery();
 
-  outbox.UpdateMsgs({MakeTest("hello"), MakeTestTwo("there")});
+  RunOnLoop([&] { outbox.UpdateMsgs({MakeTest("hello"), MakeTestTwo("there")}); });
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0),
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
               FieldsAre(Optional(StampedMessageIs(TestIs("hello"))), Optional(StampedMessageIs(TestTwoIs("there")))))
       << "Messages sent at receive time, so are still valid.";
 }
@@ -159,11 +159,12 @@ TEST_F(TrellisFixture, OutboxStaleMessages) {
 
   WaitForDiscovery();
 
-  outbox.UpdateMsgs({MakeTest("hello"), MakeTestTwo("my name is stale")});
+  RunOnLoop([&] { outbox.UpdateMsgs({MakeTest("hello"), MakeTestTwo("my name is stale")}); });
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(TestIs("hello"))), Eq(std::nullopt)))
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+              FieldsAre(Optional(StampedMessageIs(TestIs("hello"))), Eq(std::nullopt)))
       << "The async sender message has timed out, so we only see the first message in the inbox!";
 }
 
@@ -178,11 +179,12 @@ TEST_F(TrellisFixture, ConvertingOutbox) {
 
   const std::string msg = "wow ADL conversions are convenient";
 
-  outbox.UpdateMsgs({arbitrary::Test{.msg = msg}});
+  RunOnLoop([&] { outbox.UpdateMsgs({arbitrary::Test{.msg = msg}}); });
 
   WaitForSendReceive();
 
-  ASSERT_THAT(inbox.GetMessages(kT0), FieldsAre(Optional(StampedMessageIs(ArbitraryTestIs(msg)))));
+  ASSERT_THAT(RunOnLoop([&] { return inbox.GetMessages(kT0); }),
+              FieldsAre(Optional(StampedMessageIs(ArbitraryTestIs(msg)))));
 }
 
 }  // namespace trellis::core::test

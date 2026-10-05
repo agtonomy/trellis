@@ -20,7 +20,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <future>
 #include <thread>
+#include <type_traits>
 
 #include "trellis/core/node.hpp"
 
@@ -65,8 +68,9 @@ class TrellisFixture : public ::testing::Test {
   }
 
   void TearDown() override {
-    time::DisableSimulatedClock();
+    // Join first: the loop reads the simulated clock flag.
     StopAndJoinRunnerThread();
+    time::DisableSimulatedClock();
     // Destroy the node to clean up all discovery state
     node_.reset();
   }
@@ -88,6 +92,42 @@ class TrellisFixture : public ::testing::Test {
     if (runner_thread_.joinable()) {
       runner_thread_.join();
     }
+  }
+
+  /**
+   * @brief Run `fn` on the node's event loop and wait for it.
+   *
+   * Use it for whatever the loop owns: reading what a callback wrote, or calling something documented as loop-only,
+   * such as Inbox::GetMessages(), Outbox::UpdateMsgs() or TimerImpl::Stop(). The runner thread must be running.
+   *
+   * @param fn the work to run
+   * @return what `fn` returns
+   */
+  template <typename Fn>
+  auto RunOnLoop(Fn&& fn) {
+    std::packaged_task<std::invoke_result_t<Fn&>()> task{std::forward<Fn>(fn)};
+    auto result = task.get_future();
+    asio::post(*node_->GetEventLoop(), [&task]() { task(); });
+    return result.get();
+  }
+
+  /**
+   * @brief Poll `predicate` on this thread until it holds or `timeout` passes.
+   *
+   * @param predicate what to wait for; it runs on this thread, so it should read atomics
+   * @param timeout how long to wait
+   * @return whether `predicate` held
+   */
+  template <typename Predicate>
+  static bool WaitUntil(Predicate predicate, std::chrono::milliseconds timeout = std::chrono::seconds{2}) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    return true;
   }
 
   /// @brief Get a reference to the node for use in tests

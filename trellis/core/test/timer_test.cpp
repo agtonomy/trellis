@@ -18,6 +18,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <iostream>
 #include <string>
 
@@ -26,12 +27,13 @@
 using trellis::core::test::TrellisFixture;
 
 TEST_F(TrellisFixture, OneShotTimerFires) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   auto timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  StopAndJoinRunnerThread();  // A timer is destroyed on its loop's thread or with the loop stopped.
   ASSERT_EQ(timer->Expired(), true);
   ASSERT_EQ(fire_count, 1U);
   // One-shot timers always return 0 for overrun count
@@ -39,20 +41,21 @@ TEST_F(TrellisFixture, OneShotTimerFires) {
 }
 
 TEST_F(TrellisFixture, OneShotTimerCancelsWithoutFiring) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   auto timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   ASSERT_EQ(timer->Expired(), false);
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  timer->Stop();  // cancel before timer is set to expire
+  RunOnLoop([&timer]() { timer->Stop(); });  // cancel before timer is set to expire
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  StopAndJoinRunnerThread();
   ASSERT_EQ(timer->Expired(), true);
   ASSERT_EQ(fire_count, 0U);
 }
 
 TEST_F(TrellisFixture, OneShotTimerReset) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   auto timer = GetNode().CreateOneShotTimer(200, [](const trellis::core::time::TimePoint&) { ++fire_count; });
@@ -67,18 +70,19 @@ TEST_F(TrellisFixture, OneShotTimerReset) {
   // originally set for
   for (unsigned i = 0; i < 1000; ++i) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    timer->Reset();
+    RunOnLoop([&timer]() { timer->Reset(); });
   }
 
   ASSERT_EQ(timer->Expired(), false);
   // Now it should still fire once more after we wait
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  StopAndJoinRunnerThread();
   ASSERT_EQ(fire_count, 2U);
   ASSERT_EQ(timer->Expired(), true);
 }
 
 TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
@@ -93,13 +97,14 @@ TEST_F(TrellisFixture, PeriodicTimerFiresMultipleTimes) {
 }
 
 TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   auto timer = GetNode().CreateTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  timer->Stop();
+  RunOnLoop([&timer]() { timer->Stop(); });
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  StopAndJoinRunnerThread();
 
   // Periodic timer fires immediately, so we expect it fired once before we stopped it
   ASSERT_EQ(fire_count, 1U);
@@ -108,16 +113,20 @@ TEST_F(TrellisFixture, PeriodicTimerStopsProperly) {
 }
 
 TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
-  std::shared_ptr<trellis::core::TimerImpl> timer =
-      GetNode().CreateTimer(10, [&timer](const trellis::core::time::TimePoint&) {
-        if (++fire_count == 5) {
-          timer->Stop();
-        }
-      });
+  // Assigned on the loop: the callback reads `timer`, and the timer is due at once.
+  std::shared_ptr<trellis::core::TimerImpl> timer;
+  RunOnLoop([&]() {
+    timer = GetNode().CreateTimer(10, [&timer](const trellis::core::time::TimePoint&) {
+      if (++fire_count == 5) {
+        timer->Stop();
+      }
+    });
+  });
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  StopAndJoinRunnerThread();
 
   // Periodic timer fires immediately, so we expect it fired 5 times before we stopped it
   ASSERT_EQ(fire_count, 5);
@@ -126,7 +135,7 @@ TEST_F(TrellisFixture, PeriodicTimerStopsWithinCallback) {
 }
 
 TEST_F(TrellisFixture, PeriodicTimerOverrunDetection) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
   // Create a timer with a 10ms interval, but the callback sleeps for 25ms
@@ -150,22 +159,26 @@ TEST_F(TrellisFixture, PeriodicTimerOverrunDetection) {
 // A callback may drop the last reference to its own timer (the RPC client's timeout handler does) and keep running
 // afterwards, so its closure has to outlive the timer.
 TEST_F(TrellisFixture, CallbackMayDestroyItsOwnTimer) {
-  static unsigned fire_count{0};
+  static std::atomic<unsigned> fire_count{0};
   static bool closure_outlived_the_timer{false};
   StartRunnerThread();
 
   // The 10ms delay matters. At the default of zero the timer is due the moment its constructor arms it, and the
   // callback would race this thread's assignment to `timer`.
-  std::shared_ptr<trellis::core::TimerImpl> timer = GetNode().CreateTimer(
-      10,
-      // Too big for a small-object buffer, so it lives wherever the callback does. Reading it after the reset is
-      // the point.
-      [&timer, sentinel = std::string(64, 'x')](const trellis::core::time::TimePoint&) {
-        ++fire_count;
-        timer.reset();
-        closure_outlived_the_timer = sentinel.size() == 64;
-      },
-      10u);
+  // Assigned on the loop, since the callback resets `timer`.
+  std::shared_ptr<trellis::core::TimerImpl> timer;
+  RunOnLoop([&]() {
+    timer = GetNode().CreateTimer(
+        10,
+        // Too big for a small-object buffer, so it lives wherever the callback does. Reading it after the reset is
+        // the point.
+        [&timer, sentinel = std::string(64, 'x')](const trellis::core::time::TimePoint&) {
+          ++fire_count;
+          timer.reset();
+          closure_outlived_the_timer = sentinel.size() == 64;
+        },
+        10u);
+  });
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   StopAndJoinRunnerThread();
 

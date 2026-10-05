@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+
 #include "trellis/core/test/test_fixture.hpp"
 #include "trellis/utils/metrics_pub/metrics_publisher.hpp"
 
@@ -28,7 +30,7 @@ TEST_F(TrellisFixture, simple_test) {
   const auto start = trellis::core::time::Now();
   trellis::core::time::SetSimulatedTime(start);
 
-  static unsigned receive_count{0};
+  static std::atomic<unsigned> receive_count{0};
   trellis::utils::metrics::MetricsPublisher pub(
       GetNode().GetName(), GetNode().CreatePublisher<trellis::utils::metrics::MetricsGroup>("/trellis/app/metrics"));
   const auto sub = GetNode().CreateSubscriber<trellis::utils::metrics::MetricsGroup>(
@@ -59,12 +61,15 @@ TEST_F(TrellisFixture, simple_test) {
   EXPECT_EQ(receive_count, 0U);
 
   for (int i = 0; i < 10; ++i) {
-    trellis::core::time::SetSimulatedTime(start + std::chrono::seconds{i});
-    auto now = trellis::core::time::Now();
-    pub.AddMeasurement(now, "gauge", -1.1 * i);
-    pub.AddCounter(now, "ctr", 1000 * i);
-    pub.Publish(now);
+    // On the loop, since the subscriber also steps the process-wide simulated clock there.
+    RunOnLoop([&]() {
+      trellis::core::time::SetSimulatedTime(start + std::chrono::seconds{i});
+      auto now = trellis::core::time::Now();
+      pub.AddMeasurement(now, "gauge", -1.1 * i);
+      pub.AddCounter(now, "ctr", 1000 * i);
+      pub.Publish(now);
+    });
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  EXPECT_EQ(receive_count, 10);
+  EXPECT_TRUE(WaitUntil([]() { return receive_count == 10U; })) << "received " << receive_count;
 }
