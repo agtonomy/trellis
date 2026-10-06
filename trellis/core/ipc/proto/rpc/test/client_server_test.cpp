@@ -20,8 +20,10 @@
 #include <atomic>
 #include <functional>
 #include <future>
+#include <optional>
 #include <utility>
 
+#include "absl/cleanup/cleanup.h"
 #include "trellis/core/ipc/proto/rpc/client.hpp"
 #include "trellis/core/ipc/proto/rpc/server.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -79,6 +81,82 @@ class SlowSignallingHandler : public TestServiceHandler {
   }
 
   std::atomic<bool> entered{false};
+};
+
+// Holds each call until `release`, and counts them. Given a loop, it holds that loop, as a service owning a Client
+// does.
+class BlockingHandler : public trellis::core::test::TestService {
+ public:
+  explicit BlockingHandler(std::optional<EventLoop> loop = std::nullopt) : loop_{std::move(loop)} {}
+
+  void DoStuff(::google::protobuf::RpcController*, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure*) override {
+    ++calls;
+    entered = true;
+    while (!release) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    response->set_foo(static_cast<float>(request->id()));
+  }
+
+  std::atomic<int> calls{0};
+  std::atomic<bool> entered{false};
+  std::atomic<bool> release{false};
+
+ private:
+  std::optional<EventLoop> loop_;
+};
+
+// Added to an io_context, sets `destroyed` when that io_context is destroyed.
+class ContextDestroyedFlag : public asio::execution_context::service {
+ public:
+  static inline asio::execution_context::id id;
+
+  ContextDestroyedFlag(asio::execution_context& context, std::shared_ptr<std::atomic<bool>> destroyed)
+      : asio::execution_context::service{context}, destroyed_{std::move(destroyed)} {}
+  ~ContextDestroyedFlag() override { *destroyed_ = true; }
+
+ private:
+  void shutdown() override {}
+
+  std::shared_ptr<std::atomic<bool>> destroyed_;
+};
+
+// Polls `done` until it holds or `timeout` passes, and returns whether it held.
+template <typename Pred>
+bool WaitUntil(Pred done, std::chrono::milliseconds timeout = std::chrono::seconds{2}) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (!done()) {
+    if (std::chrono::steady_clock::now() > deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
+  }
+  return true;
+}
+
+// A node of the test's own, run on its own thread, that tells when its loop is destroyed. A test uses one to see a
+// handler thread let go of the loop, which the fixture's node would outlive.
+struct OwnNode {
+  OwnNode() { asio::make_service<ContextDestroyedFlag>(*node->GetEventLoop(), loop_destroyed); }
+  ~OwnNode() { Stop(); }
+
+  void Run() {
+    runner = std::thread([node = node.get()]() { node->Run(); });
+  }
+  // Stops the loop and waits for the runner, if it is still running.
+  void Stop() {
+    if (runner.joinable()) {
+      node->Stop();
+      runner.join();
+    }
+  }
+
+  std::shared_ptr<std::atomic<bool>> loop_destroyed{std::make_shared<std::atomic<bool>>(false)};
+  std::unique_ptr<Node> node{std::make_unique<Node>(
+      "own_node", Config(YAML::Load(test::CreateConfig(test::kNumPubBuffers, test::kTestDiscoveryInterval,
+                                                       test::kTestDiscoveryTimeout))))};
+  std::thread runner;
 };
 
 }  // namespace
@@ -552,6 +630,77 @@ TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
   EXPECT_EQ(status, kSuccess);
   EXPECT_EQ(foo, 9999.0f) << "the second call got the timed-out call's reply";
   StopAndJoinRunnerThread();  // The promises are locals.
+}
+
+// ~Server() drops the requests that have not started. It has closed their sockets, so no reply could arrive.
+TEST_F(TrellisFixture, ServerDestroyedWithAQueuedRequestDoesNotRunIt) {
+  StartRunnerThread();
+  auto handler = std::make_shared<BlockingHandler>();
+  auto server = GetNode().CreateServiceServer<BlockingHandler>(handler);
+  // One call in flight per client, so a second client queues a request behind the running one.
+  auto running_client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto queued_client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  // On any exit, let the handler finish, so ~Server() does not wait for it forever.
+  absl::Cleanup release = [&handler]() { handler->release = true; };
+  WaitForDiscovery();
+
+  asio::post(*GetNode().GetEventLoop(), [running_client, queued_client]() {
+    test::Test request;
+    request.set_id(1);
+    running_client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
+                                                         [](ServiceCallStatus, const test::TestTwo*) {});
+    request.set_id(2);
+    queued_client->CallAsync<test::Test, test::TestTwo>("DoStuff", request,
+                                                        [](ServiceCallStatus, const test::TestTwo*) {});
+  });
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+  // For the second request to be queued. Nothing here sees the handler queue, so the check on `calls` below is only
+  // as good as this wait.
+  WaitForSendReceive();
+
+  // ~Server() waits for the running handler, so it is let go from another thread once ~Server() has dropped the rest.
+  std::thread releaser([&handler]() {
+    WaitForSendReceive();
+    handler->release = true;
+  });
+  server.reset();
+  releaser.join();
+  EXPECT_EQ(handler->calls, 1) << "a request queued behind the running one ran after the server was gone";
+  StopAndJoinRunnerThread();  // before the clients go
+}
+
+// A service commonly holds its loop, through a Client of its own, say. A handler finishing after the loop has stopped
+// must not queue the service on that loop with its reply: the two would keep each other alive for good.
+TEST_F(TrellisFixture, HandlerFinishingAfterTheLoopStopsDoesNotLeakAServiceThatHoldsTheLoop) {
+  OwnNode own;
+  auto handler = std::make_shared<BlockingHandler>(own.node->GetEventLoop());
+  auto server = own.node->CreateServiceServer<BlockingHandler>(handler);
+  auto client = own.node->CreateServiceClient<trellis::core::test::TestService>();
+  // On any exit, let the handler finish, and stop the loop before the locals it uses go.
+  absl::Cleanup stop_first = [&own, &handler]() {
+    if (handler) {
+      handler->release = true;
+    }
+    own.Stop();
+  };
+  own.Run();
+  WaitForDiscovery();
+
+  asio::post(*own.node->GetEventLoop(), [client]() {
+    test::Test request;
+    request.set_id(1);
+    client->CallAsync<test::Test, test::TestTwo>("DoStuff", request, [](ServiceCallStatus, const test::TestTwo*) {});
+  });
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  own.Stop();
+  handler->release = true;
+  server.reset();  // off the loop's thread, so this waits for the handler
+  client.reset();
+  handler.reset();
+  own.node.reset();
+  EXPECT_TRUE(WaitUntil([&own]() { return own.loop_destroyed->load(); }))
+      << "the service was queued on the stopped loop it holds, so neither was destroyed";
 }
 
 // The loop stops before the client is released, as it does when an app shuts down.

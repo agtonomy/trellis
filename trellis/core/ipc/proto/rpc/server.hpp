@@ -19,7 +19,9 @@
 
 #include <google/protobuf/descriptor.h>
 
+#include <memory>
 #include <optional>
+#include <thread>
 
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -34,6 +36,14 @@ namespace trellis::core::ipc::proto::rpc {
  * Handlers run one at a time on a thread this server owns, not on the event loop. A handler may call out to another
  * service. It must not block waiting on a reply from this one: the handler thread is already inside the outer call,
  * so the nested request is never dispatched. ~Server() then joins that thread with no timeout, hanging shutdown.
+ *
+ * ~Server() drops the handlers that have not started and waits for the running one. The running handler keeps the
+ * service implementation alive and the handler thread keeps the loop, but nothing else: a service must own whatever
+ * its handlers use. The handler hands the service to the loop with its reply, so a last owner releases it on the
+ * loop's thread, or in place once the loop is stopped, as the service's members (a Client, say) require. Stopping does
+ * not wait for the loop's current callback, which may still be using what the service owns. A reply the loop never
+ * runs (it stops after the handler checks, or is never run again) keeps the service until the loop is destroyed, and
+ * for good if the service holds the loop.
  *
  * Replies go out on the event loop, so a reply still owed when the loop stops is lost. Shutdown must destroy the
  * Server, not merely stop the loop. ~Server() closes the caller sockets, and nothing else tells a caller in another
@@ -55,8 +65,11 @@ class Server {
    * @param discovery Shared pointer to service discovery instance.
    */
   Server(std::shared_ptr<PROTO_SERVICE_T> prototype, trellis::core::EventLoop loop, discovery::DiscoveryPtr discovery)
-      : work_guard_{asio::make_work_guard(io_context_)},
-        rpc_thread_([](asio::io_context& io_context) { io_context.run(); }, std::ref(io_context_)),
+      : loop_{loop},
+        rpc_thread_([handler_loop = std::optional{handler_loop_}, loop]() mutable {
+          handler_loop->Run();
+          handler_loop.reset();  // before the loop: the handlers it drops own sockets on the loop
+        }),
         prototype_{prototype},
         discovery_{std::move(discovery)},
         tcp_server_{loop, /* port = */ 0, [this](const trellis::core::error_code& ec, network::TCP socket) mutable {
@@ -85,7 +98,8 @@ class Server {
         shared->Close();
       }
     }
-    work_guard_.reset();
+    // Stopped rather than left to run out of work: rpc_thread_ holds its own copy of the loop, which keeps it busy.
+    handler_loop_.Stop();  // requests not yet started have no socket left to answer on
     if (rpc_thread_.joinable()) {
       rpc_thread_.join();
     }
@@ -168,10 +182,17 @@ class Server {
     discovery::Request req;
     req.ParseFromArray(data, len);
 
-    // After parsing the request, we perform the remaining work on the background thread
-    asio::post(io_context_, [this, client, req = std::move(req)]() {
+    // After parsing the request, we perform the remaining work on the background thread. The loop's io_context outlives
+    // this, since the handler thread holds the loop.
+    asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop_context = &*loop_, client,
+                                req = std::move(req)]() {
+      // Owned while this runs, so a Server destroyed meanwhile does not take the service with it.
+      auto prototype = service.lock();
+      if (!prototype) {
+        return;
+      }
       const auto& method_name = req.header().mname();
-      const google::protobuf::ServiceDescriptor* service_desc = prototype_->GetDescriptor();
+      const google::protobuf::ServiceDescriptor* service_desc = prototype->GetDescriptor();
       const google::protobuf::MethodDescriptor* method_desc = service_desc->FindMethodByName(method_name);
       discovery::Response response;
       response.mutable_header()->set_mname(method_name);
@@ -180,10 +201,10 @@ class Server {
         response.mutable_header()->set_status(discovery::ServiceHeader::failed);
         response.mutable_header()->set_error("method not found");
       } else {
-        std::unique_ptr<google::protobuf::Message> rpc_request(prototype_->GetRequestPrototype(method_desc).New());
-        std::unique_ptr<google::protobuf::Message> rpc_response(prototype_->GetResponsePrototype(method_desc).New());
+        std::unique_ptr<google::protobuf::Message> rpc_request(prototype->GetRequestPrototype(method_desc).New());
+        std::unique_ptr<google::protobuf::Message> rpc_response(prototype->GetResponsePrototype(method_desc).New());
         rpc_request->ParseFromString(req.request());
-        prototype_->CallMethod(method_desc, nullptr, rpc_request.get(), rpc_response.get(), nullptr);
+        prototype->CallMethod(method_desc, nullptr, rpc_request.get(), rpc_response.get(), nullptr);
         rpc_response->SerializeToString(response.mutable_response());
         response.mutable_header()->set_status(discovery::ServiceHeader::executed);
       }
@@ -196,6 +217,12 @@ class Server {
       auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
       memcpy(send_header_buf.get(), &size, sizeof(size));
 
+      // The service goes to the loop with the reply, so that if this is its last owner, it is released on the loop's
+      // thread. A stopped loop runs nothing more, and releasing it here is then allowed.
+      if (loop_context->stopped()) {
+        return;
+      }
+
       // This runs on the RPC thread, but the socket belongs to the event loop, which is already waiting on it for
       // the next request. Post the send to the socket's own executor so operations are always started from the
       // thread that owns it. Two replies must still never overlap on one socket, since AsyncSendAll chains partial
@@ -203,7 +230,7 @@ class Server {
       // We chain together two send attempts
       // 1. Send 4-byte response payload size
       // 2. Send response payload
-      asio::post(client->GetExecutor(), [client, send_header_buf, send_buffer]() {
+      asio::post(client->GetExecutor(), [client, send_header_buf, send_buffer, prototype = std::move(prototype)]() {
         client->AsyncSendAll(send_header_buf->data(), send_header_buf->size(),
                              [send_header_buf, send_buffer, client](const trellis::core::error_code&, size_t) {
                                client->AsyncSendAll(send_buffer->data(), send_buffer->size(),
@@ -213,8 +240,11 @@ class Server {
     });
   }
 
-  asio::io_context io_context_{};  ///< Background thread context for method execution
-  asio::executor_work_guard<asio::io_context::executor_type> work_guard_;  ///< Keeps io_context alive
+  // loop_ before handler_loop_, so the handlers it drops release their sockets while the loop still exists.
+  trellis::core::EventLoop loop_;  ///< Loop the sockets belong to
+  /// Where handlers run. Shared with the handler thread, which holds what it uses instead of reaching into the server.
+  /// It has no timer registry, so a timer built on it would go untracked.
+  trellis::core::EventLoop handler_loop_;
   std::thread rpc_thread_;                        ///< Thread running the RPC handler event loop
   std::shared_ptr<PROTO_SERVICE_T> prototype_{};  ///< Protobuf service instance
   discovery::DiscoveryPtr discovery_;             ///< Discovery system for registering the service

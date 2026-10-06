@@ -10,6 +10,7 @@ cc_test(
         "//trellis/core/test:test_fixture",
         "//trellis/core/test:test_proto",
         "//trellis/network",
+        "@com_google_absl//absl/cleanup",
         "@com_google_googletest//:gtest_main",
     ],
 )
