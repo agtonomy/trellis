@@ -30,9 +30,13 @@ TEST_F(TrellisFixture, OneShotTimerFires) {
   static std::atomic<unsigned> fire_count{0};
   StartRunnerThread();
 
-  auto timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
-  ASSERT_EQ(timer->Expired(), false);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  // Created and checked in one loop handler, so it can't fire in between however loaded the machine is.
+  trellis::core::OneShotTimer timer;
+  RunOnLoop([&]() {
+    timer = GetNode().CreateOneShotTimer(10, [](const trellis::core::time::TimePoint&) { ++fire_count; });
+    EXPECT_FALSE(timer->Expired());
+  });
+  ASSERT_TRUE(WaitUntil([]() { return fire_count > 0; }, std::chrono::seconds{5}));
   StopAndJoinRunnerThread();  // A timer is destroyed on its loop's thread or with the loop stopped.
   ASSERT_EQ(timer->Expired(), true);
   ASSERT_EQ(fire_count, 1U);
