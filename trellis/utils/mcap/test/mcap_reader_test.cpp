@@ -36,7 +36,7 @@ TEST_F(TrellisFixture, McapReaderBasic) {
 
   StartRunnerThread();
 
-  const std::string outfile{"/tmp/test_mcap_reader.mcap"};
+  const std::string outfile{::testing::TempDir() + "test_mcap_reader.mcap"};
 
   // Write
   {

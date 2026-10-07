@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -31,50 +32,54 @@
 namespace trellis::core::discovery {
 
 namespace {
-static constexpr std::string_view test_config = R"(
-        trellis:
-          discovery:
-            interval: 10
-            sample_timeout: 200
-            port: 45678
-        )";
+// Concurrent runs of this test share the host network, so each run picks unused ports rather than fixed ones. Tests
+// asking for the same slot share a port; different slots never do.
+uint16_t Port(unsigned slot) {
+  static std::map<unsigned, uint16_t> ports;
+  if (const auto it = ports.find(slot); it != ports.end()) {
+    return it->second;
+  }
+  while (true) {
+    asio::io_context io;
+    const asio::ip::udp::socket probe{io, asio::ip::udp::endpoint{asio::ip::udp::v4(), 0}};
+    const uint16_t port = probe.local_endpoint().port();
+    if (std::none_of(ports.begin(), ports.end(), [port](const auto& entry) { return entry.second == port; })) {
+      return ports.emplace(slot, port).first->second;
+    }
+  }
+}
 
-static constexpr std::string_view test_config_otherport = R"(
-        trellis:
-          discovery:
-            interval: 10
-            sample_timeout: 200
-            port: 45679
-        )";
-
-static constexpr std::string_view test_config_loopback = R"(
-        trellis:
-          discovery:
-            interval: 10
-            sample_timeout: 200
-            loopback_enabled: true
-            port: 45678
-        )";
-
-// The heartbeat here outlasts any test, so a callback that fires within a short RunFor was delivered by the
-// immediate path.
-static constexpr std::string_view test_config_loopback_no_heartbeat = R"(
-        trellis:
-          discovery:
-            interval: 100000
-            sample_timeout: 200000
-            loopback_enabled: true
-            port: 45687
-        )";
-
-// Poll tests use their own ports so a slow drain in one of them cannot show up as a stray sample in another.
-std::string MakeConfig(unsigned port, unsigned poll_interval_ms) {
+std::string TestConfig(unsigned slot = 0) {
   return "trellis:\n"
          "  discovery:\n"
          "    interval: 10\n"
          "    sample_timeout: 200\n"
          "    port: " +
-         std::to_string(port) + "\n    poll_interval_ms: " + std::to_string(poll_interval_ms) + "\n";
+         std::to_string(Port(slot)) + "\n";
+}
+
+std::string LoopbackConfig() { return TestConfig() + "    loopback_enabled: true\n"; }
+
+// The heartbeat here outlasts any test, so a callback that fires within a short RunFor was delivered by the
+// immediate path.
+std::string LoopbackNoHeartbeatConfig() {
+  return "trellis:\n"
+         "  discovery:\n"
+         "    interval: 100000\n"
+         "    sample_timeout: 200000\n"
+         "    loopback_enabled: true\n"
+         "    port: " +
+         std::to_string(Port(9)) + "\n";
+}
+
+// Poll tests use their own ports so a slow drain in one of them cannot show up as a stray sample in another.
+std::string MakeConfig(unsigned slot, unsigned poll_interval_ms) {
+  return "trellis:\n"
+         "  discovery:\n"
+         "    interval: 10\n"
+         "    sample_timeout: 200\n"
+         "    port: " +
+         std::to_string(Port(slot)) + "\n    poll_interval_ms: " + std::to_string(poll_interval_ms) + "\n";
 }
 
 bool HasTopic(const std::vector<Sample>& samples, const std::string& topic) {
@@ -85,7 +90,7 @@ bool HasTopic(const std::vector<Sample>& samples, const std::string& topic) {
 
 TEST(DiscoveryTests, IniitalConditions) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   ASSERT_FALSE(discovery.GetConfig().loopback_enabled);
   ev.RunFor(std::chrono::milliseconds(200));
   {
@@ -105,7 +110,7 @@ TEST(DiscoveryTests, IniitalConditions) {
 
 TEST(DiscoveryTests, RegisterPublisher) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
   unsigned receive_count{0};
   discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
@@ -135,8 +140,7 @@ TEST(DiscoveryTests, RegisterPublisher) {
 // A callback added after the publisher registered catches up on it when it is added, not on the next heartbeat.
 TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredBeforeCallback) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev,
-                      trellis::core::Config(YAML::Load(std::string(test_config_loopback_no_heartbeat))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
   discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
   // Deliver the registration while no callback exists, so only the replay on adding one can report it.
   ev.RunFor(std::chrono::milliseconds(10));
@@ -153,8 +157,7 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredBeforeCallback) {
 // A publisher registered after the callback reaches it when it registers, not on the next heartbeat.
 TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev,
-                      trellis::core::Config(YAML::Load(std::string(test_config_loopback_no_heartbeat))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
   unsigned receive_count{0};
   discovery.AsyncReceivePublishers([&](Discovery::EventType event, const Sample& sample) {
     ++receive_count;
@@ -168,7 +171,7 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
 
 TEST(DiscoveryTests, RegisterSubscriber) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   discovery.RegisterSubscriber<test::Test>("/dummy/subscriber");
 
   unsigned receive_count{0};
@@ -188,7 +191,7 @@ TEST(DiscoveryTests, RegisterSubscriber) {
 
 TEST(DiscoveryTests, UnregisterPublisher) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
 
   unsigned reg_count{0};
   unsigned unreg_count{0};
@@ -214,7 +217,7 @@ TEST(DiscoveryTests, UnregisterPublisher) {
 
 TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   const auto handle = discovery.RegisterPublisher<test::Test>("/stable/id", "mem", 1u);
 
   const std::string id1 = discovery.GetSampleId(handle);
@@ -226,7 +229,7 @@ TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
 
 TEST(DiscoveryTests, RegisterServiceServer) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   discovery.RegisterServiceServer("test_service", 1337, ipc::proto::rpc::MethodsMap{});
 
   unsigned receive_count{0};
@@ -248,7 +251,7 @@ TEST(DiscoveryTests, RegisterServiceServer) {
 
 TEST(DiscoveryTests, RegisterPublisherWithLargeTopicName) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
 
   // Create a very large topic name to force multi-packet transmission
   // UDP buffer is 65535 bytes, so create topic name > 80KB to ensure multi-packet
@@ -287,8 +290,8 @@ TEST(DiscoveryTests, RegisterPublisherWithLargeTopicName) {
 
 TEST(DiscoveryTests, MultipleNodes) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(TestConfig())));
+  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(TestConfig())));
   ev.RunFor(std::chrono::milliseconds(200));
   {  // we should see both process samples
     auto samples = discovery1.GetProcessSamples();
@@ -303,8 +306,8 @@ TEST(DiscoveryTests, MultipleNodes) {
 // test that we only see our own node if discovery is running on a separate port
 TEST(DiscoveryTests, MultipleNodesSeparatePorts) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
-  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(std::string(test_config_otherport))));
+  Discovery discovery1("test_node1", ev, trellis::core::Config(YAML::Load(TestConfig())));
+  Discovery discovery2("test_node2", ev, trellis::core::Config(YAML::Load(TestConfig(1))));
   ev.RunFor(std::chrono::milliseconds(200));
   {
     auto samples = discovery1.GetProcessSamples();
@@ -332,7 +335,9 @@ TEST(DiscoveryTests, ResolveDescriptorViaHashAcrossPeers) {
       "  discovery:\n"
       "    interval: 10\n"
       "    sample_timeout: 200\n"
-      "    port: 45678\n"
+      "    port: " +
+      std::to_string(Port(0)) +
+      "\n"
       "    descriptor_dir: " +
       descriptor_dir.string() + "\n";
 
@@ -362,7 +367,7 @@ TEST(DiscoveryTests, ResolveDescriptorViaHashAcrossPeers) {
 // test that loopback works
 TEST(DiscoveryTests, Loopback) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config_loopback))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackConfig())));
   ASSERT_TRUE(discovery.GetConfig().loopback_enabled);
   ev.RunFor(std::chrono::milliseconds(200));
   {
@@ -421,7 +426,7 @@ TEST(ProcessIdentityTests, SharesThisProcessRejectsASampleWithoutTheInProcessLay
 
 TEST(DiscoveryTests, PollIntervalDefaultsToAsyncReceive) {
   auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(std::string(test_config))));
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
   EXPECT_EQ(discovery.GetConfig().poll_interval_ms, 0u);
 }
 

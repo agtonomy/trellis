@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
@@ -32,7 +33,8 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr std::string_view kMarkerDir = "/tmp/trellis";
-constexpr std::string_view kNodeName = "trellis_crash_counter_unit_test";
+// Per process, so concurrent runs sharing the default marker directory don't overwrite each other's marker.
+const std::string kNodeName = "trellis_crash_counter_unit_test_" + std::to_string(::getpid());
 
 fs::path MarkerPath() { return fs::path(kMarkerDir) / (fmt::format("{}_crash_counter", kNodeName)); }
 
@@ -172,7 +174,7 @@ TEST_F(CrashCounterTest, PeekFromConfigDefaultTargetsDefaultDir) {
 }
 
 TEST_F(CrashCounterTest, PeekFromConfigReadsOverrideDir) {
-  constexpr std::string_view kOverrideDir = "/tmp/trellis_crash_counter_override_test";
+  const std::string kOverrideDir = "/tmp/trellis_crash_counter_override_test_" + std::to_string(::getpid());
   std::error_code ec;
   fs::remove_all(kOverrideDir, ec);
   {

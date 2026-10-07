@@ -18,10 +18,12 @@
 #include "trellis/core/ipc/unix/socket_event.hpp"
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 #include "trellis/core/config.hpp"
@@ -33,7 +35,8 @@ using namespace trellis::core::ipc::unix;
 class TrellisSocketEventTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    socket_path_ = "/tmp/test_socket_event.sock";
+    // Per process, so concurrent runs don't share a socket. Not TempDir(): a socket path is limited to 108 bytes.
+    socket_path_ = "/tmp/test_socket_event_" + std::to_string(::getpid()) + ".sock";
     fs::remove(socket_path_);
     loop_ = std::make_shared<trellis::core::EventLoop>();
     config_ = trellis::core::Config{};

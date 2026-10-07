@@ -37,7 +37,7 @@ TEST_F(TrellisFixture, McapWriterBasic) {
 
   StartRunnerThread();
 
-  const std::string outfile{"/tmp/test_mcap_writer.mcap"};
+  const std::string outfile{::testing::TempDir() + "test_mcap_writer.mcap"};
 
   // Write
   {
@@ -56,6 +56,7 @@ TEST_F(TrellisFixture, McapWriterBasic) {
       pub2->Send(test2_msg);
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    RunOnLoop([]() {});  // Each send posted its delivery, so they have all run once this has.
   }
 
   ::mcap::McapReader reader;
@@ -129,7 +130,7 @@ TEST_F(TrellisFixture, McapWriterStatistics) {
 
   StartRunnerThread();
 
-  const std::string outfile{"/tmp/test_mcap_writer_stats.mcap"};
+  const std::string outfile{::testing::TempDir() + "test_mcap_writer_stats.mcap"};
 
   const ::mcap::Timestamp start_time{trellis::core::time::NowInNanoseconds()};
 
