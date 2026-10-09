@@ -175,6 +175,7 @@ cc_test(
     name = "core_sim_clock_test",
     srcs = ["sim_clock_test.cpp"],
     deps = [
+        "//trellis/core:core_inbox",
         "//trellis/core:core_node",
         "//trellis/core:core_proto",
         "//trellis/core:core_time",

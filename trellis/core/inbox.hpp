@@ -371,10 +371,9 @@ class Inbox {
     using ConverterType = ReceiveType::ConverterType;
 
     Subscriber<SerializableType, MessageType, ConverterType> subscriber;
-    // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
-    // ptr should always point to the same value. We use `latest->message != nullptr` to check if there is indeed a
-    // valid message here. We could wrap it in an optional, but that is not necessary.
-    std::unique_ptr<StampedMessagePtr<MessageType>> latest;
+    // Shared with the subscriber's callback, which may still run after the Inbox is destroyed: a delivery can step the
+    // simulated clock first, and a timer in that step can destroy it. `latest->message != nullptr` marks a message.
+    std::shared_ptr<StampedMessagePtr<MessageType>> latest;
     time::TimePoint::duration timeout;
   };
 
@@ -391,9 +390,8 @@ class Inbox {
     // kNLatest + 2 messages, but a little extra padding allows the inbox thread to get slightly behind the subscriber
     // thread.
     Subscriber<SerializableType, MessageType, ConverterType> subscriber;
-    // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
-    // ptr should always point to the same value.
-    std::unique_ptr<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>> buffer;
+    // Shared with the subscriber's callback, which may outlive the Inbox (see the latest receiver).
+    std::shared_ptr<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>> buffer;
     time::TimePoint::duration timeout;
   };
 
@@ -409,9 +407,8 @@ class Inbox {
     // We use the default subscriber memory pool size since we will copy messages out of the subscriber since we don't
     // know how large to size it.
     Subscriber<SerializableType, MessageType, ConverterType> subscriber;
-    // We use a unique_ptr so we can pass capture in the sub callback safely, even if this receiver moves around. This
-    // ptr should always point to the same value.
-    std::unique_ptr<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>> buffer;
+    // Shared with the subscriber's callback, which may outlive the Inbox (see the latest receiver).
+    std::shared_ptr<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>> buffer;
     time::TimePoint::duration timeout;
   };
 
@@ -439,13 +436,13 @@ class Inbox {
     using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
-    auto latest = std::make_unique<StampedMessagePtr<MessageType>>();
+    auto latest = std::make_shared<StampedMessagePtr<MessageType>>();
 
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
-        [&latest = *latest](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
-          latest = {msgtime, std::move(msg)};
+        [latest](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
+          *latest = {msgtime, std::move(msg)};
         },
         {}, {}, {}, std::get<Index>(converters));
 
@@ -462,13 +459,13 @@ class Inbox {
     using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
-    auto buffer = std::make_unique<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>>();
+    auto buffer = std::make_shared<containers::RingBuffer<StampedMessagePtr<MessageType>, ReceiveType::kNLatest>>();
 
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
-        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
-          buffer.push_back(StampedMessagePtr<MessageType>{msgtime, std::move(msg)});
+        [buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
+          buffer->push_back(StampedMessagePtr<MessageType>{msgtime, std::move(msg)});
         },
         {}, {}, {}, std::get<Index>(converters));
 
@@ -485,13 +482,13 @@ class Inbox {
     using ConverterType = ReceiveType::ConverterType;
 
     // Not const to allow move.
-    auto buffer = std::make_unique<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>>();
+    auto buffer = std::make_shared<containers::DynamicRingBuffer<std::pair<time::TimePoint, MessageType>>>();
 
     // Not const to allow move.
     auto subscriber = node.CreateSubscriber<SerializableType, MessageType, ConverterType>(
         topics[Index],
-        [&buffer = *buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
-          buffer.push_back({msgtime, std::move(*msg)});
+        [buffer](const time::TimePoint&, const time::TimePoint& msgtime, std::unique_ptr<MessageType> msg) {
+          buffer->push_back({msgtime, std::move(*msg)});
         },
         {}, {}, {}, std::get<Index>(converters));
 

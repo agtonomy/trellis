@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 
+#include "trellis/core/inbox.hpp"
 #include "trellis/core/node.hpp"
 #include "trellis/core/sim_clock.pb.h"
 #include "trellis/core/sim_controller.hpp"
@@ -267,6 +268,39 @@ TEST_F(SimClockFixture, WatchdogDoesNotFireAfterStopFromAnotherThread) {
   });
   node_->RunUntilIdle();
   EXPECT_EQ(watchdog_fired, 0u) << "the watchdog fired after Stop() returned";
+}
+
+// Delivering a message steps the clock to its send time before the callback runs, and a timer due in that step may
+// destroy the Inbox on the loop, which its rules allow. The callback must then still have its buffer to write into.
+template <typename InboxT>
+void ExpectInboxDestroyedByATimerInTheDeliveryStepIsSafe(Node& node) {
+  std::optional<InboxT> inbox{std::in_place, node, typename InboxT::TopicArray{"sim_clock_test_inbox"},
+                              typename InboxT::MessageTimeouts{1s}};
+  auto pub = node.CreatePublisher<SimClock>("sim_clock_test_inbox");
+
+  auto t = time::Now() + 1000ms;
+  node.UpdateSimulatedClock(t);  // first advance only rebases the timers
+  node.RunUntilIdle();
+
+  auto timer = node.CreateOneShotTimer(100, [&inbox](const time::TimePoint&) { inbox.reset(); });
+  pub->Send(SimClock{}, t + 500ms);
+  node.RunUntilIdle();
+  EXPECT_FALSE(inbox.has_value());
+}
+
+TEST_F(SimClockFixture, LatestInboxDestroyedByATimerInTheDeliveryStepIsSafe) {
+  CreateNode(Node::SimClockRole::kPublisher);
+  ExpectInboxDestroyedByATimerInTheDeliveryStepIsSafe<Inbox<Latest<SimClock>>>(*node_);
+}
+
+TEST_F(SimClockFixture, NLatestInboxDestroyedByATimerInTheDeliveryStepIsSafe) {
+  CreateNode(Node::SimClockRole::kPublisher);
+  ExpectInboxDestroyedByATimerInTheDeliveryStepIsSafe<Inbox<NLatest<SimClock, 2>>>(*node_);
+}
+
+TEST_F(SimClockFixture, AllLatestInboxDestroyedByATimerInTheDeliveryStepIsSafe) {
+  CreateNode(Node::SimClockRole::kPublisher);
+  ExpectInboxDestroyedByATimerInTheDeliveryStepIsSafe<Inbox<AllLatest<SimClock>>>(*node_);
 }
 
 }  // namespace
