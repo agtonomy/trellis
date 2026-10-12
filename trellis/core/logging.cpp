@@ -18,8 +18,10 @@
 #include "trellis/core/logging.hpp"
 
 #include <algorithm>
-#include <iostream>
-#include <mutex>
+#include <array>
+#include <atomic>
+#include <cstdio>
+#include <iterator>
 #include <unordered_map>
 
 namespace trellis {
@@ -28,8 +30,7 @@ namespace Log {
 
 namespace {
 static constexpr LogLevel kDefaultLogLevel{kFatal};
-LogLevel g_log_level{kDefaultLogLevel};
-std::mutex g_log_mutex{};
+std::atomic<LogLevel> g_log_level{kDefaultLogLevel};
 }  // namespace
 
 void SetLogLevel(const std::string& log_level_string) {
@@ -44,13 +45,21 @@ void SetLogLevel(const std::string& log_level_string) {
   SetLogLevel(log_level);
 }
 
-void SetLogLevel(LogLevel log_level) { g_log_level = log_level; }
+void SetLogLevel(LogLevel log_level) { g_log_level.store(log_level, std::memory_order_relaxed); }
 
-void DoLog(std::string_view msg, std::string_view prefix, LogLevel level) {
-  std::lock_guard lock(g_log_mutex);
-  if (level <= g_log_level) {
-    std::cout << prefix << msg << std::endl;
-  }
+bool detail::IsEnabled(LogLevel level) { return level <= g_log_level.load(std::memory_order_relaxed); }
+
+void detail::Log(LogLevel level, fmt::string_view fmt_msg, fmt::format_args args) {
+  static constexpr std::array<std::string_view, 5> kPrefix{"[INFO]  ", "[WARN]  ", "[ERROR] ", "[FATAL] ", "[DEBUG] "};
+  // Build the whole line in one buffer to pass to a single fwrite, which stdio serializes across threads. The fmt
+  // buffer lives on the stack and only heap-allocates for lines over 1 KiB, vs gcc std::string's 15 chars
+  fmt::basic_memory_buffer<char, 1024> line;
+  line.append(kPrefix[level]);
+  fmt::vformat_to(std::back_inserter(line), fmt_msg, args);
+  line.push_back('\n');
+  std::fwrite(line.data(), 1, line.size(), stdout);
+  // stdout is fully buffered when it is a pipe (journald), and abort() in Fatal does not flush stdio.
+  std::fflush(stdout);
 }
 
 }  // namespace Log

@@ -216,6 +216,15 @@ cc_test(
 )
 
 cc_test(
+    name = "core_logging_test",
+    srcs = ["logging_test.cpp"],
+    deps = [
+        "//trellis/core:core_logging",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_health_test",
     srcs = ["health_test.cpp"],
     deps = [

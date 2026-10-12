@@ -66,14 +66,21 @@ void SetLogLevel(const std::string& log_level_string);
  */
 void SetLogLevel(LogLevel log_level);
 
+namespace detail {
+
 /**
- * @brief Internal logging function used by log level wrappers.
- *
- * @param msg The message to log.
- * @param prefix A string to prefix the log line (e.g., "[INFO]  ").
- * @param level The level of the log message.
+ * @brief Whether messages at the given level are currently emitted.
  */
-void DoLog(std::string_view msg, std::string_view prefix, LogLevel level);
+bool IsEnabled(LogLevel level);
+
+/**
+ * @brief Format and print one log line. Callers check IsEnabled first.
+ *
+ * Takes type-erased arguments so the formatting code is compiled once here rather than in every call site.
+ */
+void Log(LogLevel level, fmt::string_view fmt_msg, fmt::format_args args);
+
+}  // namespace detail
 
 /**
  * @brief Log an informational message.
@@ -84,74 +91,49 @@ void DoLog(std::string_view msg, std::string_view prefix, LogLevel level);
  */
 template <typename... Args>
 inline void Info(fmt::format_string<Args...> fmt_msg, Args&&... args) {
-  std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[INFO]  ", LogLevel::kInfo);
+  if (detail::IsEnabled(kInfo)) detail::Log(kInfo, fmt_msg.str, fmt::make_format_args(args...));
 }
-inline void Info(std::string_view msg) { DoLog(msg, "[INFO]  ", LogLevel::kInfo); }
+inline void Info(std::string_view msg) { Info("{}", msg); }
 
 /**
  * @brief Log a warning message.
- *
- * @tparam Args Format arguments.
- * @param fmt_msg A fmtlib-compatible format string.
- * @param args Arguments to format into the message.
  */
 template <typename... Args>
 inline void Warn(fmt::format_string<Args...> fmt_msg, Args&&... args) {
-  std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[WARN]  ", LogLevel::kWarn);
+  if (detail::IsEnabled(kWarn)) detail::Log(kWarn, fmt_msg.str, fmt::make_format_args(args...));
 }
-inline void Warn(std::string_view msg) { DoLog(msg, "[WARN]  ", LogLevel::kWarn); }
+inline void Warn(std::string_view msg) { Warn("{}", msg); }
 
 /**
  * @brief Log an error message.
- *
- * @tparam Args Format arguments.
- * @param fmt_msg A fmtlib-compatible format string.
- * @param args Arguments to format into the message.
  */
 template <typename... Args>
 inline void Error(fmt::format_string<Args...> fmt_msg, Args&&... args) {
-  std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[ERROR] ", LogLevel::kError);
+  if (detail::IsEnabled(kError)) detail::Log(kError, fmt_msg.str, fmt::make_format_args(args...));
 }
-inline void Error(std::string_view msg) { DoLog(msg, "[ERROR] ", LogLevel::kError); }
+inline void Error(std::string_view msg) { Error("{}", msg); }
 
 /**
  * @brief Log a fatal error message and terminate the program.
  *
  * This function logs the message, delays briefly to allow logs to flush, and then calls `abort()`.
- *
- * @tparam Args Format arguments.
- * @param fmt_msg A fmtlib-compatible format string.
- * @param args Arguments to format into the message.
  */
 template <typename... Args>
 inline void Fatal(fmt::format_string<Args...> fmt_msg, Args&&... args) {
-  std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[FATAL] ", LogLevel::kFatal);
+  if (detail::IsEnabled(kFatal)) detail::Log(kFatal, fmt_msg.str, fmt::make_format_args(args...));
   sleep(1);
   abort();
 }
-inline void Fatal(std::string_view msg) {
-  DoLog(msg, "[FATAL] ", LogLevel::kFatal);
-  sleep(1);
-  abort();
-}
+inline void Fatal(std::string_view msg) { Fatal("{}", msg); }
 
 /**
  * @brief Log a debug-level message.
- *
- * @tparam Args Format arguments.
- * @param fmt_msg A fmtlib-compatible format string.
- * @param args Arguments to format into the message.
  */
 template <typename... Args>
 inline void Debug(fmt::format_string<Args...> fmt_msg, Args&&... args) {
-  std::string msg = fmt::format(fmt_msg, std::forward<Args>(args)...);
-  DoLog(msg, "[DEBUG] ", LogLevel::kDebug);
+  if (detail::IsEnabled(kDebug)) detail::Log(kDebug, fmt_msg.str, fmt::make_format_args(args...));
 }
-inline void Debug(std::string_view msg) { DoLog(msg, "[DEBUG] ", LogLevel::kDebug); }
+inline void Debug(std::string_view msg) { Debug("{}", msg); }
 
 }  // namespace Log
 }  // namespace core
