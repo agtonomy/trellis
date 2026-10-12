@@ -44,16 +44,6 @@ trellis::core::HealthState ToProtoHealthState(const health::HealthState& state) 
   }
   return trellis::core::HealthState::HEALTH_STATE_UNSPECIFIED;
 }
-
-bool operator==(const trellis::core::HealthStatus& lhs, const trellis::core::HealthStatus& rhs) {
-  if (lhs.health_state() != rhs.health_state()) {
-    return false;
-  }
-  if (lhs.status_code() != rhs.status_code()) {
-    return false;
-  }
-  return true;
-}
 }  // namespace
 
 Health::Health(const std::string& name, const trellis::core::Config& config,
@@ -67,13 +57,16 @@ Health::Health(const std::string& name, const trellis::core::Config& config,
 
 void Health::Update(const trellis::core::HealthState& state, const Code& code, const std::string& description,
                     const bool compare_description) {
-  const auto update = CreateHealthUpdateMessage(state, code, description);
+  // Compare against the last update before building the message, so an unchanged status costs no allocation.
   if (!health_history_.empty()) {
     const auto& last = health_history_.back();
-    // Don't push a new update if it's identical to the last.
-    if (update == last && (!compare_description || update.status_description() == last.status_description())) return;
+    if (last.health_state() == state && last.status_code() == code &&
+        (!compare_description || last.status_description() == description)) {
+      return;
+    }
   }
 
+  const auto update = CreateHealthUpdateMessage(state, code, description);
   LogUpdate(update);
 
   health_history_.push_back(update);
