@@ -80,7 +80,7 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
     // Extra sanity check to make sure we don't call back with old data
     if (header.sequence > last_header_.sequence) {
       if (num_current_dropped_messages_ > 0) {
-        trellis::core::Log::Warn("Dropped {} older messages until we caught up to the current sequence {}",
+        trellis::core::Log::Warn("Dropped {} messages until we caught up to the current sequence {}",
                                  num_current_dropped_messages_, header.sequence);
         num_current_dropped_messages_ = 0;
       }
@@ -94,8 +94,9 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
       // overwritten (newer) message, and then the current sequence number is now from an older message
 
       // A zeroed sequence lands here too: the writer abandoned a write that had already clobbered this slot, so the
-      // message this event announced no longer exists. The warning above cannot tell the two apart, so a burst of it
-      // does not by itself mean the subscriber is falling behind.
+      // message this event announced no longer exists. The warning above counts these together with lapped messages
+      // and with slots the writer held when we tried to read them, so a burst of it does not by itself mean the
+      // subscriber is falling behind.
 
       // We don't want to call back with the older message so we'll drop it.
       // We already collect metrics of dropped messages at the subscriber layer, so here we just keep an internal count
@@ -103,10 +104,9 @@ void ShmReader::ProcessEvent(const unix::SocketEvent::Event& event) {
       ++num_current_dropped_messages_;
     }
   } else {
-    throw std::runtime_error(fmt::format(
-        "Failed to take reader lock for buffer {} at index {}. There is contention with the writer. We must be falling "
-        "behind!",
-        file.Handle(), buffer_index));
+    // The writer is already rewriting this slot, so the message this event announced is gone. Count it as dropped,
+    // like a lapped message, rather than end the node.
+    ++num_current_dropped_messages_;
   }
 }
 

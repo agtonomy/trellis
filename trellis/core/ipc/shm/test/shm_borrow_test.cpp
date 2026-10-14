@@ -540,5 +540,42 @@ TEST_F(ShmBorrowTest, ReaderBorrowOutlivesTheCallback) {
   }
 }
 
+// Short by necessity, like ReaderBorrowOutlivesTheCallback
+TEST_F(ShmBorrowTest, ReaderSkipsASlotTheWriterHolds) {
+  constexpr size_t kNumBuffers = 2;
+  constexpr int kMaxPolls = 200;
+  const std::string reader_id = "r";
+  CreateWriter(kNumBuffers);
+
+  std::vector<std::string> handles;
+  for (size_t i = 0; i < kNumBuffers; ++i) {
+    handles.push_back(SlotHandle(Writer().GetMemoryFilePrefix(), i));
+  }
+  std::vector<std::string> received;
+  const auto reader = ShmReader::Create(
+      loop_, reader_id, handles,
+      [&received](ShmFile::SMemFileHeader, BorrowedPayload payload) { received.push_back(BytesOf(payload)); }, config_);
+  ASSERT_TRUE(reader->IsInitialized());
+  Writer().AddReader(reader_id);
+
+  // Hold slot 0's write lock, as a writer rewriting it would, while the reader handles the event for message 0
+  Write("message 0");
+  ShmReadWriteLock slot0_lock{ShmReadWriteLock::GenerateLockName(handles[0]), /* owner = */ false, config_};
+  ASSERT_TRUE(slot0_lock.TryLockWrite());
+  for (int poll = 0; poll < kMaxPolls; ++poll) {
+    loop_.PollOne();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  ASSERT_TRUE(slot0_lock.Unlock());
+  EXPECT_TRUE(received.empty());
+
+  Write("message 1");
+  for (int poll = 0; poll < kMaxPolls && received.empty(); ++poll) {
+    loop_.PollOne();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(received, std::vector<std::string>{"message 1"});
+}
+
 }  // namespace
 }  // namespace trellis::core::ipc::shm
