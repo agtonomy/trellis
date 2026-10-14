@@ -19,6 +19,7 @@
 
 #include <google/protobuf/descriptor.h>
 
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -157,7 +158,11 @@ class Server {
                               if (ec) {
                                 return;  // nothing to do, this socket will get destructed
                               }
-                              const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
+                              const uint32_t length = ReadFrameLength(*receive_header_buf);
+                              if (IsFrameTooLarge(length)) {
+                                trellis::core::Log::Warn("Closing an RPC connection: request claims {} bytes", length);
+                                return;  // dropping the last reference to client closes the socket
+                              }
                               auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
                               client->AsyncReceiveAll(
                                   receive_buffer->data(), receive_buffer->size(),
@@ -215,7 +220,7 @@ class Server {
       response.SerializeToString(send_buffer.get());
       uint32_t size = send_buffer->size();
       auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
-      memcpy(send_header_buf.get(), &size, sizeof(size));
+      std::memcpy(send_header_buf.get(), &size, sizeof(size));
 
       // The service goes to the loop with the reply, so that if this is its last owner, it is released on the loop's
       // thread. A stopped loop runs nothing more, and releasing it here is then allowed.

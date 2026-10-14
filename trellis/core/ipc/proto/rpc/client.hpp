@@ -18,6 +18,7 @@
 #ifndef TRELLIS_CORE_IPC_PROTO_RPC_CLIENT_HPP_
 #define TRELLIS_CORE_IPC_PROTO_RPC_CLIENT_HPP_
 
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -354,6 +355,15 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     });
   }
 
+  // The unread body would be taken for the next call's reply, so the connection is replaced as well.
+  void FailOversizedResponse(uint32_t length) {
+    trellis::core::Log::Warn("Service {} replied with a {} byte response, over the {} byte limit",
+                             PROTO_SERVICE_T::descriptor()->full_name(), length, kMaxFrameSize);
+    pending_request_->respond(kFailure, nullptr);
+    ReplaceConnection();
+    FinishPendingRequest();
+  }
+
   // Call when the pending request is done, whatever its outcome. Clears it and lets the next one start.
   void FinishPendingRequest() {
     CleanPendingRequest();
@@ -389,7 +399,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     // Generate our header payload which contains the size
     const uint32_t size = pending_request_->request_buffer->size();
     auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
-    memcpy(send_header_buf.get(), &size, sizeof(size));
+    std::memcpy(send_header_buf.get(), &size, sizeof(size));
 
     // Each handler needs the socket and request it started on: tcp_client_ may be gone or replaced by the time it
     // runs. A client not owned by a shared_ptr throws here rather than silently dropping every handler.
@@ -461,10 +471,12 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                                     }
 
                                     // Since performance is not critical for RPCs, and because we don't know the receive
-                                    // payload size ahead of time, we'll dynamically allocate the buffer size. The
-                                    // protocol does not enforce any specific limit on payload size beyond the 32-bit
-                                    // length field.
-                                    const uint32_t length = *reinterpret_cast<uint32_t*>(receive_header_buf->data());
+                                    // payload size ahead of time, we'll dynamically allocate the buffer size.
+                                    const uint32_t length = ReadFrameLength(*receive_header_buf);
+                                    if (IsFrameTooLarge(length)) {
+                                      self->FailOversizedResponse(length);
+                                      return;
+                                    }
                                     auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
                                     // tcp is captured to keep the socket alive: AsyncReceiveAll continues partial
                                     // reads through it.

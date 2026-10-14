@@ -19,13 +19,28 @@
 
 #include <google/protobuf/descriptor.h>
 
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
 namespace trellis::core::ipc::proto::rpc {
 
 enum ServiceCallStatus { kTimedOut = 0, kSuccess = 1, kFailure = 2 };
-static constexpr unsigned kMaxBufferSize{65535u};  // TCP max
+/// The longest RPC request or response body a peer accepts. A longer length prefix closes the connection instead of
+/// allocating it. Far above any message an RPC is expected to carry.
+static constexpr uint32_t kMaxFrameSize{256u * 1024u * 1024u};
+
+/// The body length that a frame's 4-byte prefix claims, in host byte order.
+inline uint32_t ReadFrameLength(const std::array<uint8_t, sizeof(uint32_t)>& prefix) {
+  uint32_t length;
+  std::memcpy(&length, prefix.data(), sizeof(length));
+  return length;
+}
+
+/// Whether a frame of this body length must be refused rather than read.
+inline bool IsFrameTooLarge(uint32_t length) { return length > kMaxFrameSize; }
 
 /**
  * @brief Metadata for describing service methods.

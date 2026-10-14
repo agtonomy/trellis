@@ -16,7 +16,10 @@
  */
 
 #include <gtest/gtest.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 
+#include <array>
 #include <atomic>
 #include <functional>
 #include <future>
@@ -439,6 +442,71 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
 
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(fail_count.load(), 0u);
+}
+
+// A request whose length prefix is over the limit closes the connection instead of waiting for a body that size.
+TEST_F(TrellisFixture, ServerClosesAConnectionWhoseRequestIsTooLong) {
+  StartRunnerThread();
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+  WaitForDiscovery();
+
+  std::promise<uint16_t> port_promise;
+  asio::post(*GetNode().GetEventLoop(), [this, &port_promise]() {
+    for (const auto& sample : GetNode().GetDiscovery()->GetServiceSamples()) {
+      if (sample.service().sname() == TestService::descriptor()->full_name()) {
+        port_promise.set_value(sample.service().tcp_port());
+        return;
+      }
+    }
+    port_promise.set_value(0);
+  });
+  const uint16_t port = port_promise.get_future().get();
+  ASSERT_NE(port, 0);
+
+  asio::io_context io;
+  asio::ip::tcp::socket socket{io};
+  socket.connect(asio::ip::tcp::endpoint{asio::ip::make_address("127.0.0.1"), port});
+  const timeval receive_timeout{.tv_sec = 2, .tv_usec = 0};
+  ASSERT_EQ(::setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout)),
+            0);
+  const uint32_t too_long = kMaxFrameSize + 1;
+  asio::write(socket, asio::buffer(&too_long, sizeof(too_long)));
+  std::array<uint8_t, 1> byte{};
+  trellis::core::error_code ec;
+  socket.read_some(asio::buffer(byte), ec);
+  EXPECT_EQ(ec, asio::error::eof) << ec.message();
+
+  StopAndJoinRunnerThread();  // the server must not be destroyed while the loop can still accept on it
+}
+
+// A response whose length prefix is over the limit fails the call at once instead of waiting out its timeout.
+TEST_F(TrellisFixture, ClientFailsACallWhoseResponseIsTooLong) {
+  StartRunnerThread();
+
+  static constexpr uint32_t kTooLong = kMaxFrameSize + 1;
+  std::vector<network::TCP> accepted;  // held so the connections stay open
+  network::TCPServer oversized_server(
+      GetNode().GetEventLoop(), /* port = */ 0, [&accepted](const trellis::core::error_code& ec, network::TCP socket) {
+        if (!ec) {
+          socket.AsyncSendAll(&kTooLong, sizeof(kTooLong), [](const trellis::core::error_code&, size_t) {});
+          accepted.push_back(std::move(socket));
+        }
+      });
+  const auto handle = GetNode().GetDiscovery()->RegisterServiceServer(
+      std::string{TestService::descriptor()->full_name()}, oversized_server.GetPort(), MethodsMap{});
+  std::atomic<std::optional<ServiceCallStatus>> status;  // declared before client, whose destructor runs callbacks
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{}, [&status](ServiceCallStatus result, const test::TestTwo*) { status = result; },
+      /* timeout_ms = */ 5000);
+  ASSERT_TRUE(WaitUntil([&status]() { return status.load().has_value(); }));
+  EXPECT_EQ(status.load(), kFailure);
+
+  StopAndJoinRunnerThread();
+  GetNode().GetDiscovery()->Unregister(handle);
 }
 
 TEST_F(TrellisFixture, LongRunningCallTimeout) {
