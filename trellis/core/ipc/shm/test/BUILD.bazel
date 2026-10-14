@@ -21,6 +21,16 @@ cc_test(
 )
 
 cc_test(
+    name = "shm_cleanup_test",
+    srcs = ["shm_cleanup_test.cpp"],
+    deps = [
+        "//trellis/core/ipc/shm:shm_writer",
+        "@com_google_googletest//:gtest_main",
+        "@fmt",
+    ],
+)
+
+cc_test(
     name = "shm_generation_test",
     srcs = ["shm_generation_test.cpp"],
     deps = [

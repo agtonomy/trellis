@@ -19,12 +19,18 @@
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <signal.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
+#include <cerrno>
+#include <charconv>
 #include <exception>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <optional>
+#include <string_view>
 
 #include "trellis/core/logging.hpp"
 
@@ -57,10 +63,43 @@ ShmWriter::ReadWriteLocksContainer CreateReadWriteLocks(const ShmWriter::FilesCo
 }
 
 /**
- * @brief Removes all shm files, buffers and their locks alike, whose names start with a prefix. This is intended
- * to be used when no files with that name prefix are being used.
+ * @brief The pid in a writer's buffer or lock name, given the part after `trellis_<node>_`.
  *
- * @param file_name_prefix The prefix for the files that will be deleted.
+ * That part is `<pid>_<writer id>_<NNN>`, optionally followed by the lock suffix. Requiring exactly three numeric
+ * parts keeps out the objects of a node named `<node>_<digits>`, which share the prefix.
+ */
+std::optional<pid_t> OwnerPid(std::string_view suffix) {
+  if (suffix.ends_with(ShmReadWriteLock::kLockSuffix)) {
+    suffix.remove_suffix(ShmReadWriteLock::kLockSuffix.size());
+  }
+  const size_t first = suffix.find('_');
+  const size_t second = first == std::string_view::npos ? first : suffix.find('_', first + 1);
+  if (second == std::string_view::npos || suffix.find('_', second + 1) != std::string_view::npos) {
+    return std::nullopt;
+  }
+  const auto is_number = [](std::string_view part) {
+    return !part.empty() && part.find_first_not_of("0123456789") == std::string_view::npos;
+  };
+  const std::string_view pid_part = suffix.substr(0, first);
+  if (!is_number(pid_part) || !is_number(suffix.substr(first + 1, second - first - 1)) ||
+      !is_number(suffix.substr(second + 1))) {
+    return std::nullopt;
+  }
+  pid_t pid{};
+  if (std::from_chars(pid_part.data(), pid_part.data() + pid_part.size(), pid).ec != std::errc{}) {
+    return std::nullopt;  // too large to be a pid
+  }
+  return pid;
+}
+
+/**
+ * @brief Removes the shm buffers and locks with a name prefix that writers which have since exited left behind.
+ *
+ * Runs before this process creates its first writer, so an object that carries this process's own pid was left by an
+ * earlier process that had the same pid, as happens when a container restarts. A process of another user counts as
+ * alive (`kill` fails with `EPERM`, not `ESRCH`).
+ *
+ * @param file_name_prefix `trellis_<node>_`, the prefix of every object this node's writers create.
  */
 void RemoveSHMFiles(std::string_view file_name_prefix) {
   std::set<std::string> unlinked, failed_to_unlink;
@@ -68,20 +107,17 @@ void RemoveSHMFiles(std::string_view file_name_prefix) {
   std::string filename_str;
   for (const auto& file : std::filesystem::directory_iterator("/dev/shm/")) {
     filename_str = file.path().filename().string();
-    // This check ensures that we aren't deleting files from other processes.
     if (!filename_str.starts_with(file_name_prefix)) {
       continue;
     }
     std::string_view suffix{filename_str};
     suffix.remove_prefix(file_name_prefix.size());
-    if (suffix.ends_with(ShmReadWriteLock::kLockSuffix)) {
-      suffix.remove_suffix(ShmReadWriteLock::kLockSuffix.size());
-    }
-    // Excluding files that consist of just the filename prefix or are prefixed with this file's name.
-    // For a process named foo, the expected file names follow the pattern foo_01234 and foo_01234_mtx.
-    // The following excludes unrelated shm files with name patterns like foo, foo_fighters_01234, and foo_4_thought.
-    if (suffix.empty() || suffix.find_first_not_of("_0123456789") != std::string_view::npos) {
+    const auto pid = OwnerPid(suffix);
+    if (!pid.has_value()) {
       continue;
+    }
+    if (*pid != ::getpid() && !(::kill(*pid, 0) == -1 && errno == ESRCH)) {
+      continue;  // its writer may still be using it
     }
 
     try {
