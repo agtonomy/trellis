@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 
 #include <chrono>
+#include <cstring>
 #include <ranges>
 #include <stdexcept>
 #include <utility>
@@ -85,7 +86,8 @@ int CreateNativeUDPSocket(uint16_t port, int rcvbuf_size, int sndbuf_size) {
 struct SampleHeader {
   char head[4];  //-V112
   int32_t version;
-  int32_t len;                 // header: complete size of message, data: current size of that part
+  int32_t len;                 // bytes after this header in this datagram: the id length, the id, and this packet's
+                               // share of the payload
   uint32_t packet_index;       // 0-based index of this packet in the sequence
   uint32_t total_packets;      // total number of packets for this sample
   uint32_t total_sample_size;  // total size of the complete sample payload
@@ -221,48 +223,58 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
     return;
   }
 
-  const SampleHeader* header = static_cast<const SampleHeader*>(data);
+  // Copied out rather than cast in place: the datagram need not be aligned for SampleHeader. The id length is copied
+  // the same way, mirroring how GeneratePreamble writes both.
+  SampleHeader header;
+  ::memcpy(&header, buf, kHeaderSize);
+
   // Do we have enough data to cover the sample name length field?
   if (len < kHeaderSize + sizeof(uint16_t)) {
     return;
   }
 
+  uint16_t sample_id_string_length;
+  ::memcpy(&sample_id_string_length, buf + kHeaderSize, sizeof(sample_id_string_length));
   // Do we have enough data to cover the sample name string?
-  const uint16_t sample_id_string_length = (buf[kHeaderSize + 1] << 8) + buf[kHeaderSize];
   if (len < kHeaderSize + sizeof(uint16_t) + sample_id_string_length) {
     return;
   }
 
-  const size_t payload_size = header->len - sizeof(sample_id_string_length) - sample_id_string_length;
+  // The payload size comes from header.len, so it has to agree with the datagram. A len too large reads past the end
+  // of the datagram, and one too small to cover the id makes the payload size below wrap around.
+  if (header.len < 0 || static_cast<size_t>(header.len) != len - kHeaderSize) {
+    return;
+  }
+  const size_t payload_size = header.len - sizeof(sample_id_string_length) - sample_id_string_length;
   const unsigned sample_start_offset = kHeaderSize + sizeof(sample_id_string_length) + sample_id_string_length;
 
-  // Assume our buffer contains the entire sample payload. This is true in the case of header->total_packets == 1.
+  // Assume our buffer contains the entire sample payload. This is true in the case of header.total_packets == 1.
   // If this is a multi packet sample, we'll buffer the data below and update the pointer and size
   const char* sample_buffer = buf + sample_start_offset;
   size_t sample_buffer_size = payload_size;
   const std::string sample_id(buf + kHeaderSize + sizeof(sample_id_string_length), sample_id_string_length);
 
-  if (header->total_packets > 1) {
+  if (header.total_packets > 1) {
     // For multi-packet samples, we'll buffer the data until we received all the packets
     auto it = partial_samples_.find(sample_id);
     if (it == partial_samples_.end()) {
-      if (header->packet_index != 0) {
+      if (header.packet_index != 0) {
         return;  // Drop non-zero packets if we haven't seen packet 0
       }
       // Initialize partial sample for packet 0
       auto [new_it, inserted] = partial_samples_.try_emplace(sample_id);
       it = new_it;  // Update iterator
       auto& partial_sample = it->second;
-      partial_sample.total_packets = header->total_packets;
+      partial_sample.total_packets = header.total_packets;
       partial_sample.next_packet_index = 0;
       partial_sample.payload_buffer.clear();
-      partial_sample.payload_buffer.reserve(header->total_sample_size);
+      partial_sample.payload_buffer.reserve(header.total_sample_size);
     }
 
     auto& partial_sample = it->second;
 
     // Verify this is the expected packet in sequence
-    if (header->packet_index != partial_sample.next_packet_index) {
+    if (header.packet_index != partial_sample.next_packet_index) {
       // Out of order packet - reset and wait for sequence to restart
       partial_samples_.erase(sample_id);
       return;

@@ -86,6 +86,60 @@ bool HasTopic(const std::vector<Sample>& samples, const std::string& topic) {
   return std::any_of(samples.begin(), samples.end(),
                      [&topic](const Sample& sample) { return sample.topic().tname() == topic; });
 }
+
+bool HasProcess(const std::vector<Sample>& samples, const std::string& uname) {
+  return std::any_of(samples.begin(), samples.end(),
+                     [&uname](const Sample& sample) { return sample.process().uname() == uname; });
+}
+
+Sample FakeProcessSample(const std::string& id, const std::string& uname) {
+  Sample sample;
+  sample.set_id(id);
+  sample.set_type(discovery::process_registration);
+  sample.mutable_process()->set_uname(uname);
+  return sample;
+}
+
+void AppendLittleEndian(std::string& out, uint32_t value, size_t bytes) {
+  for (size_t i = 0; i < bytes; ++i) {
+    out.push_back(static_cast<char>((value >> (8 * i)) & 0xFF));
+  }
+}
+
+// One discovery datagram, built byte by byte as on the wire: the 24-byte header, the id length, the NUL-terminated
+// id, and the payload. `len` is the header's len field, which a well-formed datagram sets to its size minus 24.
+std::string Datagram(const std::string& id, const std::string& payload, int32_t len, uint32_t packet_index = 0,
+                     uint32_t total_packets = 1, uint32_t total_sample_size = 0) {
+  std::string out = "TRLS";
+  AppendLittleEndian(out, 1, 4);
+  AppendLittleEndian(out, static_cast<uint32_t>(len), 4);
+  AppendLittleEndian(out, packet_index, 4);
+  AppendLittleEndian(out, total_packets, 4);
+  AppendLittleEndian(out, total_sample_size, 4);
+  AppendLittleEndian(out, id.size() + 1, 2);
+  out += id;
+  out.push_back('\0');
+  out += payload;
+  return out;
+}
+
+// The len a well-formed datagram carrying `id` and `payload` declares: the id length field, the id with its NUL, and
+// the payload.
+int32_t WellFormedLen(const std::string& id, const std::string& payload) {
+  return static_cast<int32_t>(sizeof(uint16_t) + id.size() + 1 + payload.size());
+}
+
+std::string WellFormedDatagram(const Sample& sample) {
+  const std::string payload = sample.SerializeAsString();
+  return Datagram(sample.id(), payload, WellFormedLen(sample.id(), payload), 0, 1, payload.size());
+}
+
+void SendToDiscoveryPort(uint16_t port, const std::string& datagram) {
+  asio::io_context io;
+  asio::ip::udp::socket socket{io, asio::ip::udp::v4()};
+  socket.set_option(asio::socket_base::broadcast(true));
+  socket.send_to(asio::buffer(datagram), asio::ip::udp::endpoint{asio::ip::make_address("127.255.255.255"), port});
+}
 }  // namespace
 
 TEST(DiscoveryTests, IniitalConditions) {
@@ -556,6 +610,45 @@ TEST(DiscoveryTests, UnregisterPublisherWhilePolling) {
   EXPECT_TRUE(discovery.GetPubSubSamples().empty());
   EXPECT_NE(reg_count, 0);
   EXPECT_NE(unreg_count, 0);
+}
+
+// An id of 127 bytes, with its NUL, puts 0x80 in the id length field's low byte, which a signed char sign-extended.
+TEST(DiscoveryTests, AcceptsASampleIdOf127BytesOrMore) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig(20))));
+  SendToDiscoveryPort(Port(20), WellFormedDatagram(FakeProcessSample(std::string(127, 'x'), "long_id_node")));
+  ev.RunFor(std::chrono::milliseconds(50));
+  EXPECT_TRUE(HasProcess(discovery.GetProcessSamples(), "long_id_node"));
+}
+
+// Every byte after the header has to be accounted for by len, and len must not claim more than the datagram holds.
+// A well-formed datagram sent alongside shows the receiver was still taking samples.
+TEST(DiscoveryTests, DropsDatagramsWhoseLenDisagreesWithTheirSize) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig(21))));
+  const uint16_t port = Port(21);
+
+  // Bytes past what len covers. The sample within len parses, so without the check this one would be taken.
+  SendToDiscoveryPort(port, WellFormedDatagram(FakeProcessSample("trailing", "trailing_node")) + "junk");
+
+  // A len past the end of the datagram. Without the check the receiver reads beyond it, which shows up under a
+  // sanitizer; here the sample just fails to parse, so this case only pins that it is dropped.
+  const Sample long_len = FakeProcessSample("long_len", "long_len_node");
+  const std::string long_len_payload = long_len.SerializeAsString();
+  SendToDiscoveryPort(port,
+                      Datagram(long_len.id(), long_len_payload, WellFormedLen(long_len.id(), long_len_payload) + 100));
+
+  // A len too small to cover even the id made the payload size wrap around to nearly 2^64, and appending that much to
+  // a multi-packet sample threw out of the event loop.
+  SendToDiscoveryPort(port, Datagram("wrapped", "payload", 0, 0, 2, 100));
+  SendToDiscoveryPort(port, Datagram("negative", "payload", -1));
+
+  SendToDiscoveryPort(port, WellFormedDatagram(FakeProcessSample("valid", "valid_node")));
+  EXPECT_NO_THROW(ev.RunFor(std::chrono::milliseconds(50)));
+  const auto samples = discovery.GetProcessSamples();
+  EXPECT_TRUE(HasProcess(samples, "valid_node"));
+  EXPECT_FALSE(HasProcess(samples, "trailing_node"));
+  EXPECT_FALSE(HasProcess(samples, "long_len_node"));
 }
 
 }  // namespace trellis::core::discovery
