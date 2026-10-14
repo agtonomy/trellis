@@ -472,8 +472,9 @@ class Node {
    * A pending future timer does not count as ready, so it does not hold the loop short of idle. Intended as the
    * quiescence step for a simulated-time driver, between one clock advance and the next.
    *
-   * @param max_handlers safety bound against a handler that reposts itself unconditionally; reaching it logs a
-   *        warning rather than returning as though the loop had settled
+   * @param max_handlers safety bound against a handler that reposts itself unconditionally. If a handler is still
+   *        ready after this many have run, it runs too and a warning is logged, rather than returning as though the
+   *        loop had settled
    * @return false if the underlying facilities have stopped
    */
   bool RunUntilIdle(unsigned max_handlers = 1'000'000);

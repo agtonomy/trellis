@@ -269,7 +269,9 @@ bool Node::RunN(const unsigned n) {
     // poll_one will return immediately (never block). If it returned 0 there's
     // nothing to do right now, so we'll just drop out of the loop, otherwise we keep
     // polling so long as work is being done
-    while (ShouldRun() && ev_loop_.PollOne() && count++ < n);
+    while (count < n && ShouldRun() && ev_loop_.PollOne()) {
+      ++count;
+    }
     return ShouldRun();
   } catch (const std::exception& e) {
     Log::Error("Unhandled std::exception: {}", e.what());
@@ -288,9 +290,9 @@ bool Node::RunUntilIdle(const unsigned max_handlers) {
   try {
     unsigned count{0};
     while (ShouldRun() && ev_loop_.PollOne()) {
-      // Reaching the cap means a handler keeps rescheduling itself; leaving work queued without a word would look
-      // like a settled loop, so warn instead of returning silently.
-      if (++count >= max_handlers) {
+      // A handler ran after the cap was reached, so one keeps rescheduling itself. A loop that went idle on exactly
+      // the last allowed handler never gets here.
+      if (count++ == max_handlers) {
         Log::Warn("RunUntilIdle ran {} handlers without reaching quiescence; work may remain on the loop",
                   max_handlers);
         break;

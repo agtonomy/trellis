@@ -363,6 +363,45 @@ TEST(TrellisNode, RunUntilIdleStopsAtTheSafetyCap) {
   asio::post(*node.GetEventLoop(), forever);
 
   static constexpr unsigned kCap{100};
+  Log::SetLogLevel(Log::LogLevel::kDebug);  // Node sets "fatal" by default, which hides the warning
+  testing::internal::CaptureStdout();
   EXPECT_TRUE(node.RunUntilIdle(kCap));
+  const std::string output = testing::internal::GetCapturedStdout();
+  // The handler past the cap is what shows work remains.
+  EXPECT_EQ(ran, kCap + 1);
+  EXPECT_NE(output.find("without reaching quiescence"), std::string::npos);
+}
+
+// A loop that goes idle on exactly the last allowed handler has settled, so the cap must not warn.
+TEST(TrellisNode, RunUntilIdleSettlingAtTheCapDoesNotWarn) {
+  Config config(DataPath(kBaseFilename));
+  Node node("node", config);
+
+  static constexpr unsigned kCap{100};
+  unsigned ran{0};
+  for (unsigned i = 0; i < kCap; ++i) {
+    asio::post(*node.GetEventLoop(), [&ran]() { ++ran; });
+  }
+
+  Log::SetLogLevel(Log::LogLevel::kDebug);
+  testing::internal::CaptureStdout();
+  EXPECT_TRUE(node.RunUntilIdle(kCap));
+  const std::string output = testing::internal::GetCapturedStdout();
   EXPECT_EQ(ran, kCap);
+  EXPECT_EQ(output.find("without reaching quiescence"), std::string::npos) << output;
+}
+
+TEST(TrellisNode, RunNRunsExactlyNHandlers) {
+  Config config(DataPath(kBaseFilename));
+  Node node("node", config);
+
+  unsigned ran{0};
+  for (unsigned i = 0; i < 5; ++i) {
+    asio::post(*node.GetEventLoop(), [&ran]() { ++ran; });
+  }
+
+  EXPECT_TRUE(node.RunN(3));
+  EXPECT_EQ(ran, 3u);
+  EXPECT_TRUE(node.RunOnce());
+  EXPECT_EQ(ran, 4u);
 }
