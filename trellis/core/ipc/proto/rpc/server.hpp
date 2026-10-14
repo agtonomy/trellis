@@ -78,6 +78,14 @@ class Server {
                         return;
                       }
                       auto client = std::make_shared<network::TCP>(std::move(socket));
+                      // Each frame is two writes, length then body, and Nagle's algorithm would hold the body until
+                      // the peer delayed its ACK of the length, about 40 ms
+                      trellis::core::error_code nodelay_ec;
+                      client->SetNoDelay(nodelay_ec);
+                      if (nodelay_ec) {
+                        trellis::core::Log::Warn("Failed to set TCP_NODELAY on an RPC connection: {}",
+                                                 nodelay_ec.message());
+                      }
                       clients_.emplace_back(client);
                       ReceiveNextRequest(client);
                     }} {

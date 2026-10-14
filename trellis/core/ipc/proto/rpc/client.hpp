@@ -302,7 +302,15 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
   // exception would take down Node::Run().
   std::shared_ptr<network::TCP> Connect(uint16_t port) {
     try {
-      return std::make_shared<network::TCP>(loop_, "127.0.0.1", port);
+      auto connection = std::make_shared<network::TCP>(loop_, "127.0.0.1", port);
+      // See the server's accept handler: without it each frame waits about 40 ms on the server's delayed ACK
+      trellis::core::error_code nodelay_ec;
+      connection->SetNoDelay(nodelay_ec);
+      if (nodelay_ec) {
+        trellis::core::Log::Warn("Failed to set TCP_NODELAY on the connection to service {}: {}",
+                                 PROTO_SERVICE_T::descriptor()->full_name(), nodelay_ec.message());
+      }
+      return connection;
     } catch (const std::exception& e) {
       trellis::core::Log::Warn("Failed to connect to service {} on port {}: {}",
                                PROTO_SERVICE_T::descriptor()->full_name(), port, e.what());

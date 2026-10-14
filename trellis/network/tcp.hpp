@@ -184,6 +184,13 @@ class TCP {
   bool IsOpen() const { return socket_->is_open(); }
 
   /**
+   * SetNoDelay turns off Nagle's algorithm, so small writes go out at once instead of waiting for the peer's ACK
+   *
+   * @param ec set if the option could not be applied
+   */
+  void SetNoDelay(trellis::core::error_code& ec) { socket_->set_option(asio::ip::tcp::no_delay(true), ec); }
+
+  /**
    * GetPort retrieve the port that this socket is bound to
    *
    * This can be useful in cases where the OS selected the port for us (e.g. when 0 is used)
