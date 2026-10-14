@@ -934,6 +934,89 @@ TEST_F(TrellisFixture, CallOnLoopWithoutConnectionFailsInline) {
   EXPECT_TRUE(future.get());
 }
 
+// A registration can name a server that has since gone, such as a stale sample. Connecting to it is refused, and
+// that refusal used to throw out of the discovery callback and end Node::Run(). The client must instead stay up and
+// connect once discovery reports a server it can reach. The call at the end only goes through if the loop survived.
+TEST_F(TrellisFixture, RegistrationForAServerThatIsGoneDoesNotEndTheLoop) {
+  // The port of a listener that has been destroyed, which closed it, so a connect to it is refused.
+  const auto closed_port = [this]() {
+    const network::TCPServer gone(GetNode().GetEventLoop(), /* port = */ 0,
+                                  [](const trellis::core::error_code&, network::TCP) {});
+    return gone.GetPort();
+  }();
+  // Declared before the client: ~Client() runs the callback that references it.
+  std::promise<std::pair<ServiceCallStatus, float>> result;
+  StartRunnerThread();
+
+  const auto stale = GetNode().GetDiscovery()->RegisterServiceServer(
+      std::string{TestService::descriptor()->full_name()}, closed_port, MethodsMap{});
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+
+  GetNode().GetDiscovery()->Unregister(stale);
+  WaitForDiscovery();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(std::make_shared<TestServiceHandler>());
+  WaitForDiscovery();
+  asio::post(*GetNode().GetEventLoop(), [&client, &result]() {
+    test::Test request;
+    request.set_id(7);
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request,
+        [&result](ServiceCallStatus status, const test::TestTwo* response) {
+          result.set_value({status, status == kSuccess ? response->foo() : 0.0f});
+        },
+        /* timeout_ms = */ 1000);
+  });
+  auto reply = result.get_future();
+  ASSERT_EQ(reply.wait_for(std::chrono::seconds{2}), std::future_status::ready)
+      << "no reply: the refused connect may have ended Node::Run()";
+  EXPECT_EQ(reply.get(), std::make_pair(kSuccess, 7.0f));
+  StopAndJoinRunnerThread();
+}
+
+// A registration for a server that has gone keeps arriving, once a heartbeat, while the client is connected to a live
+// server. Each one names another port, so the client tries to move to it. The connect is refused, and the client must
+// keep the connection it has rather than drop it and fail the call on it.
+TEST_F(TrellisFixture, RegistrationForAServerThatIsGoneKeepsTheLiveConnection) {
+  static constexpr int kCalls = 20;
+  const auto closed_port = [this]() {
+    const network::TCPServer gone(GetNode().GetEventLoop(), /* port = */ 0,
+                                  [](const trellis::core::error_code&, network::TCP) {});
+    return gone.GetPort();
+  }();
+  // Declared before the client: ~Client() runs the callbacks that reference these.
+  std::atomic<unsigned> success_count{0};
+  std::atomic<unsigned> other_count{0};
+  StartRunnerThread();
+
+  auto client = GetNode().CreateServiceClient<TestService>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(std::make_shared<TestServiceHandler>());
+  WaitForDiscovery();
+  const auto stale = GetNode().GetDiscovery()->RegisterServiceServer(
+      std::string{TestService::descriptor()->full_name()}, closed_port, MethodsMap{});
+
+  // One call at a time, spread over several heartbeats so the stale registration arrives between them.
+  for (int i = 0; i < kCalls; ++i) {
+    const auto answered = success_count.load() + other_count.load();
+    test::Test request;
+    request.set_id(i);
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", request,
+        [&success_count, &other_count](ServiceCallStatus status, const test::TestTwo*) {
+          ++(status == kSuccess ? success_count : other_count);
+        },
+        /* timeout_ms = */ 1000);
+    ASSERT_TRUE(WaitUntil([&]() { return success_count.load() + other_count.load() > answered; }))
+        << "call " << i << " was never answered";
+    std::this_thread::sleep_for(std::chrono::milliseconds{kTestDiscoveryInterval / 2});
+  }
+  StopAndJoinRunnerThread();  // the callbacks reference locals of this function
+
+  EXPECT_EQ(success_count.load(), static_cast<unsigned>(kCalls));
+  EXPECT_EQ(other_count.load(), 0u) << "a stale registration cost the client its live connection";
+  GetNode().GetDiscovery()->Unregister(stale);
+}
+
 // A reply still owed when the event loop stops is lost, because the send is posted to the loop and a stopped loop
 // never runs it. What keeps that from stranding the caller is ~Server() closing the caller's socket, which completes
 // the receive the caller is sitting on with an error. Shutdown therefore has to destroy the Server, not just stop the

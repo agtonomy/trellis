@@ -80,8 +80,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     // as it is registered, which a loopback instance does by replaying the registrations it already holds. From the
     // body every member is constructed before the first delivery can arrive; from the initializer list tcp_client_
     // was still uninitialized storage, and a delivery that dereferenced it segfaulted.
-    callback_handle_ = discovery_->AsyncReceiveServices([this, loop](discovery::Discovery::EventType event,
-                                                                     const discovery::Sample& sample) {
+    callback_handle_ = discovery_->AsyncReceiveServices([this](discovery::Discovery::EventType event,
+                                                               const discovery::Sample& sample) {
       if (sample.service().sname() == PROTO_SERVICE_T::descriptor()->full_name()) {
         const auto tcp_port = sample.service().tcp_port();
         if (event == discovery::Discovery::EventType::kNewUnregistration) {
@@ -98,7 +98,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
           if (!tcp_client_) {
             trellis::core::Log::Info("Received registration for service {} server on port {}, creating TCP connection",
                                      PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-            tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
+            tcp_client_ = Connect(tcp_port);
           } else {
             // if for some reason tcp_client_ is set already, but on the wrong port
             const auto maybe_remote_port = tcp_client_->GetRemotePort();
@@ -106,8 +106,12 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
               trellis::core::Log::Info(
                   "Received registration for service {} server on port {}, updating existing TCP connection",
                   PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
-              DropConnection();
-              tcp_client_ = std::make_shared<network::TCP>(loop, "127.0.0.1", tcp_port);
+              // Connect before dropping: a registration that keeps arriving for a server that has gone would
+              // otherwise close a working connection, and fail the call on it, every time it came.
+              if (auto replacement = Connect(tcp_port)) {
+                DropConnection();
+                tcp_client_ = std::move(replacement);
+              }
             }
           }
         }
@@ -292,6 +296,19 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     ProcessNextRequest();
   }
 
+  // Returns a connection to the server on `port`, or null if the connect fails, as it does for a server that has gone
+  // since it registered. Logs rather than throws: discovery and the timeout timer call this on the loop, where an
+  // exception would take down Node::Run().
+  std::shared_ptr<network::TCP> Connect(uint16_t port) {
+    try {
+      return std::make_shared<network::TCP>(loop_, "127.0.0.1", port);
+    } catch (const std::exception& e) {
+      trellis::core::Log::Warn("Failed to connect to service {} on port {}: {}",
+                               PROTO_SERVICE_T::descriptor()->full_name(), port, e.what());
+      return nullptr;
+    }
+  }
+
   // Reconnects to the same server on a new socket. If the connect fails there is no connection until the next
   // discovery heartbeat reports the server again, which the discovery callback reconnects on.
   void ReplaceConnection() {
@@ -300,14 +317,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
     }
     const auto port = tcp_client_->GetRemotePort();
     DropConnection();
-    if (!port.has_value()) {
-      return;
-    }
-    try {
-      tcp_client_ = std::make_shared<network::TCP>(loop_, "127.0.0.1", port.value());
-    } catch (const std::exception& e) {
-      trellis::core::Log::Warn("Failed to reconnect to service {} on port {} after a timeout: {}",
-                               PROTO_SERVICE_T::descriptor()->full_name(), port.value(), e.what());
+    if (port.has_value()) {
+      tcp_client_ = Connect(port.value());
     }
   }
 
