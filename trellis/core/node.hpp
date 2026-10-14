@@ -22,6 +22,7 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -211,7 +212,7 @@ class Node {
         Impl::Create(GetEventLoop(), std::string{topic}, std::move(callback), typename Impl::RawCallback{},
                      std::move(update_sim_fn), GetDiscovery(), config_, watchdog_timeout_ms,
                      std::move(watchdog_callback), max_frequency, std::move(converter));
-    subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
+    TrackSubscriber(impl);
     return impl;
   }
 
@@ -289,7 +290,7 @@ class Node {
     const auto impl = SubscriberRawImpl::Create(GetEventLoop(), std::move(topic), SubscriberRawImpl::Callback{},
                                                 std::move(callback), std::move(update_sim_fn), GetDiscovery(), config_,
                                                 watchdog_timeout_ms, std::move(watchdog_callback), max_frequency);
-    subscribers_.emplace_back(std::weak_ptr<SubscriberBase>(impl));
+    TrackSubscriber(impl);
     return impl;
   }
 
@@ -689,8 +690,16 @@ class Node {
   // Track the first invocation of the event loop
   bool first_run_{true};
 
-  // A list of the subscribers that have been created (for metrics collection)
+  // A list of the subscribers that have been created (for metrics collection). Subscribers may be created on any
+  // thread while the metrics timer reads the list on the loop, so it is guarded by subscribers_mutex_.
   std::vector<std::weak_ptr<SubscriberBase>> subscribers_;
+  std::mutex subscribers_mutex_;
+
+  /// Adds a subscriber to subscribers_, dropping entries whose subscriber is gone.
+  void TrackSubscriber(std::weak_ptr<SubscriberBase> subscriber);
+
+  /// The subscribers in subscribers_ that are still alive, dropping the rest.
+  std::vector<std::shared_ptr<SubscriberBase>> LiveSubscribers();
 
   // Optional metrics publisher and timer for internal node metrics (always constructed together)
   std::optional<std::pair<trellis::utils::metrics::MetricsPublisher, Timer>> metrics_;

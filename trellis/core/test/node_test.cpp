@@ -326,6 +326,34 @@ TEST(TrellisNodeSharedContext, GuestBuiltWhileHostLoopRunsSurvivesItsMetricsTime
   runner.join();
 }
 
+// Subscribers are created and dropped on this thread while the metrics timer walks the node's list of them on the
+// loop every millisecond. The list was unguarded, which TSAN reports, and the vector could reallocate mid-walk.
+TEST(TrellisNode, SubscribersCreatedWhileMetricsRunKeepTheLoopAlive) {
+  constexpr int kSubscribers{500};
+  Node node("subscriber_list", Config(YAML::Load(R"(
+    trellis:
+      discovery:
+        loopback_enabled: true
+      metrics:
+        enabled: true
+        interval_ms: 1
+    )")));
+  std::thread runner([&node]() { node.Run(); });
+
+  for (int i = 0; i < kSubscribers; ++i) {
+    auto sub = node.CreateSubscriber<test::Test>(
+        "subscriber_list_topic",
+        [](const time::TimePoint&, const time::TimePoint&, SubscriberImpl<test::Test>::MsgTypePtr) {});
+  }
+
+  std::promise<void> marker_ran;
+  asio::post(*node.GetEventLoop(), [&marker_ran]() { marker_ran.set_value(); });
+  EXPECT_EQ(marker_ran.get_future().wait_for(std::chrono::seconds{5}), std::future_status::ready)
+      << "the event loop stopped while subscribers were being created";
+  node.Stop();
+  runner.join();
+}
+
 // RunUntilIdle is the conductor's quiescence step: it must drain a whole cascade of posted work, however deep, not
 // stop at a fixed count the way RunN does.
 TEST(TrellisNode, RunUntilIdleDrainsAFullCascade) {

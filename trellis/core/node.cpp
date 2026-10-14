@@ -184,15 +184,13 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
       }
 
       // Collect and publish subscriber latency stats
-      for (const auto& weak_sub : subscribers_) {
-        if (auto sub = weak_sub.lock()) {
-          const auto stats = sub->GetLatestLatencyStats();
-          if (stats.count > 0) {
-            const auto& topic = sub->GetTopic();
-            metrics_->first.AddMeasurement(now, topic + "__latency_min_us", static_cast<double>(stats.min_us));
-            metrics_->first.AddMeasurement(now, topic + "__latency_mean_us", static_cast<double>(stats.mean_us));
-            metrics_->first.AddMeasurement(now, topic + "__latency_max_us", static_cast<double>(stats.max_us));
-          }
+      for (const auto& sub : LiveSubscribers()) {
+        const auto stats = sub->GetLatestLatencyStats();
+        if (stats.count > 0) {
+          const auto& topic = sub->GetTopic();
+          metrics_->first.AddMeasurement(now, topic + "__latency_min_us", static_cast<double>(stats.min_us));
+          metrics_->first.AddMeasurement(now, topic + "__latency_mean_us", static_cast<double>(stats.mean_us));
+          metrics_->first.AddMeasurement(now, topic + "__latency_max_us", static_cast<double>(stats.max_us));
         }
       }
 
@@ -222,6 +220,25 @@ Node::~Node() {
   }
   // Nothing to withdraw: the Discovery is this node's own and goes away with us.
   Stop();
+}
+
+void Node::TrackSubscriber(std::weak_ptr<SubscriberBase> subscriber) {
+  const std::lock_guard lock{subscribers_mutex_};
+  std::erase_if(subscribers_, [](const auto& weak_sub) { return weak_sub.expired(); });
+  subscribers_.push_back(std::move(subscriber));
+}
+
+std::vector<std::shared_ptr<SubscriberBase>> Node::LiveSubscribers() {
+  std::vector<std::shared_ptr<SubscriberBase>> live;
+  const std::lock_guard lock{subscribers_mutex_};
+  std::erase_if(subscribers_, [](const auto& weak_sub) { return weak_sub.expired(); });
+  live.reserve(subscribers_.size());
+  for (const auto& weak_sub : subscribers_) {
+    if (auto sub = weak_sub.lock()) {
+      live.push_back(std::move(sub));
+    }
+  }
+  return live;
 }
 
 int Node::Run() {
