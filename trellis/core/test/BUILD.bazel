@@ -88,6 +88,7 @@ cc_test(
         ":test_proto",
         "//trellis/core/discovery:descriptor_store",
         "//trellis/core/discovery:utils",
+        "//trellis/core/ipc/shm:shm_read_write_lock",
     ],
 )
 

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <future>
 #include <iostream>
 #include <random>
@@ -31,6 +32,7 @@
 
 #include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
 #include "trellis/core/test/test_fixture.hpp"
@@ -759,6 +761,44 @@ TEST(PublisherBufferSize, SendThrowsWhenMessageExceedsMaxBufferSize) {
 
   // The rejected message must not have disturbed the publisher: a message that fits still sends afterwards
   EXPECT_NO_THROW(pub->Send(small_msg));
+}
+
+// Readers holding every slot is contention, not an error: Send skips the shared memory copy rather than throw out of
+// the caller, which would end the node.
+TEST(PublisherContention, SendSkipsAMessageWhenReadersHoldEverySlot) {
+  const std::string node_name = fmt::format("SendSkipsWhenSlotsLocked_{}", ::getpid());
+  trellis::core::Node node(node_name, trellis::core::Config(YAML::Load(R"(
+    trellis:
+      publisher:
+        attributes:
+          num_buffers: 2
+      discovery:
+        interval: 100
+        sample_timeout: 200
+        port: 0
+    )")));
+  auto pub = node.CreatePublisher<test::Test>("test_contended_topic");
+  test::Test msg;
+  msg.set_msg("contended");
+  ASSERT_NO_THROW(pub->Send(msg));  // writes into shared memory: no subscriber is in this process
+
+  const std::string slot_prefix = fmt::format("trellis_{}_{}_", node_name, ::getpid());
+  std::vector<ipc::shm::ShmReadWriteLock> locks;
+  for (const auto& entry : std::filesystem::directory_iterator("/dev/shm")) {
+    const std::string name = entry.path().filename().string();
+    if (name.starts_with(slot_prefix) && name.ends_with(ipc::shm::ShmReadWriteLock::kLockSuffix)) {
+      locks.emplace_back(name, /* owner = */ false, Config{});
+      ASSERT_TRUE(locks.back().TryLockRead());
+    }
+  }
+  ASSERT_EQ(locks.size(), 2u);
+
+  EXPECT_NO_THROW(pub->Send(msg));
+
+  for (auto& lock : locks) {
+    ASSERT_TRUE(lock.Unlock());
+  }
+  EXPECT_NO_THROW(pub->Send(msg));
 }
 
 TEST(PublisherBufferSize, CreateThrowsWhenInitialBufferSizeExceedsMax) {

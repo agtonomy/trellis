@@ -146,7 +146,8 @@ ShmFile::WriteInfo ShmWriter::GetWriteAccess(const size_t minimum_size) {
     ++retries;
   }
   if (!got_lock) {
-    throw std::runtime_error("ShmWriter::GetWriteAccess - failed to obtain writer lock for every buffer!");
+    // Readers hold every slot. That is contention, not an error: the caller skips this message
+    return ShmFile::WriteInfo{};
   }
   auto& file = files_[buffer_index_];
   auto& lock = locks_.at(file.Handle());

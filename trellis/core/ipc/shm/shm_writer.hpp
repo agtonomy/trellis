@@ -76,6 +76,8 @@ class ShmWriter {
    * write lock is released before the exception escapes, and the buffer stays available to a later call. Only a call
    * that returns a non-null `data` pointer may be paired with `ReleaseWriteAccess`.
    *
+   * Returns a null `data` pointer when the writer has no buffers, or when readers hold every buffer's lock.
+   *
    * @param minimum_size Minimum size in bytes required for the write operation.
    * @return WriteInfo Struct containing pointer to buffer and available size.
    */

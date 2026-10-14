@@ -387,8 +387,10 @@ class PublisherImpl {
 
     ipc::shm::ShmFile::WriteInfo write_info = writer_->GetWriteAccess(buffer_size_);
     if (write_info.data == nullptr) {
-      // A null pointer means no slot was acquired, so there is no write lock to release here
-      throw std::runtime_error("PublisherImpl::Send Failed to obtain write access!");
+      // Readers hold every slot. Throwing would end the node over contention, so other processes miss this message
+      // instead. No slot was acquired, so there is no write lock to release here.
+      Log::Warn("Publisher on topic {} skipped a message: every shared memory slot was locked", topic_);
+      return;
     }
     ipc::shm::ShmWriter::WriteAccessGuard write_guard{*writer_, now};
 

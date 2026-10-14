@@ -5,7 +5,10 @@ cc_library(
     srcs = ["shm_read_write_lock.cpp"],
     hdrs = ["shm_read_write_lock.hpp"],
     linkopts = ["-lrt"],
-    visibility = ["//trellis/core/ipc/shm/test:__pkg__"],
+    visibility = [
+        "//trellis/core/ipc/shm/test:__pkg__",
+        "//trellis/core/test:__pkg__",
+    ],
     deps = [
         "//trellis/core:core_config",
         "//trellis/core:core_time",

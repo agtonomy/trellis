@@ -17,14 +17,17 @@
 
 #include "trellis/core/ipc/shm/shm_writer.hpp"
 
+#include <fmt/core.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
 
 #include <cstddef>
 #include <system_error>
+#include <vector>
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
+#include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/time.hpp"
 
 namespace trellis::core::ipc::shm {
@@ -80,6 +83,26 @@ TEST(ShmWriter, ResizeFailureRetiresNoBuffer) {
   }
 
   EXPECT_EQ(AcquireAndRelease(writer), first);
+}
+
+TEST(ShmWriter, ReturnsNoBufferWhenReadersHoldEveryLock) {
+  const trellis::core::Config config;
+  trellis::core::EventLoop loop;
+  constexpr size_t kNumBuffers = 2;
+  ShmWriter writer{fmt::format("shm_writer_test_{}", ::getpid()), loop, ::getpid(), kNumBuffers, kBufferSize, config};
+
+  std::vector<ShmReadWriteLock> locks;
+  for (size_t i = 0; i < kNumBuffers; ++i) {
+    locks.emplace_back(ShmReadWriteLock::GenerateLockName(fmt::format("{}_{:03}", writer.GetMemoryFilePrefix(), i)),
+                       /* owner = */ false, config);
+    ASSERT_TRUE(locks.back().TryLockRead());
+  }
+  EXPECT_EQ(writer.GetWriteAccess(kBufferSize).data, nullptr);
+
+  for (auto& lock : locks) {
+    ASSERT_TRUE(lock.Unlock());
+  }
+  EXPECT_NE(AcquireAndRelease(writer), nullptr);
 }
 
 }  // namespace trellis::core::ipc::shm
