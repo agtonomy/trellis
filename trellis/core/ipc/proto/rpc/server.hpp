@@ -78,8 +78,8 @@ class Server {
                         return;
                       }
                       auto client = std::make_shared<network::TCP>(std::move(socket));
-                      // Each frame is two writes, length then body, and Nagle's algorithm would hold the body until
-                      // the peer delayed its ACK of the length, about 40 ms
+                      // A reply is one write, but Nagle's algorithm would hold its tail, or the next reply, until the
+                      // peer delayed its ACK of what went before, about 40 ms
                       trellis::core::error_code nodelay_ec;
                       client->SetNoDelay(nodelay_ec);
                       if (nodelay_ec) {
@@ -87,7 +87,7 @@ class Server {
                                                  nodelay_ec.message());
                       }
                       clients_.emplace_back(client);
-                      ReceiveNextRequest(client);
+                      ReceiveNextRequest(client, std::make_shared<ReplyQueue>());
                     }} {
     // Registered here, not in the member-initializer list. Registering publishes our port, and a loopback Discovery
     // hands it to clients on the loop thread at once. A client can connect, and the accept handler above can run,
@@ -151,47 +151,56 @@ class Server {
     return map;
   }
 
+  /// Replies owed on one connection, sent one at a time. Touched only on the socket's executor.
+  struct ReplyQueue {
+    std::deque<std::string> frames;  ///< Each a 4-byte length followed by the serialized response
+    bool sending{false};
+  };
+
   /**
    * @brief Begin asynchronous receive loop for the given client.
    *
    * @param client Shared pointer to the TCP client.
+   * @param replies The client's reply queue.
    */
-  void ReceiveNextRequest(TCPClientPointer client) {
+  void ReceiveNextRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies) {
     // We chain together two receive attempts
     // 1. Receive 4-byte request payload size
     // 2. Receive request payload
     auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
-    client->AsyncReceiveAll(receive_header_buf->data(), receive_header_buf->size(),
-                            [this, receive_header_buf, client](const trellis::core::error_code& ec, size_t len) {
-                              if (ec) {
-                                return;  // nothing to do, this socket will get destructed
-                              }
-                              const uint32_t length = ReadFrameLength(*receive_header_buf);
-                              if (IsFrameTooLarge(length)) {
-                                trellis::core::Log::Warn("Closing an RPC connection: request claims {} bytes", length);
-                                return;  // dropping the last reference to client closes the socket
-                              }
-                              auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
-                              client->AsyncReceiveAll(
-                                  receive_buffer->data(), receive_buffer->size(),
-                                  [this, receive_buffer, client](const trellis::core::error_code& ec, size_t len) {
-                                    if (ec) {
-                                      return;  // nothing to do, this socket will get destructed
-                                    }
-                                    ProcessRequest(client, receive_buffer->data(), len);
-                                    ReceiveNextRequest(client);
-                                  });
-                            });
+    client->AsyncReceiveAll(
+        receive_header_buf->data(), receive_header_buf->size(),
+        [this, receive_header_buf, client, replies](const trellis::core::error_code& ec, size_t len) {
+          if (ec) {
+            return;  // nothing to do, this socket will get destructed
+          }
+          const uint32_t length = ReadFrameLength(*receive_header_buf);
+          if (IsFrameTooLarge(length)) {
+            trellis::core::Log::Warn("Closing an RPC connection: request claims {} bytes", length);
+            return;  // dropping the last reference to client closes the socket
+          }
+          auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
+          client->AsyncReceiveAll(
+              receive_buffer->data(), receive_buffer->size(),
+              [this, receive_buffer, client, replies](const trellis::core::error_code& ec, size_t len) {
+                if (ec) {
+                  return;  // nothing to do, this socket will get destructed
+                }
+                ProcessRequest(client, replies, receive_buffer->data(), len);
+                ReceiveNextRequest(client, replies);
+              });
+        });
   }
 
   /**
    * @brief Process a received request and invoke the appropriate protobuf method.
    *
    * @param client Shared pointer to the TCP client.
+   * @param replies The client's reply queue.
    * @param data Pointer to raw request data.
    * @param len Length of the data in bytes.
    */
-  void ProcessRequest(TCPClientPointer client, void* data, size_t len) {
+  void ProcessRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies, void* data, size_t len) {
     discovery::Request req;
     // The frame's length is already checked, so the stream stays in step: a bad body still gets its failed reply.
     const bool parsed = req.ParseFromArray(data, len);
@@ -199,7 +208,7 @@ class Server {
     // After parsing the request, we perform the remaining work on the background thread. The loop's io_context outlives
     // this, since the handler thread holds the loop.
     asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop_context = &*loop_, client,
-                                parsed, req = std::move(req)]() {
+                                replies, parsed, req = std::move(req)]() {
       // Owned while this runs, so a Server destroyed meanwhile does not take the service with it.
       auto prototype = service.lock();
       if (!prototype) {
@@ -228,13 +237,11 @@ class Server {
         response.mutable_header()->set_status(discovery::ServiceHeader::executed);
       }
 
-      // We use a shared pointer so we can copy the reference into the lambda while simultaneously
-      // accessing the data pointer when calling AsyncSend
-      auto send_buffer = std::make_shared<std::string>();
-      response.SerializeToString(send_buffer.get());
-      uint32_t size = send_buffer->size();
-      auto send_header_buf = std::make_shared<std::array<uint8_t, sizeof(size)>>();
-      std::memcpy(send_header_buf.get(), &size, sizeof(size));
+      // Serialized straight after room for the 4-byte length, which is filled in once the size is known.
+      std::string frame(sizeof(uint32_t), '\0');
+      response.AppendToString(&frame);
+      const uint32_t size = frame.size() - sizeof(uint32_t);
+      std::memcpy(frame.data(), &size, sizeof(size));
 
       // The service goes to the loop with the reply, so that if this is its last owner, it is released on the loop's
       // thread. A stopped loop runs nothing more, and releasing it here is then allowed.
@@ -244,18 +251,45 @@ class Server {
 
       // This runs on the RPC thread, but the socket belongs to the event loop, which is already waiting on it for
       // the next request. Post the send to the socket's own executor so operations are always started from the
-      // thread that owns it. Two replies must still never overlap on one socket, since AsyncSendAll chains partial
-      // sends; rpc::Client keeps one call in flight per socket, so they cannot.
-      // We chain together two send attempts
-      // 1. Send 4-byte response payload size
-      // 2. Send response payload
-      asio::post(client->GetExecutor(), [client, send_header_buf, send_buffer, prototype = std::move(prototype)]() {
-        client->AsyncSendAll(send_header_buf->data(), send_header_buf->size(),
-                             [send_header_buf, send_buffer, client](const trellis::core::error_code&, size_t) {
-                               client->AsyncSendAll(send_buffer->data(), send_buffer->size(),
-                                                    [client, send_buffer](const trellis::core::error_code&, size_t) {});
-                             });
-      });
+      // thread that owns it.
+      asio::post(client->GetExecutor(),
+                 [client, replies, frame = std::move(frame), prototype = std::move(prototype)]() mutable {
+                   replies->frames.push_back(std::move(frame));
+                   if (!replies->sending) {
+                     SendNextReply(client, replies);
+                   }
+                 });
+    });
+  }
+
+  /**
+   * @brief Send the oldest queued reply, then the next once it is fully written.
+   *
+   * AsyncSendAll may complete a reply in several writes, so a second reply started meanwhile would interleave its bytes
+   * with the first. That happens whenever a client sends a request before the previous reply is written, as one that
+   * gave up on a call and sent another does.
+   *
+   * @param client Shared pointer to the TCP client.
+   * @param replies The client's reply queue.
+   */
+  static void SendNextReply(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies) {
+    if (replies->frames.empty()) {
+      replies->sending = false;
+      return;
+    }
+    replies->sending = true;
+    // A reference, not a copy: the send points into the deque, whose push_back leaves the front in place, and only the
+    // completion below removes it. The completion holds replies, so the queue outlives the send.
+    const auto& frame = replies->frames.front();
+    client->AsyncSendAll(frame.data(), frame.size(), [client, replies](const trellis::core::error_code& ec, size_t) {
+      replies->frames.pop_front();
+      if (ec) {
+        // The connection is gone, so nothing queued behind this reply can be delivered either.
+        replies->frames.clear();
+        replies->sending = false;
+        return;
+      }
+      SendNextReply(client, replies);
     });
   }
 

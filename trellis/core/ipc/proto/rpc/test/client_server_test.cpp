@@ -826,6 +826,74 @@ TEST_F(TrellisFixture, HandlerFinishingAfterTheLoopStopsDoesNotLeakAServiceThatH
 }
 
 // The loop stops before the client is released, as it does when an app shuts down.
+// A raw caller sends a request whose 4MB reply takes several writes, and a second request right behind it. The
+// server used to start the second reply while the first was still being written, interleaving their bytes, so the
+// caller read a length from inside the first reply's payload.
+TEST_F(TrellisFixture, PipelinedRepliesAreWrittenOneAfterAnother) {
+  constexpr int kConnections{10};
+  StartRunnerThread();
+
+  std::atomic<uint16_t> port{0};
+  const auto discovery_handle = GetNode().GetDiscovery()->AsyncReceiveServices(
+      [&port](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+        if (event == discovery::Discovery::EventType::kNewRegistration &&
+            sample.service().sname() == trellis::core::test::TestService::descriptor()->full_name()) {
+          port = static_cast<uint16_t>(sample.service().tcp_port());
+        }
+      });
+  auto handler = std::make_shared<TestServiceHandler>();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+  WaitForDiscovery();
+  ASSERT_NE(port.load(), 0);
+
+  for (int connection = 0; connection < kConnections; ++connection) {
+    trellis::core::EventLoop caller_loop;
+    network::TCP caller{caller_loop, "127.0.0.1", port.load()};
+    const auto send_exactly = [&caller](const void* buffer, size_t size) {
+      for (size_t sent = 0; sent < size;) {
+        sent += caller.Send(static_cast<const uint8_t*>(buffer) + sent, size - sent);
+      }
+    };
+    const auto send_request = [&send_exactly](unsigned id, std::string msg) {
+      test::Test payload;
+      payload.set_id(id);
+      payload.set_msg(std::move(msg));
+      discovery::Request request;
+      request.mutable_header()->set_mname("DoStuff");
+      payload.SerializeToString(request.mutable_request());
+      const std::string wire = request.SerializeAsString();
+      const uint32_t size = wire.size();
+      send_exactly(&size, sizeof(size));
+      send_exactly(wire.data(), wire.size());
+    };
+    const auto receive_exactly = [&caller](void* buffer, size_t size) {
+      for (size_t received = 0; received < size;) {
+        received += caller.Receive(static_cast<uint8_t*>(buffer) + received, size - received);
+      }
+    };
+
+    send_request(100, std::string(kLargeMessageTestSize, 'B'));  // the handler answers id 100 with 4MB
+    send_request(7, "small");
+
+    for (const float expected_foo : {100.0f, 7.0f}) {
+      uint32_t length = 0;
+      receive_exactly(&length, sizeof(length));
+      ASSERT_LE(length, 2 * kLargeMessageTestSize) << "connection " << connection << " read a length from mid-reply";
+      std::vector<uint8_t> frame(length);
+      receive_exactly(frame.data(), frame.size());
+      discovery::Response response;
+      test::TestTwo reply;
+      ASSERT_TRUE(response.ParseFromArray(frame.data(), frame.size()) && reply.ParseFromString(response.response()))
+          << "connection " << connection << " got a garbled reply";
+      EXPECT_EQ(reply.foo(), expected_foo) << "connection " << connection;
+    }
+    caller.Close();
+  }
+
+  StopAndJoinRunnerThread();
+  GetNode().GetDiscovery()->StopReceive(discovery_handle);
+}
+
 TEST_F(TrellisFixture, FailsCallsOnDestruction) {
   StartRunnerThread();
 
