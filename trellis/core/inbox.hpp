@@ -290,14 +290,20 @@ class Inbox {
    * during the execution of this method.
    *
    * @param time the current time at which to check the inbox
-   * @return OwningMessages for each topic.
+   * @return OwningMessages for each topic, or none at all once the loop has stopped, rather than waiting for a loop
+   * that will never run again.
    */
   OwningMessages GetMessagesCopy(const time::TimePoint& time) const {
     // Run on the event loop, as this function may be called from a different thread.
-    return RunOnEventLoop(ev_, [this, time]() {
-      return std::apply([&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); },
-                        receivers_);
-    });
+    try {
+      return RunOnEventLoop(ev_, [this, time]() {
+        return std::apply(
+            [&time](const auto&... receivers) { return std::make_tuple(ReceiveCopy(time, receivers)...); }, receivers_);
+      });
+    } catch (const EventLoopStopped&) {
+      // Usually shutdown. Throwing instead would end a service handler and with it the process.
+      return OwningMessages{};
+    }
   }
 
   /// @brief A convenient helper for InboxReturnType.

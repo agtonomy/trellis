@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -195,4 +196,28 @@ TEST(TrellisRunOnEventLoop, GivesUpOnceStoppingIsSet) {
   const auto result = trellis::core::RunOnEventLoop(loop, []() { return 7; }, stopping, std::chrono::milliseconds{1});
   setter.join();
   EXPECT_EQ(result, std::nullopt);
+}
+
+// A stopped loop never runs queued work again, so waiting for it would never end.
+TEST(TrellisRunOnEventLoop, ThrowsOnceTheLoopIsStoppedInsteadOfWaiting) {
+  trellis::core::EventLoop loop;
+  loop.Stop();
+  auto ran = std::make_shared<std::atomic<bool>>(false);
+  std::promise<bool> threw;
+  auto waiter = std::thread{[&loop, ran, &threw]() {
+    try {
+      trellis::core::RunOnEventLoop(loop, [ran]() { *ran = true; });
+      threw.set_value(false);
+    } catch (const trellis::core::EventLoopStopped&) {
+      threw.set_value(true);
+    }
+  }};
+  auto result = threw.get_future();
+  if (result.wait_for(std::chrono::seconds{2}) != std::future_status::ready) {
+    waiter.detach();
+    FAIL() << "RunOnEventLoop waited on a stopped loop";
+  }
+  waiter.join();
+  EXPECT_TRUE(result.get());
+  EXPECT_FALSE(*ran);
 }

@@ -24,6 +24,7 @@
 #include <future>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <type_traits>
 
 #include "trellis/core/timer_options.hpp"
@@ -212,6 +213,11 @@ class EventLoop {
   const void* owner_{nullptr};
 };
 
+/// @brief Thrown by RunOnEventLoop when the loop is stopped before it starts the work, so the work will never run.
+struct EventLoopStopped : std::runtime_error {
+  EventLoopStopped() : std::runtime_error{"the event loop stopped before it ran the work"} {}
+};
+
 /**
  * @brief Run work on an event loop and block until it returns
  *
@@ -219,18 +225,31 @@ class EventLoop {
  * loop may touch. Dispatched rather than posted, so a call from the loop itself runs inline instead of waiting on
  * itself.
  *
- * Blocks for as long as the loop takes to run the work, which is forever if the loop never runs it again. A caller
- * that can be left waiting through shutdown should pass a stop flag to the overload below.
+ * Blocks for as long as the loop takes to run the work, which is forever if the loop is never run again without being
+ * stopped. A caller that can be left waiting through shutdown should pass a stop flag to the overload below.
  *
  * @param loop the loop to run the work on
  * @param work the work to run
  * @return what the work returned; an exception the work threw is rethrown here
+ * @throws EventLoopStopped if the loop is stopped before it starts the work. The work is then never run.
  */
 template <typename WORK_T>
 std::invoke_result_t<WORK_T> RunOnEventLoop(const EventLoop& loop, WORK_T work) {
   auto task = std::packaged_task<std::invoke_result_t<WORK_T>()>{std::move(work)};
   auto result = task.get_future();
-  asio::dispatch(*loop, [task = std::move(task)]() mutable { task(); });
+  // Whichever of the loop and the waiter claims this first decides: the loop runs the work, or the waiter gives up on
+  // it. A waiter can't give up on work that has already started.
+  auto claimed = std::make_shared<std::atomic<bool>>(false);
+  asio::dispatch(*loop, [task = std::move(task), claimed]() mutable {
+    if (!claimed->exchange(true)) {
+      task();
+    }
+  });
+  while (result.wait_for(std::chrono::milliseconds{100}) != std::future_status::ready) {
+    if ((*loop).stopped() && !claimed->exchange(true)) {
+      throw EventLoopStopped{};
+    }
+  }
   return result.get();
 }
 

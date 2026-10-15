@@ -269,11 +269,15 @@ int Node::Run() {
     Log::Error("Unhandled std::exception: {}", e.what());
     crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
+    // Nothing will run this loop again, so say so: work queued on it through RunOnEventLoop gives up instead of
+    // waiting.
+    ev_loop_.Stop();
     return 1;
   } catch (...) {
     Log::Error("Unhandled unknown exception occurred.");
     crash_counter_.MarkUncleanExit();
     ipc::NamedResourceRegistry::Get().UnlinkAll();
+    ev_loop_.Stop();  // see above
     return 1;
   }
 

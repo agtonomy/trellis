@@ -19,6 +19,10 @@
 
 #include <gmock/gmock.h>
 
+#include <future>
+#include <stdexcept>
+#include <thread>
+
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test_fixture.hpp"
 
@@ -621,6 +625,26 @@ TEST_F(TrellisFixture, GetMessagesCopy) {
 
   ASSERT_THAT(inbox.GetMessagesCopy(kT0 + 110ms), FieldsAre(Eq(std::nullopt), IsEmpty(), IsEmpty(), Eq(std::nullopt)))
       << "Messages have timed out.";
+}
+
+// An exception ends Node::Run(), and nothing runs the loop after that. A copy requested from another thread then waited
+// for the loop forever, hanging the caller (a service handler, or this test until its timeout).
+TEST_F(TrellisFixture, GetMessagesCopyReturnsNothingOnceTheLoopHasDied) {
+  const auto inbox = Inbox<Latest<test::Test>>{GetNode(), {"topic_1"}, {100ms}};
+  StartRunnerThread();
+  asio::post(*GetNode().GetEventLoop(), []() { throw std::runtime_error{"handler failed"}; });
+  ASSERT_TRUE(WaitUntil([this]() { return (*GetNode().GetEventLoop()).stopped(); }))
+      << "Node::Run() exited without marking its loop stopped";
+
+  std::promise<decltype(inbox)::OwningMessages> copied;
+  auto caller = std::thread{[&inbox, &copied]() { copied.set_value(inbox.GetMessagesCopy(kT0)); }};
+  auto result = copied.get_future();
+  if (result.wait_for(std::chrono::seconds{2}) != std::future_status::ready) {
+    caller.detach();
+    FAIL() << "GetMessagesCopy waited on a loop that will never run again";
+  }
+  caller.join();
+  EXPECT_THAT(result.get(), FieldsAre(Eq(std::nullopt)));
 }
 
 TEST_F(TrellisFixture, ConvertingInbox) {
