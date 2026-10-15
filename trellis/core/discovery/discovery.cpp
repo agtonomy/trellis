@@ -84,6 +84,10 @@ int CreateNativeUDPSocket(uint16_t port, int rcvbuf_size, int sndbuf_size) {
   return fd;
 }
 
+/// Opens every datagram; a receiver drops one that doesn't carry both.
+constexpr char kHeaderMagic[4] = {'T', 'R', 'L', 'S'};  //-V112
+constexpr int32_t kHeaderVersion = 1;
+
 struct SampleHeader {
   char head[4];  //-V112
   int32_t version;
@@ -96,11 +100,8 @@ struct SampleHeader {
 
 std::string GeneratePreamble(const std::string& id) {
   SampleHeader header;
-  header.head[0] = 'T';
-  header.head[1] = 'R';
-  header.head[2] = 'L';
-  header.head[3] = 'S';
-  header.version = 1;
+  ::memcpy(header.head, kHeaderMagic, sizeof(header.head));
+  header.version = kHeaderVersion;
 
   const uint16_t sample_id_string_length = id.size() + 1;
   const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
@@ -233,6 +234,10 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
   // the same way, mirroring how GeneratePreamble writes both.
   SampleHeader header;
   ::memcpy(&header, buf, kHeaderSize);
+  // Not ours, or a format this build can't read: a stray datagram on the port, or a peer on another version.
+  if (::memcmp(header.head, kHeaderMagic, sizeof(header.head)) != 0 || header.version != kHeaderVersion) {
+    return;
+  }
 
   // Do we have enough data to cover the sample name length field?
   if (len < kHeaderSize + sizeof(uint16_t)) {

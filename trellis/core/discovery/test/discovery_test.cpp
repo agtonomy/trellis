@@ -651,4 +651,25 @@ TEST(DiscoveryTests, DropsDatagramsWhoseLenDisagreesWithTheirSize) {
   EXPECT_FALSE(HasProcess(samples, "long_len_node"));
 }
 
+// The receiver read any datagram on its port as a sample, whatever its magic and version.
+TEST(DiscoveryTests, DropsDatagramsWithAnotherMagicOrVersion) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig(22))));
+  const uint16_t port = Port(22);
+
+  std::string other_magic = WellFormedDatagram(FakeProcessSample("other_magic", "other_magic_node"));
+  other_magic.replace(0, 4, "XXXX");
+  SendToDiscoveryPort(port, other_magic);
+  std::string other_version = WellFormedDatagram(FakeProcessSample("other_version", "other_version_node"));
+  other_version[4] = 2;  // the version's low byte, little-endian
+  SendToDiscoveryPort(port, other_version);
+
+  SendToDiscoveryPort(port, WellFormedDatagram(FakeProcessSample("valid", "valid_node")));
+  EXPECT_NO_THROW(ev.RunFor(std::chrono::milliseconds(50)));
+  const auto samples = discovery.GetProcessSamples();
+  EXPECT_TRUE(HasProcess(samples, "valid_node"));
+  EXPECT_FALSE(HasProcess(samples, "other_magic_node"));
+  EXPECT_FALSE(HasProcess(samples, "other_version_node"));
+}
+
 }  // namespace trellis::core::discovery
