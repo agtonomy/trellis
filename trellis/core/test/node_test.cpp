@@ -200,6 +200,25 @@ TEST(TrellisNodeSharedContext, RunIsRefused) {
   EXPECT_TRUE(CanStillRunWork(host));
 }
 
+// A guest running the host's loop would catch a sibling's exception, charge it to the guest's crash counter, and unlink
+// every node's IPC names while they kept running.
+TEST(TrellisNodeSharedContext, RunMethodsAreRefused) {
+  const auto config = SharedContextConfig();
+  Node host("host", config);
+  Node guest("guest", config, std::nullopt, ContextOf(host));
+  bool ran = false;
+  asio::post(*host.GetEventLoop(), [&ran]() { ran = true; });
+
+  EXPECT_FALSE(guest.RunOnce());
+  EXPECT_FALSE(guest.RunN(10));
+  EXPECT_FALSE(guest.RunUntilIdle());
+  EXPECT_FALSE(guest.RunFor(std::chrono::milliseconds(10)));
+  EXPECT_FALSE(ran) << "a guest ran the host's loop";
+
+  host.RunUntilIdle();
+  EXPECT_TRUE(ran);
+}
+
 TEST(TrellisNodeSharedContext, RejectsAnIncompleteContext) {
   const auto config = SharedContextConfig();
   Node host("host", config);

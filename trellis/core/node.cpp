@@ -284,7 +284,17 @@ int Node::Run() {
   return 0;
 }
 
+bool Node::RefusedOnSharedContext(const std::string_view method) const {
+  if (shares_context_) {
+    Log::Error("{}: ignoring {}, a shared-context node runs on the host's loop; run the host", name_, method);
+  }
+  return shares_context_;
+}
+
 bool Node::RunN(const unsigned n) {
+  if (RefusedOnSharedContext("RunN")) {
+    return false;
+  }
   try {
     unsigned count{0};
     // poll_one will return immediately (never block). If it returned 0 there's
@@ -308,6 +318,9 @@ bool Node::RunN(const unsigned n) {
 }
 
 bool Node::RunUntilIdle(const unsigned max_handlers) {
+  if (RefusedOnSharedContext("RunUntilIdle")) {
+    return false;
+  }
   try {
     unsigned count{0};
     while (ShouldRun() && ev_loop_.PollOne()) {

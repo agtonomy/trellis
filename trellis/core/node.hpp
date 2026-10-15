@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "trellis/core/bind.hpp"
@@ -434,8 +435,8 @@ class Node {
    * run the underlying Trellis facilities. It is recommended to call this method as your main() return statement.
    *
    * Refused on a node given a SharedContext, which has no loop of its own to run: it logs an error and returns
-   * non-zero instead of blocking on the host's loop. Run the host. RunOnce(), RunN() and RunFor() stay available;
-   * they return on their own.
+   * non-zero instead of blocking on the host's loop. Run the host. RunOnce(), RunN(), RunUntilIdle() and RunFor() are
+   * refused too.
    *
    * @return a return code that may be used to return from main()
    */
@@ -446,7 +447,7 @@ class Node {
    *
    * Note: this method is not needed for typical applications
    *
-   * @return false if the underlying facilities have stopped
+   * @return false if the underlying facilities have stopped, or if this node was given a SharedContext
    *
    * @see RunN()
    */
@@ -463,7 +464,10 @@ class Node {
    *
    * Note: this method is not needed for typical applications
    *
-   * @return false if the underlying facilities have stopped
+   * Refused on a node given a SharedContext, as Run() is: the loop is the host's, so an exception from any sibling's
+   * handler would be charged to this node, and its cleanup would unlink every node's IPC names while they keep running.
+   *
+   * @return false if the underlying facilities have stopped, or if this node was given a SharedContext
    */
   bool RunN(unsigned n);
 
@@ -476,7 +480,7 @@ class Node {
    * @param max_handlers safety bound against a handler that reposts itself unconditionally. If a handler is still
    *        ready after this many have run, it runs too and a warning is logged, rather than returning as though the
    *        loop had settled
-   * @return false if the underlying facilities have stopped
+   * @return false if the underlying facilities have stopped, or if this node was given a SharedContext (see RunN())
    */
   bool RunUntilIdle(unsigned max_handlers = 1'000'000);
 
@@ -491,12 +495,15 @@ class Node {
    * @tparam Period A std::ratio type representing the tick period.
    * @param rel_time The duration to run the event loop for.
    *
-   * @return false if the underlying facilities have stopped
+   * @return false if the underlying facilities have stopped, or if this node was given a SharedContext (see RunN())
    *
    * @see Run(), RunOnce(), RunN()
    */
   template <typename Rep, typename Period>
   bool RunFor(const std::chrono::duration<Rep, Period>& rel_time) {
+    if (RefusedOnSharedContext("RunFor")) {
+      return false;
+    }
     try {
       ev_loop_.RunFor(rel_time);
       return ShouldRun();
@@ -652,6 +659,9 @@ class Node {
 
   // Helper to determine if we should not be running anymore
   bool ShouldRun();
+
+  // Logs and returns true on a shared-context node, which must not run the host's loop itself.
+  bool RefusedOnSharedContext(std::string_view method) const;
 
   // The name of the node
   const std::string name_;
