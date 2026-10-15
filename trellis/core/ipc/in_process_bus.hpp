@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -76,6 +77,16 @@ class InProcessBus {
    * @return Shared handle to the process-wide bus.
    */
   [[nodiscard]] static std::shared_ptr<InProcessBus> Instance();
+
+  /**
+   * @brief Allocate a writer id for a publisher's in-process messages.
+   *
+   * @note Drawn from one counter for the whole process, here rather than in the publisher's header, where each
+   * template instantiation would get a counter of its own.
+   *
+   * @return An id no other call in this process returns.
+   */
+  [[nodiscard]] static uint64_t NextWriterId();
 
   /**
    * @brief The topic to route on for a topic in a discovery domain.

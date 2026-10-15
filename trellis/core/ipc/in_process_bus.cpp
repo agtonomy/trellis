@@ -36,6 +36,11 @@ std::shared_ptr<InProcessBus> InProcessBus::Instance() {
   return instance;
 }
 
+uint64_t InProcessBus::NextWriterId() {
+  static std::atomic<uint64_t> next_writer_id{1};
+  return next_writer_id.fetch_add(1, std::memory_order_relaxed);
+}
+
 InProcessBus::Handle InProcessBus::Subscribe(const std::string& topic, trellis::core::EventLoop loop, ReceiveFn fn) {
   std::lock_guard<std::mutex> lock(mutex_);
   const Handle handle = next_handle_++;

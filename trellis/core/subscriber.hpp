@@ -464,13 +464,19 @@ class SubscriberImpl : public SubscriberBase,
       did_receive_ = true;
 
       auto& last_seq = sequence_numbers_[header.writer_id];
-      if (last_seq != 0 && (header.sequence != (last_seq + 1))) {
-        // Track dropped messages based on sequence number gaps
-        const auto dropped = header.sequence - last_seq - 1;
-        dropped_message_count_ += dropped;
-        trellis::core::Log::Warn(
-            "Sequence number jump on topic {} from writer_id {}. Current = {} last = {} delta = {} dropped = {}",
-            topic_, header.writer_id, header.sequence, last_seq, header.sequence - last_seq, dropped);
+      if (last_seq != 0) {
+        if (header.sequence > last_seq + 1) {
+          // Track dropped messages based on sequence number gaps
+          const auto dropped = header.sequence - last_seq - 1;
+          dropped_message_count_ += dropped;
+          trellis::core::Log::Warn(
+              "Sequence number jump on topic {} from writer_id {}. Current = {} last = {} delta = {} dropped = {}",
+              topic_, header.writer_id, header.sequence, last_seq, header.sequence - last_seq, dropped);
+        } else if (header.sequence <= last_seq) {
+          // Not a gap, so nothing is counted as dropped.
+          trellis::core::Log::Warn("Sequence number went back on topic {} from writer_id {}. Current = {} last = {}",
+                                   topic_, header.writer_id, header.sequence, last_seq);
+        }
       }
       last_seq = header.sequence;
     }

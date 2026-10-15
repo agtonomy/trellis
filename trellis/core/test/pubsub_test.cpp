@@ -32,6 +32,7 @@
 
 #include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/utils.hpp"
+#include "trellis/core/ipc/in_process_bus.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -990,6 +991,28 @@ TEST_F(TrellisFixture, InProcessBusFansOutFromMultiplePublishersToMultipleSubscr
     EXPECT_NE(std::find(sink->begin(), sink->end(), "from A"), sink->end());
     EXPECT_NE(std::find(sink->begin(), sink->end(), "from B"), sink->end());
   }
+}
+
+// Writer ids came from a counter per publisher template instantiation, so two specializations on one topic both
+// started at 1 and a subscriber read one's sequence as a gap in the other's. Each converter lambda here is a new
+// specialization, so the first publisher of each is the one that collided.
+TEST_F(TrellisFixture, PublishersOfDifferentSpecializationsHaveDistinctWriterIds) {
+  const std::string topic{"test_writer_id_topic"};
+  const std::string route = ipc::InProcessBus::RouteKey(GetNode().GetDiscovery()->GetInProcessDomain(), topic);
+  const auto bus = ipc::InProcessBus::Instance();
+  std::vector<uint64_t> writer_ids;
+  const auto handle = bus->Subscribe(route, GetNode().GetEventLoop(),
+                                     [&writer_ids](const ipc::shm::ShmFile::SMemFileHeader& header,
+                                                   ipc::BorrowedPayload) { writer_ids.push_back(header.writer_id); });
+  const auto pub_a = GetNode().CreatePublisher<test::Test>(topic, [](const test::Test& msg) { return msg; });
+  const auto pub_b = GetNode().CreatePublisher<test::Test>(topic, [](const test::Test& msg) { return msg; });
+  pub_a->Send(test::Test{});
+  pub_b->Send(test::Test{});
+  GetNode().RunUntilIdle();
+  bus->Unsubscribe(route, handle);
+
+  ASSERT_EQ(writer_ids.size(), 2u);
+  EXPECT_NE(writer_ids[0], writer_ids[1]);
 }
 
 TEST_F(TrellisFixture, InProcessTransportIsSelectedForSameProcessPublisher) {

@@ -502,10 +502,7 @@ class PublisherImpl {
   /// Guarded by mutex_.
   std::unordered_set<std::string> remote_subscriber_ids_;
   /// Process-unique, so a subscriber tracks each publisher on a topic separately. In-process path only.
-  const uint64_t inproc_writer_id_{[]() {
-    static std::atomic<uint64_t> counter{1};
-    return counter.fetch_add(1, std::memory_order_relaxed);
-  }()};
+  const uint64_t inproc_writer_id_{ipc::InProcessBus::NextWriterId()};
   uint64_t inproc_sequence_{0};  ///< Monotonic per-message sequence, in-process path only
 };
 
