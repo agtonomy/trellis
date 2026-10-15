@@ -193,12 +193,13 @@ class Server {
    */
   void ProcessRequest(TCPClientPointer client, void* data, size_t len) {
     discovery::Request req;
-    req.ParseFromArray(data, len);
+    // The frame's length is already checked, so the stream stays in step: a bad body still gets its failed reply.
+    const bool parsed = req.ParseFromArray(data, len);
 
     // After parsing the request, we perform the remaining work on the background thread. The loop's io_context outlives
     // this, since the handler thread holds the loop.
     asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop_context = &*loop_, client,
-                                req = std::move(req)]() {
+                                parsed, req = std::move(req)]() {
       // Owned while this runs, so a Server destroyed meanwhile does not take the service with it.
       auto prototype = service.lock();
       if (!prototype) {
@@ -210,13 +211,18 @@ class Server {
       discovery::Response response;
       response.mutable_header()->set_mname(method_name);
 
-      if (!method_desc) {
+      std::unique_ptr<google::protobuf::Message> rpc_request;
+      if (method_desc != nullptr) {
+        rpc_request.reset(prototype->GetRequestPrototype(method_desc).New());
+      }
+      if (!parsed || (rpc_request != nullptr && !rpc_request->ParseFromString(req.request()))) {
+        response.mutable_header()->set_status(discovery::ServiceHeader::failed);
+        response.mutable_header()->set_error("malformed request");
+      } else if (!method_desc) {
         response.mutable_header()->set_status(discovery::ServiceHeader::failed);
         response.mutable_header()->set_error("method not found");
       } else {
-        std::unique_ptr<google::protobuf::Message> rpc_request(prototype->GetRequestPrototype(method_desc).New());
         std::unique_ptr<google::protobuf::Message> rpc_response(prototype->GetResponsePrototype(method_desc).New());
-        rpc_request->ParseFromString(req.request());
         prototype->CallMethod(method_desc, nullptr, rpc_request.get(), rpc_response.get(), nullptr);
         rpc_response->SerializeToString(response.mutable_response());
         response.mutable_header()->set_status(discovery::ServiceHeader::executed);

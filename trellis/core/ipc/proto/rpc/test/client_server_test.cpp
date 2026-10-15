@@ -21,10 +21,12 @@
 
 #include <array>
 #include <atomic>
+#include <cstring>
 #include <functional>
 #include <future>
 #include <optional>
 #include <utility>
+#include <vector>
 
 #include "absl/cleanup/cleanup.h"
 #include "trellis/core/ipc/proto/rpc/client.hpp"
@@ -507,6 +509,119 @@ TEST_F(TrellisFixture, ClientFailsACallWhoseResponseIsTooLong) {
 
   StopAndJoinRunnerThread();
   GetNode().GetDiscovery()->Unregister(handle);
+}
+
+// Bytes no message parses: field 2 claims 5 bytes, and only 2 follow.
+const std::string kTruncatedField{
+    "\x12\x05"
+    "ab",
+    4};
+
+// Writes one length-prefixed frame on a raw socket and reads the reply frame, as a client would.
+discovery::Response ExchangeFrame(asio::ip::tcp::socket& socket, const std::string& body) {
+  const uint32_t length = body.size();
+  asio::write(socket, std::array{asio::buffer(&length, sizeof(length)), asio::buffer(body)});
+  uint32_t reply_length = 0;
+  asio::read(socket, asio::buffer(&reply_length, sizeof(reply_length)));
+  std::string reply(reply_length, '\0');
+  asio::read(socket, asio::buffer(reply));
+  discovery::Response response;
+  EXPECT_TRUE(response.ParseFromString(reply));
+  return response;
+}
+
+// A request body the method's type can't parse reached the handler as a partial message, and was answered as executed.
+// It is now failed, and the connection stays usable: the frame's length kept the stream in step.
+TEST_F(TrellisFixture, ServerFailsARequestThatDoesNotParse) {
+  StartRunnerThread();
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(std::make_shared<TestServiceHandler>());
+  WaitForDiscovery();
+
+  std::promise<uint16_t> port_promise;
+  asio::post(*GetNode().GetEventLoop(), [this, &port_promise]() {
+    for (const auto& sample : GetNode().GetDiscovery()->GetServiceSamples()) {
+      if (sample.service().sname() == TestService::descriptor()->full_name()) {
+        port_promise.set_value(sample.service().tcp_port());
+        return;
+      }
+    }
+    port_promise.set_value(0);
+  });
+  const uint16_t port = port_promise.get_future().get();
+  ASSERT_NE(port, 0);
+
+  asio::io_context io;
+  asio::ip::tcp::socket socket{io};
+  socket.connect(asio::ip::tcp::endpoint{asio::ip::make_address("127.0.0.1"), port});
+  const timeval receive_timeout{.tv_sec = 2, .tv_usec = 0};
+  ASSERT_EQ(::setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout)),
+            0);
+
+  discovery::Request request;
+  request.mutable_header()->set_mname("DoStuff");
+  request.set_request(kTruncatedField);
+  EXPECT_EQ(ExchangeFrame(socket, request.SerializeAsString()).header().status(), discovery::ServiceHeader::failed)
+      << "a request body that does not parse";
+  EXPECT_EQ(ExchangeFrame(socket, kTruncatedField).header().status(), discovery::ServiceHeader::failed)
+      << "an envelope that does not parse";
+
+  test::Test valid;
+  valid.set_id(7);
+  request.set_request(valid.SerializeAsString());
+  const discovery::Response answered = ExchangeFrame(socket, request.SerializeAsString());
+  EXPECT_EQ(answered.header().status(), discovery::ServiceHeader::executed);
+  test::TestTwo response;
+  ASSERT_TRUE(response.ParseFromString(answered.response()));
+  EXPECT_EQ(response.foo(), 7.0f);
+
+  StopAndJoinRunnerThread();  // the server must not be destroyed while the loop can still accept on it
+}
+
+// Answers a call with `reply` as its one response frame, and returns the status the call reports. Runs the loop for
+// the call and stops it before anything here is destroyed.
+class ResponseParseTest : public TrellisFixture {
+ protected:
+  ServiceCallStatus StatusOfACallAnsweredWith(const std::string& reply) {
+    StartRunnerThread();
+    auto frame = std::make_shared<std::string>(sizeof(uint32_t), '\0');
+    const uint32_t length = reply.size();
+    std::memcpy(frame->data(), &length, sizeof(length));
+    frame->append(reply);
+    std::vector<network::TCP> accepted;  // held so the connections stay open
+    network::TCPServer fake_server(GetNode().GetEventLoop(), /* port = */ 0,
+                                   [&accepted, frame](const trellis::core::error_code& ec, network::TCP socket) {
+                                     if (!ec) {
+                                       socket.AsyncSendAll(frame->data(), frame->size(),
+                                                           [frame](const trellis::core::error_code&, size_t) {});
+                                       accepted.push_back(std::move(socket));
+                                     }
+                                   });
+    const auto handle = GetNode().GetDiscovery()->RegisterServiceServer(
+        std::string{TestService::descriptor()->full_name()}, fake_server.GetPort(), MethodsMap{});
+    std::atomic<std::optional<ServiceCallStatus>> status;  // declared before client, whose destructor runs callbacks
+    auto client = GetNode().CreateServiceClient<TestService>();
+    WaitForDiscovery();
+
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", test::Test{}, [&status](ServiceCallStatus result, const test::TestTwo*) { status = result; },
+        /* timeout_ms = */ 5000);
+    EXPECT_TRUE(WaitUntil([&status]() { return status.load().has_value(); }));
+    StopAndJoinRunnerThread();
+    GetNode().GetDiscovery()->Unregister(handle);
+    return status.load().value_or(kTimedOut);
+  }
+};
+
+// A reply that did not parse was reported as kSuccess with an empty response.
+TEST_F(ResponseParseTest, ClientFailsACallWhoseResponseEnvelopeDoesNotParse) {
+  EXPECT_EQ(StatusOfACallAnsweredWith(kTruncatedField), kFailure);
+}
+
+TEST_F(ResponseParseTest, ClientFailsACallWhoseResponseBodyDoesNotParse) {
+  discovery::Response response;
+  response.mutable_header()->set_status(discovery::ServiceHeader::executed);
+  response.set_response(kTruncatedField);
+  EXPECT_EQ(StatusOfACallAnsweredWith(response.SerializeAsString()), kFailure);
 }
 
 TEST_F(TrellisFixture, LongRunningCallTimeout) {

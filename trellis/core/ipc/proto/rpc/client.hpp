@@ -211,8 +211,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
         std::move(request_buffer),
         [callback = std::move(callback)](ServiceCallStatus status, const discovery::Response* response) {
           RESP_T resp{};
-          if (response != nullptr) {
-            resp.ParseFromString(response->response());
+          if (response != nullptr && !resp.ParseFromString(response->response())) {
+            status = kFailure;  // the reply is not this method's response type
           }
           callback(status, &resp);
         },
@@ -502,8 +502,8 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                                           }
 
                                           discovery::Response response;
-                                          response.ParseFromArray(receive_buffer->data(), bytes_received);
-                                          if (response.header().status() == discovery::ServiceHeader::failed) {
+                                          if (!response.ParseFromArray(receive_buffer->data(), bytes_received) ||
+                                              response.header().status() == discovery::ServiceHeader::failed) {
                                             request->respond(kFailure, nullptr);
                                           } else {
                                             request->respond(kSuccess, &response);
