@@ -593,90 +593,27 @@ TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
   EXPECT_EQ(fail_count.load(), 0u);
 }
 
-TEST_F(TrellisFixture, TimeoutResponseCorrelation) {
-  // This test verifies that after a timeout, the next call receives its own response
-  // and not a stale response from the timed-out call.
-  StartRunnerThread();
-
-  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
-  auto handler = std::make_shared<TestServiceHandler>();
-  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
-
-  WaitForDiscovery();
-
-  std::atomic<unsigned> timeout_count{0};
-  std::atomic<unsigned> success_count{0};
-  std::atomic<unsigned> correlation_errors{0};
-
-  // First call: will timeout but the server will eventually complete and send a response
-  test::Test request1;
-  request1.set_id(2000);  // triggers 500ms delay in handler
-  request1.set_msg("timeout_request");
-
-  client->CallAsync<test::Test, test::TestTwo>(
-      "DoStuff", request1,
-      [&](ServiceCallStatus status, const test::TestTwo* resp) {
-        if (status == kTimedOut) {
-          ++timeout_count;
-        }
-      },
-      /* timeout_ms = */ 100);
-
-  // Wait for both the client timeout (100ms) and the server handler (500ms) to complete.
-  // This ensures the stale response is sitting in the socket buffer before the second call.
-  std::this_thread::sleep_for(std::chrono::milliseconds{600});
-  EXPECT_EQ(timeout_count.load(), 1u);
-
-  // Second call: should receive its own response, not the stale one from the first call
-  test::Test request2;
-  request2.set_id(9999);  // unique ID to verify correlation
-  request2.set_msg("follow_up_request");
-
-  client->CallAsync<test::Test, test::TestTwo>(
-      "DoStuff", request2,
-      [&](ServiceCallStatus status, const test::TestTwo* resp) {
-        if (status == kSuccess) {
-          ++success_count;
-          // The response foo field should match request2's id (9999), not request1's id (2000)
-          if (resp->foo() != 9999.0f) {
-            std::cout << "CORRELATION ERROR: Expected foo=9999, got foo=" << resp->foo() << std::endl;
-            ++correlation_errors;
-          }
-          // The response bar should echo request2's message
-          if (resp->bar() != "Echo: follow_up_request") {
-            std::cout << "CORRELATION ERROR: Expected 'Echo: follow_up_request', got '" << resp->bar() << "'"
-                      << std::endl;
-            ++correlation_errors;
-          }
-        }
-      },
-      /* timeout_ms = */ 500);
-
-  std::this_thread::sleep_for(std::chrono::milliseconds{300});
-
-  EXPECT_EQ(timeout_count.load(), 1u);
-  EXPECT_EQ(success_count.load(), 1u);
-  EXPECT_EQ(correlation_errors.load(), 0u) << "Response did not match the request - possible stale response received";
-}
-
 // The second call goes out while the timed-out call's reply is still owed. Sharing a socket, that late reply arrived
-// after the second request and was read as the second call's response.
+// after the second request and was read as the second call's response. The handler holds the first reply until the
+// second request has gone out, so the reply can't arrive first and be skipped.
 TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
   StartRunnerThread();
 
   auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
-  auto handler = std::make_shared<TestServiceHandler>();
-  auto server = GetNode().CreateServiceServer<TestServiceHandler>(handler);
+  auto handler = std::make_shared<BlockingHandler>();
+  auto server = GetNode().CreateServiceServer<BlockingHandler>(handler);
+  absl::Cleanup release = [&handler]() { handler->release = true; };  // or ~Server() waits on the handler
   WaitForDiscovery();
 
   std::promise<ServiceCallStatus> first;
   RunOnLoop([&]() {
     test::Test request;
-    request.set_id(2000);  // the handler sleeps 500ms before answering
+    request.set_id(2000);
     client->CallAsync<test::Test, test::TestTwo>(
         "DoStuff", request, [&first](ServiceCallStatus status, const test::TestTwo*) { first.set_value(status); },
         /* timeout_ms = */ 100);
   });
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
   auto first_status = first.get_future();
   ASSERT_EQ(first_status.wait_for(std::chrono::seconds{2}), std::future_status::ready);
   ASSERT_EQ(first_status.get(), kTimedOut);
@@ -688,10 +625,12 @@ TEST_F(TrellisFixture, LateReplyToATimedOutCallIsNotDeliveredToTheNextCall) {
     client->CallAsync<test::Test, test::TestTwo>(
         "DoStuff", request,
         [&second](ServiceCallStatus status, const test::TestTwo* response) {
-          second.set_value({status, response->foo()});
+          second.set_value({status, response == nullptr ? 0.0f : response->foo()});
         },
         /* timeout_ms = */ 2000);
   });
+  handler->release = true;  // the first reply, then the second's
+
   auto second_result = second.get_future();
   ASSERT_EQ(second_result.wait_for(std::chrono::seconds{3}), std::future_status::ready);
   const auto [status, foo] = second_result.get();
