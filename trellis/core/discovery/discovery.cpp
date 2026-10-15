@@ -19,6 +19,7 @@
 
 #include <fmt/format.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <ranges>
@@ -149,6 +150,11 @@ Discovery::ConfigData::ConfigData(const trellis::core::Config& config)
 Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config)
     : node_name_{std::move(node_name)},
       config_{config},
+      in_process_domain_{[this]() {
+        static std::atomic<unsigned> next_loopback_domain{0};
+        return config_.loopback_enabled ? fmt::format("loopback/{}", next_loopback_domain++)
+                                        : fmt::format("udp/{}", config_.discovery_port);
+      }()},
       store_{config},
       loop_{loop},
       udp_receiver_(config_.loopback_enabled

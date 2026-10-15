@@ -1094,6 +1094,74 @@ TEST(InProcessTransport, InProcessTransportIsSelectedWithoutLoopback) {
   EXPECT_EQ(received_msg, "no loopback");
 }
 
+// Two nodes with their own loopback discovery never discover each other, so the bus must not carry messages between
+// them either. It routed by topic alone, so node2's subscriber received node1's publication.
+TEST(InProcessTransport, IsolatedLoopbackNodesDoNotShareTheBus) {
+  const auto config = trellis::core::Config(YAML::Load(R"(
+    trellis:
+      discovery:
+        loopback_enabled: true
+    )"));
+  trellis::core::Node node1("isolated_bus_1", config);
+  trellis::core::Node node2("isolated_bus_2", config);
+  std::vector<std::string> received;
+  const Publisher<test::Test> other_domain_pub = node1.CreatePublisher<test::Test>("test_isolated_bus_topic");
+  const Publisher<test::Test> own_domain_pub = node2.CreatePublisher<test::Test>("test_isolated_bus_topic");
+  const Subscriber<test::Test> sub = node2.CreateSubscriber<test::Test>(
+      "test_isolated_bus_topic",
+      [&received](const time::TimePoint&, const time::TimePoint&,
+                  trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) { received.push_back(msg->msg()); });
+  node1.RunUntilIdle();
+  node2.RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  msg.set_msg("from node1");
+  other_domain_pub->Send(msg);
+  msg.set_msg("from node2");
+  own_domain_pub->Send(msg);
+  node2.RunUntilIdle();
+  EXPECT_EQ(received, std::vector<std::string>{"from node2"});
+}
+
+// Nodes in one process whose UDP discovery shares a port do discover each other, and keep using the bus between them.
+TEST(InProcessTransport, NodesSharingADiscoveryPortShareTheBus) {
+  const auto config = trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig()));
+  trellis::core::Node publisher_node("shared_port_bus_pub", config);
+  trellis::core::Node subscriber_node("shared_port_bus_sub", config);
+
+  std::string received_msg;
+  std::mutex m;
+  std::condition_variable cv;
+  bool got{false};
+  const Publisher<test::Test> pub = publisher_node.CreatePublisher<test::Test>("test_shared_port_bus_topic");
+  const Subscriber<test::Test> sub = subscriber_node.CreateSubscriber<test::Test>(
+      "test_shared_port_bus_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received_msg = msg->msg();
+        got = true;
+        cv.notify_one();
+      });
+  const ScopedNodeRunner publisher_runner{publisher_node};
+  const ScopedNodeRunner subscriber_runner{subscriber_node};
+
+  const auto deadline = std::chrono::steady_clock::now() + kDiscoveryConvergeTimeout;
+  while (!sub->IsInProcess() && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(sub->IsInProcess());
+  // The publisher's route count only rises once the subscriber has subscribed, so send until the message lands.
+  test::Test msg;
+  msg.set_msg("same port");
+  std::unique_lock<std::mutex> lock(m);
+  for (int attempt = 0; attempt < 50 && !got; ++attempt) {
+    pub->Send(msg);
+    cv.wait_for(lock, std::chrono::milliseconds(20), [&got]() { return got; });
+  }
+  EXPECT_EQ(received_msg, "same port");
+}
+
 // A publisher can hold a subscriber in this process and one outside it at the same time. That is the only path where
 // a single send both publishes to the bus and fills a shared memory slot, from the same serialized bytes, so it is
 // worth covering on its own rather than inferring it from the two single-transport cases.

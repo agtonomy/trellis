@@ -332,7 +332,7 @@ class PublisherImpl {
     }
 
     if (inproc_message.has_value()) {
-      inproc_bus_->Publish(topic_, inproc_message->header, std::move(inproc_message->payload));
+      inproc_bus_->Publish(inproc_route_, inproc_message->header, std::move(inproc_message->payload));
     }
     UpdateStatistics(now);
     return now;
@@ -492,10 +492,12 @@ class PublisherImpl {
   /// subscriber, so this is unconditional. Until one does, InProcessBus holds only the empty topic entry that the
   /// counter below creates.
   const std::shared_ptr<ipc::InProcessBus> inproc_bus_{ipc::InProcessBus::Instance()};
+  /// This topic on the bus, qualified by the discovery domain. Declared after discovery_, which it reads.
+  const std::string inproc_route_{ipc::InProcessBus::RouteKey(discovery_->GetInProcessDomain(), topic_)};
   /// Live subscriber count on this topic across the whole process, maintained by InProcessBus. Read on the send path
   /// to decide whether an in-process payload is worth building. Declared after inproc_bus_, which it is obtained
   /// from.
-  const ipc::InProcessBus::RouteCount inproc_route_count_{inproc_bus_->GetRouteCount(topic_)};
+  const ipc::InProcessBus::RouteCount inproc_route_count_{inproc_bus_->GetRouteCount(inproc_route_)};
   /// Discovery ids of the subscribers outside this process, which decide whether a send also reaches shared memory.
   /// Guarded by mutex_.
   std::unordered_set<std::string> remote_subscriber_ids_;

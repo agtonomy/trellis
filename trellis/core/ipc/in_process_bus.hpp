@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -37,8 +38,10 @@ namespace trellis::core::ipc {
  * @brief Singleton topic bus that routes messages between publishers and subscribers in the same process.
  *
  * Carries messages between a publisher and a subscriber that share this address space, in place of shared memory.
- * Routes are keyed by topic, so a message reaches every subscriber on that topic. The bus never interprets the payload
- * -- it forwards the bytes and a synthesized header to the subscriber's usual delivery path.
+ * Routes are keyed by topic, so a message reaches every subscriber on that topic. Publishers and subscribers pass a
+ * topic qualified by their discovery domain (see RouteKey()), so nodes whose discovery can't see each other don't share
+ * routes. The bus never interprets the payload -- it forwards the bytes and a synthesized header to the subscriber's
+ * usual delivery path.
  *
  * @note Delivery is posted onto the subscriber's loop, never called inline, matching the shm path's async wake. This
  * keeps handling order deterministic and avoids re-entering a callback from inside Send.
@@ -73,6 +76,17 @@ class InProcessBus {
    * @return Shared handle to the process-wide bus.
    */
   [[nodiscard]] static std::shared_ptr<InProcessBus> Instance();
+
+  /**
+   * @brief The topic to route on for a topic in a discovery domain.
+   *
+   * @param domain The publisher's or subscriber's discovery domain (Discovery::GetInProcessDomain()).
+   * @param topic The topic name.
+   * @return A topic key that only matches within the domain.
+   */
+  [[nodiscard]] static std::string RouteKey(std::string_view domain, std::string_view topic) {
+    return std::string{domain}.append(":").append(topic);
+  }
 
   /**
    * @brief Register a subscriber's delivery callback for a topic.

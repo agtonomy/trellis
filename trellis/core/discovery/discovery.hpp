@@ -344,6 +344,17 @@ class Discovery {
    */
   const ConfigData& GetConfig() const;
 
+  /**
+   * @brief Identifies the set of Discovery instances that can see each other within one process.
+   *
+   * A loopback instance hears only itself, so it is its own domain. UDP instances on the same port hear each other's
+   * broadcasts, so the port is the domain. The in-process bus keys its routes by this, so a message only reaches
+   * subscribers whose discovery could have found its publisher.
+   *
+   * @return An identifier, equal for instances that share a domain
+   */
+  const std::string& GetInProcessDomain() const { return in_process_domain_; }
+
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);
   void ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample);
@@ -368,6 +379,7 @@ class Discovery {
 
   const std::string node_name_;                                          ///< This process's logical node name
   const ConfigData config_;                                              ///< Configuration data initialized from Config
+  const std::string in_process_domain_;                                  ///< See GetInProcessDomain()
   DescriptorStore store_;                                                ///< Host-local content-addressed schema store
   trellis::core::EventLoop loop_;                                        ///< Event loop for deferred operations
   std::unordered_map<RegistrationHandle, Sample> registered_samples_{};  ///< Locally registered samples

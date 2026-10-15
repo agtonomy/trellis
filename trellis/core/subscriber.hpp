@@ -434,7 +434,7 @@ class SubscriberImpl : public SubscriberBase,
     }
 
     inproc_bus_ = ipc::InProcessBus::Instance();
-    inproc_bus_handle_ = inproc_bus_->Subscribe(topic_, loop_, MakeReceiveCallback());
+    inproc_bus_handle_ = inproc_bus_->Subscribe(inproc_route_, loop_, MakeReceiveCallback());
     inproc_active_.store(true, std::memory_order_relaxed);
   }
 
@@ -443,7 +443,7 @@ class SubscriberImpl : public SubscriberBase,
     if (inproc_bus_ == nullptr) {
       return;
     }
-    inproc_bus_->Unsubscribe(topic_, inproc_bus_handle_);
+    inproc_bus_->Unsubscribe(inproc_route_, inproc_bus_handle_);
     inproc_bus_handle_ = ipc::InProcessBus::kNoHandle;
     inproc_bus_.reset();
     inproc_active_.store(false, std::memory_order_relaxed);
@@ -609,6 +609,8 @@ class SubscriberImpl : public SubscriberBase,
   /// Held while a route is registered; non-null means registered. Owning it keeps Stop() away from the singleton
   /// accessor, so a subscriber torn down during static destruction still unsubscribes against a live InProcessBus.
   std::shared_ptr<ipc::InProcessBus> inproc_bus_;
+  /// This topic on the bus, qualified by the discovery domain. Declared after discovery_, which it reads.
+  const std::string inproc_route_{ipc::InProcessBus::RouteKey(discovery_->GetInProcessDomain(), topic_)};
   ipc::InProcessBus::Handle inproc_bus_handle_{ipc::InProcessBus::kNoHandle};  ///< Handle for Unsubscribe
   /// Discovery ids of the same-process publishers on this topic. They share the single route above, so it is
   /// registered when the first one appears and dropped when the last one goes away.
