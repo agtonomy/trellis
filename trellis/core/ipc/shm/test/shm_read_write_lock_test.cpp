@@ -18,12 +18,15 @@
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 
 #include <gtest/gtest.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include "trellis/core/config.hpp"
 
@@ -69,6 +72,29 @@ TEST(ShmReadWriteLock, NonOwnerSharesTheOwnersLockAndLeavesItToTheOwner) {
 
   writer_lock.reset();
   EXPECT_FALSE(Exists(name));
+}
+
+// The owner creates the object before sizing it, and a throw leaves no ShmReadWriteLock to unlink it. A file size
+// limit of 0 makes the sizing fail.
+TEST(ShmReadWriteLock, OwnerThatFailsToCreateTheLockLeavesNoObject) {
+  const auto name = LockName("unsized");
+  rlimit saved{};
+  ASSERT_EQ(::getrlimit(RLIMIT_FSIZE, &saved), 0);
+  const auto old_handler = std::signal(SIGXFSZ, SIG_IGN);  // the failed ftruncate also raises it
+  rlimit none = saved;
+  none.rlim_cur = 0;
+  ASSERT_EQ(::setrlimit(RLIMIT_FSIZE, &none), 0);
+  bool threw = false;
+  try {
+    ShmReadWriteLock writer_lock{name, /* owner = */ true, Config{}};
+  } catch (const std::system_error&) {
+    threw = true;
+  }
+  ::setrlimit(RLIMIT_FSIZE, &saved);
+  std::signal(SIGXFSZ, old_handler);
+
+  EXPECT_TRUE(threw);
+  EXPECT_FALSE(Exists(name)) << "the half-created lock was left behind";
 }
 
 }  // namespace trellis::core::ipc::shm

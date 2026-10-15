@@ -26,6 +26,8 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <string>
+#include <system_error>
 
 #include "trellis/core/ipc/named_resource_registry.hpp"
 #include "trellis/core/ipc/utils.hpp"
@@ -53,10 +55,22 @@ ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle, const trellis::c
     throw std::system_error(err, std::generic_category(), "CreateRwLock shm_open failed on " + handle);
   }
 
-  if (::ftruncate(fd, sizeof(ShmReadWriteLock::NamedRwLock)) == -1) {
+  // This call created the object, and a throw from here leaves no ShmReadWriteLock to unlink it, so unlink it here.
+  const auto fail = [fd, &handle](int error, const char* what) {
     ::close(fd);
-    throw std::system_error(errno, std::generic_category(), "CreateRwLock ftruncate failed");
+    ::shm_unlink(handle.c_str());
+    throw std::system_error(error, std::generic_category(), what + handle);
+  };
+
+  if (::ftruncate(fd, sizeof(ShmReadWriteLock::NamedRwLock)) == -1) {
+    fail(errno, "CreateRwLock ftruncate failed on ");
   }
+
+  void* const mapped = mmap(nullptr, sizeof(ShmReadWriteLock::NamedRwLock), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mapped == MAP_FAILED) {
+    fail(errno, "CreateRwLock mmap failed on ");
+  }
+  ::close(fd);
 
   NamedResourceRegistry::Get().InsertShm(handle);
 
@@ -64,11 +78,9 @@ ShmReadWriteLock::NamedRwLock* CreateRwLock(std::string handle, const trellis::c
   pthread_rwlockattr_init(&attr);
   pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
 
-  ShmReadWriteLock::NamedRwLock* rw = static_cast<ShmReadWriteLock::NamedRwLock*>(
-      mmap(nullptr, sizeof(ShmReadWriteLock::NamedRwLock), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
-  ::close(fd);
-
+  auto* const rw = static_cast<ShmReadWriteLock::NamedRwLock*>(mapped);
   pthread_rwlock_init(&rw->rwlock, &attr);
+  pthread_rwlockattr_destroy(&attr);
   return rw;
 }
 
