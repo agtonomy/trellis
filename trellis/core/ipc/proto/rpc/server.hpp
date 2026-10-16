@@ -18,11 +18,15 @@
 #define TRELLIS_CORE_IPC_PROTO_RPC_SERVER_HPP_
 
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/service.h>
 
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
+#include <utility>
 
 #include "trellis/core/discovery/discovery.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -37,6 +41,12 @@ namespace trellis::core::ipc::proto::rpc {
  * Handlers run one at a time on a thread this server owns, not on the event loop. A handler may call out to another
  * service. It must not block waiting on a reply from this one: the handler thread is already inside the outer call,
  * so the nested request is never dispatched. ~Server() then joins that thread with no timeout, hanging shutdown.
+ *
+ * A handler answers by returning. The reply is built from the response as it stands then, and the `done` a handler is
+ * given does nothing, so it must not keep `done`, the response or the controller to finish the call later. It fails the
+ * call by calling SetFailed() on the controller or by throwing. Either is logged here and answered as failed, and the
+ * caller sees only kFailure, not the text. The call is never canceled, so a NotifyOnCancel() callback runs once the
+ * handler returns.
  *
  * ~Server() drops the handlers that have not started and waits for the running one. The running handler keeps the
  * service implementation alive and the handler thread keeps the loop, but nothing else: a service must own whatever
@@ -115,6 +125,36 @@ class Server {
   }
 
  private:
+  /// What a handler reports failure through. Generated bodies of unimplemented methods call SetFailed().
+  class Controller : public google::protobuf::RpcController {
+   public:
+    void Reset() override { error_.reset(); }
+    bool Failed() const override { return error_.has_value(); }
+    std::string ErrorText() const override { return error_.value_or(""); }
+    void StartCancel() override {}
+    void SetFailed(const std::string& reason) override { error_ = reason; }
+    bool IsCanceled() const override { return false; }
+    void NotifyOnCancel(google::protobuf::Closure* callback) override { on_cancel_ = callback; }
+
+    /// Runs the NotifyOnCancel() callback, if any. RpcController requires it to run once the call completes, even
+    /// uncanceled, and a self-deleting callback leaks if it never does.
+    void Complete() {
+      if (auto* const callback = std::exchange(on_cancel_, nullptr)) {
+        callback->Run();
+      }
+    }
+
+   private:
+    std::optional<std::string> error_;
+    google::protobuf::Closure* on_cancel_{nullptr};
+  };
+
+  /// Passed as `done`. The reply goes out when the handler returns, so running this does nothing.
+  class NoOpClosure : public google::protobuf::Closure {
+   public:
+    void Run() override {}
+  };
+
   /**
    * @brief Extract method metadata from a protobuf service implementation.
    *
@@ -232,9 +272,35 @@ class Server {
         response.mutable_header()->set_error("method not found");
       } else {
         std::unique_ptr<google::protobuf::Message> rpc_response(prototype->GetResponsePrototype(method_desc).New());
-        prototype->CallMethod(method_desc, nullptr, rpc_request.get(), rpc_response.get(), nullptr);
-        rpc_response->SerializeToString(response.mutable_response());
-        response.mutable_header()->set_status(discovery::ServiceHeader::executed);
+        Controller controller;
+        NoOpClosure done;
+        // Runs the handler's code, failing the call with what it throws. A throw would otherwise end the handler
+        // thread and, with it, the process.
+        const auto fail_on_throw = [&controller, method_desc](auto&& handler_code) {
+          try {
+            handler_code();
+          } catch (const std::exception& e) {
+            trellis::core::Log::Error("Handler for {} threw: {}", method_desc->full_name(), e.what());
+            controller.SetFailed(e.what());
+          } catch (...) {
+            trellis::core::Log::Error("Handler for {} threw a non-std::exception", method_desc->full_name());
+            controller.SetFailed("handler threw a non-std::exception");
+          }
+        };
+        fail_on_throw([&]() {
+          prototype->CallMethod(method_desc, &controller, rpc_request.get(), rpc_response.get(), &done);
+          if (controller.Failed()) {  // logged, since the caller never sees the text
+            trellis::core::Log::Warn("Handler for {} failed: {}", method_desc->full_name(), controller.ErrorText());
+          }
+        });
+        fail_on_throw([&controller]() { controller.Complete(); });
+        if (controller.Failed()) {
+          response.mutable_header()->set_status(discovery::ServiceHeader::failed);
+          response.mutable_header()->set_error(controller.ErrorText());
+        } else {
+          rpc_response->SerializeToString(response.mutable_response());
+          response.mutable_header()->set_status(discovery::ServiceHeader::executed);
+        }
       }
 
       // Serialized straight after room for the 4-byte length, which is filled in once the size is known.

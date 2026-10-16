@@ -25,6 +25,7 @@
 #include <functional>
 #include <future>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -59,6 +60,76 @@ class TestServiceHandler : public trellis::core::test::TestService {
     }
   }
 };
+
+// Leaves DoStuff to the generated body, which reports "not implemented" through the controller and runs `done`.
+class UnimplementedHandler : public trellis::core::test::TestService {};
+
+// Runs `done` before returning, as a handler written against protobuf's callback-style API does.
+class DoneRunningHandler : public TestServiceHandler {
+ public:
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure* done) override {
+    TestServiceHandler::DoStuff(controller, request, response, done);
+    done->Run();
+  }
+};
+
+// Fails request ids 1 to 3, each its own way, and answers the rest.
+class FailingHandler : public TestServiceHandler {
+ public:
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure* done) override {
+    switch (request->id()) {
+      case 1:
+        throw std::runtime_error{"handler failed"};
+      case 2:
+        throw 2;  // not a std::exception
+      case 3:
+        controller->SetFailed("refused");
+        return;
+      default:
+        TestServiceHandler::DoStuff(controller, request, response, done);
+    }
+  }
+};
+
+// Registers a NotifyOnCancel() callback that counts its runs, then throws for request id 1 and answers the rest.
+class CancelNotifyingHandler : public TestServiceHandler {
+ public:
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test* request,
+               ::trellis::core::test::TestTwo* response, ::google::protobuf::Closure* done) override {
+    controller->NotifyOnCancel(google::protobuf::NewCallback(this, &CancelNotifyingHandler::CountCancelCallback));
+    if (request->id() == 1) {
+      throw std::runtime_error{"handler failed"};
+    }
+    TestServiceHandler::DoStuff(controller, request, response, done);
+  }
+
+  std::atomic<int> cancel_callbacks{0};
+
+ private:
+  void CountCancelCallback() { ++cancel_callbacks; }
+};
+
+// Calls DoStuff with `id` and returns the status and the response's foo, or nothing if no outcome arrives in time.
+template <typename CLIENT_T>
+std::optional<std::pair<ServiceCallStatus, float>> CallDoStuff(CLIENT_T& client, unsigned id) {
+  auto result = std::make_shared<std::promise<std::pair<ServiceCallStatus, float>>>();
+  test::Test request;
+  request.set_id(id);
+  client.template CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request,
+      [result](ServiceCallStatus status, const test::TestTwo* response) {
+        result->set_value({status, response != nullptr ? response->foo() : 0.0f});
+      },
+      /* timeout_ms = */ 2000);
+  auto future = result->get_future();
+  if (future.wait_for(std::chrono::seconds{3}) != std::future_status::ready) {
+    return std::nullopt;
+  }
+  return future.get();
+}
+
 // Service handlers run on the server's own thread, so a call made inside a handler comes from off the event loop.
 class NestedCallHandler : public TestServiceHandler {
  public:
@@ -367,6 +438,72 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
   EXPECT_EQ(fail_count.load(), 1u);
 }
 
+// The generated body of an unimplemented method dereferences the controller and `done`, which were null.
+TEST_F(TrellisFixture, UnimplementedMethodReturnsFailure) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto server = GetNode().CreateServiceServer<UnimplementedHandler>(std::make_shared<UnimplementedHandler>());
+  WaitForDiscovery();
+
+  const auto result = CallDoStuff(*client, 7);
+  ASSERT_TRUE(result.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(result->first, kFailure);
+
+  const auto again = CallDoStuff(*client, 8);
+  ASSERT_TRUE(again.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(again->first, kFailure) << "the server keeps serving";
+}
+
+// `done` was null, so a handler that ran it crashed the server.
+TEST_F(TrellisFixture, HandlerMayRunDone) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto server = GetNode().CreateServiceServer<DoneRunningHandler>(std::make_shared<DoneRunningHandler>());
+  WaitForDiscovery();
+
+  const auto result = CallDoStuff(*client, 7);
+  ASSERT_TRUE(result.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(result->first, kSuccess);
+  EXPECT_EQ(result->second, 7.0f);
+}
+
+// A throw used to leave the handler thread and terminate the process.
+TEST_F(TrellisFixture, ThrowingHandlerReturnsFailureAndTheServerKeepsServing) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto server = GetNode().CreateServiceServer<FailingHandler>(std::make_shared<FailingHandler>());
+  WaitForDiscovery();
+
+  const auto failed = CallDoStuff(*client, 1);
+  ASSERT_TRUE(failed.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(failed->first, kFailure);
+
+  const auto served = CallDoStuff(*client, 7);
+  ASSERT_TRUE(served.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(served->first, kSuccess);
+  EXPECT_EQ(served->second, 7.0f);
+}
+
+// RpcController requires a NotifyOnCancel() callback to run exactly once when an uncanceled call completes, and a
+// self-deleting one leaks if it never does. It runs before the reply goes out, whether the handler answered or threw.
+TEST_F(TrellisFixture, CancelCallbackRunsOnceTheHandlerReturns) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto handler = std::make_shared<CancelNotifyingHandler>();
+  auto server = GetNode().CreateServiceServer<CancelNotifyingHandler>(handler);
+  WaitForDiscovery();
+
+  const auto served = CallDoStuff(*client, 7);
+  ASSERT_TRUE(served.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(served->first, kSuccess);
+  EXPECT_EQ(handler->cancel_callbacks.load(), 1);
+
+  const auto failed = CallDoStuff(*client, 1);
+  ASSERT_TRUE(failed.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(failed->first, kFailure);
+  EXPECT_EQ(handler->cancel_callbacks.load(), 2);
+}
+
 TEST_F(TrellisFixture, BackToBackCallSucceeds) {
   StartRunnerThread();
 
@@ -573,6 +710,54 @@ TEST_F(TrellisFixture, ServerFailsARequestThatDoesNotParse) {
   test::TestTwo response;
   ASSERT_TRUE(response.ParseFromString(answered.response()));
   EXPECT_EQ(response.foo(), 7.0f);
+
+  StopAndJoinRunnerThread();  // the server must not be destroyed while the loop can still accept on it
+}
+
+// A caller sees only kFailure, so the text a failing handler is answered with is checked on the wire.
+TEST_F(TrellisFixture, ServerAnswersAFailingHandlerWithItsText) {
+  StartRunnerThread();
+  auto server = GetNode().CreateServiceServer<FailingHandler>(std::make_shared<FailingHandler>());
+  WaitForDiscovery();
+
+  std::promise<uint16_t> port_promise;
+  asio::post(*GetNode().GetEventLoop(), [this, &port_promise]() {
+    for (const auto& sample : GetNode().GetDiscovery()->GetServiceSamples()) {
+      if (sample.service().sname() == TestService::descriptor()->full_name()) {
+        port_promise.set_value(sample.service().tcp_port());
+        return;
+      }
+    }
+    port_promise.set_value(0);
+  });
+  const uint16_t port = port_promise.get_future().get();
+  ASSERT_NE(port, 0);
+
+  asio::io_context io;
+  asio::ip::tcp::socket socket{io};
+  socket.connect(asio::ip::tcp::endpoint{asio::ip::make_address("127.0.0.1"), port});
+  const timeval receive_timeout{.tv_sec = 2, .tv_usec = 0};
+  ASSERT_EQ(::setsockopt(socket.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout)),
+            0);
+
+  const auto call = [&socket](unsigned id) {
+    test::Test rpc_request;
+    rpc_request.set_id(id);
+    discovery::Request request;
+    request.mutable_header()->set_mname("DoStuff");
+    request.set_request(rpc_request.SerializeAsString());
+    return ExchangeFrame(socket, request.SerializeAsString()).header();
+  };
+  const auto threw = call(1);
+  EXPECT_EQ(threw.status(), discovery::ServiceHeader::failed);
+  EXPECT_EQ(threw.error(), "handler failed");
+  const auto threw_other = call(2);
+  EXPECT_EQ(threw_other.status(), discovery::ServiceHeader::failed);
+  EXPECT_EQ(threw_other.error(), "handler threw a non-std::exception");
+  const auto set_failed = call(3);
+  EXPECT_EQ(set_failed.status(), discovery::ServiceHeader::failed);
+  EXPECT_EQ(set_failed.error(), "refused");
+  EXPECT_EQ(call(7).status(), discovery::ServiceHeader::executed) << "the connection is kept";
 
   StopAndJoinRunnerThread();  // the server must not be destroyed while the loop can still accept on it
 }
