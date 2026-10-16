@@ -25,6 +25,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "trellis/core/logging.hpp"
 
@@ -414,7 +415,7 @@ Discovery::RegistrationHandle Discovery::Register(Sample sample) {
   // reach anyone until the next heartbeat. BroadcastSample posts delivery to the loop rather than running
   // ReceiveData inline, so this cannot re-enter Register while registered_samples_mutex_ is held.
   if (config_.loopback_enabled) {
-    BroadcastSample(stored);
+    BroadcastSample(handle, stored);
   }
   return handle;
 }
@@ -432,14 +433,13 @@ void Discovery::Unregister(RegistrationHandle handle) {
 
 void Discovery::BroadcastSamples() {
   std::lock_guard lock(registered_samples_mutex_);
-  for (const auto& sample : registered_samples_ | std::views::values) {
-    BroadcastSample(sample);
+  for (const auto& [handle, sample] : registered_samples_) {
+    BroadcastSample(handle, sample);
   }
 }
 
-// Called with registered_samples_mutex_ held: it guards the shared send_buf_ below and keeps one sample's packets
-// contiguous in the post queue, since ReceiveData drops a multi-packet sample whose packets arrive out of order.
-void Discovery::BroadcastSample(const Sample& sample) {
+// Called with registered_samples_mutex_ held, which guards the shared send_buf_ below.
+void Discovery::BroadcastSample(RegistrationHandle handle, const Sample& sample) {
   const uint16_t sample_id_string_length = sample.id().size() + 1;
   const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
 
@@ -453,6 +453,7 @@ void Discovery::BroadcastSample(const Sample& sample) {
   const uint32_t total_packets =
       static_cast<uint32_t>((total_payload_size + max_payload_per_packet - 1) / max_payload_per_packet);
 
+  std::vector<std::vector<uint8_t>> loopback_packets;  // copied, since send_buf_ is reused for every packet
   size_t payload_offset = 0;
   uint32_t packet_index = 0;
   while (payload_offset < total_payload_size) {
@@ -479,21 +480,36 @@ void Discovery::BroadcastSample(const Sample& sample) {
         break;
       }
     } else {
-      // IMPORTANT: We must defer ReceiveData via asio::post to prevent deadlocks in loopback scenarios in cases where
-      // the ReceiveData callback results in a call to register a new sample on the same callback. BroadcastSamples()
-      // holds registered_samples_mutex_, and ReceiveData triggers callbacks that may call Register() which also needs
-      // registered_samples_mutex_. By deferring to the next event loop iteration, we break this synchronous chain. We
-      // copy the buffer data since send_buf_ is reused across packets.
-
       // Loopback mode is only for testing or replay, so the extra copy is acceptable.
-      auto buffer_copy = std::make_shared<std::vector<uint8_t>>(send_buf_.begin(), send_buf_.begin() + packet_size);
-      asio::post(*loop_,
-                 [this, buffer_copy]() { ReceiveData(DiscoveryNow(), buffer_copy->data(), buffer_copy->size()); });
+      loopback_packets.emplace_back(send_buf_.begin(), send_buf_.begin() + packet_size);
     }
 
     payload_offset += chunk_size;
     ++packet_index;
   }
+
+  if (loopback_packets.empty()) {
+    return;
+  }
+  // IMPORTANT: We must defer ReceiveData via asio::post to prevent deadlocks in loopback scenarios in cases where
+  // the ReceiveData callback results in a call to register a new sample on the same callback. BroadcastSamples()
+  // holds registered_samples_mutex_, and ReceiveData triggers callbacks that may call Register() which also needs
+  // registered_samples_mutex_. By deferring to the next event loop iteration, we break this synchronous chain.
+  // One handler delivers all of the sample's packets, so it arrives whole or not at all.
+  asio::post(*loop_, [this, handle, packets = std::move(loopback_packets)]() {
+    // Unregistered since this was posted. Unregister sends no unregistration, so delivering it would register the
+    // sample until it timed out. The lock is released before ReceiveData, whose callbacks may call Register().
+    {
+      std::lock_guard lock(registered_samples_mutex_);
+      if (!registered_samples_.contains(handle)) {
+        return;
+      }
+    }
+    const auto now = DiscoveryNow();
+    for (const auto& packet : packets) {
+      ReceiveData(now, packet.data(), packet.size());
+    }
+  });
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {

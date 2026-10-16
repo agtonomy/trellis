@@ -25,6 +25,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -221,6 +222,26 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
   discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
   ev.RunFor(std::chrono::milliseconds(10));
   EXPECT_GT(receive_count, 0u);
+}
+
+// Unregistered before its loopback delivery ran: the delivery used to register it anyway, and it stayed until its
+// sample timed out, since Unregister sends no unregistration. The one still registered shows the delivery ran.
+TEST(DiscoveryTests, LoopbackDropsADeliveryForASampleUnregisteredBeforeItRan) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  // Padded to span several packets; the callback records each topic without its padding, so a failure stays legible.
+  const std::string padding(80000, 'x');
+  std::vector<std::string> received;
+  discovery.AsyncReceivePublishers([&received, &padding](Discovery::EventType, const Sample& sample) {
+    received.push_back(sample.topic().tname().substr(0, sample.topic().tname().size() - padding.size()));
+  });
+  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered/" + padding, "memfile", 2u);
+  discovery.RegisterPublisher<test::Test>("/dummy/kept/" + padding, "memfile", 2u);
+  discovery.Unregister(handle);
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(received, std::vector<std::string>{"/dummy/kept/"});
+  EXPECT_FALSE(HasTopic(discovery.GetPubSamples(), "/dummy/unregistered/" + padding));
+  EXPECT_TRUE(HasTopic(discovery.GetPubSamples(), "/dummy/kept/" + padding));
 }
 
 TEST(DiscoveryTests, RegisterSubscriber) {
