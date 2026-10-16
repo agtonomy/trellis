@@ -135,7 +135,10 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
     discovery_registration_ = discovery_->Register(discovery::utils::GetNodeProcessSample(name_));
   }
 
-  Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
+  // The log level is process-wide, so the host's applies: a hosted node setting its own would change every sibling's.
+  if (!shares_context_) {
+    Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
+  }
   const int unclean_exits = crash_counter_.UncleanExitCount();
   if (unclean_exits > 0) {
     Log::Error("{} starting after {} consecutive unclean exit(s)", name_, unclean_exits);

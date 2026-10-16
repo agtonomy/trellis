@@ -104,8 +104,8 @@ class Node {
    *
    * A hosted node gives up four things to the host, which owns them for the whole process: signal handling (so
    * AddSignalHandler does nothing), Stop() (a no-op, since stopping the loop would stop every sibling), the
-   * SimController subscription, and its own `trellis.timers.*` and `trellis.discovery.*` settings. It still
-   * registers under its own name in discovery and reports its own health.
+   * SimController subscription, and its own `trellis.timers.*`, `trellis.discovery.*` and `trellis.logging.log_level`
+   * settings. It still registers under its own name in discovery and reports its own health.
    *
    * `loop` must carry a timer registry and `discovery` must be non-null; the constructor rejects anything else.
    *

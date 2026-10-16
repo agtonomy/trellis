@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -244,6 +245,25 @@ TEST(TrellisNodeSharedContext, StillValidatesItsOwnTimerConfig) {
   // The host's policy is the one that applies, but a policy name that does not exist is a mistake, and it is worth
   // reporting where that mistake was made
   EXPECT_THROW({ Node guest("guest", bad_config, std::nullopt, ContextOf(host)); }, std::invalid_argument);
+}
+
+// The level is process-wide. A guest used to apply its own, here the default, over the host's.
+TEST(TrellisNodeSharedContext, GuestLeavesTheHostsLogLevel) {
+  const auto enabled_levels = []() {
+    std::vector<bool> enabled;
+    for (const auto level : {Log::kInfo, Log::kWarn, Log::kError, Log::kFatal, Log::kDebug}) {
+      enabled.push_back(Log::detail::IsEnabled(level));
+    }
+    return enabled;
+  };
+  YAML::Node root = YAML::Clone(SharedContextConfig().Root());
+  root["trellis"]["logging"]["log_level"] = "info";
+  Node host("host", Config{root});
+  const auto hosts = enabled_levels();
+
+  { Node guest("guest", SharedContextConfig(), std::nullopt, ContextOf(host)); }
+  EXPECT_EQ(enabled_levels(), hosts) << "the guest changed the process-wide log level";
+  Log::SetLogLevel("fatal");  // the default, as other tests in this binary expect
 }
 
 TEST(TrellisNodeSharedContext, RefusesToFlipTheProcessClockUnderTheHost) {
