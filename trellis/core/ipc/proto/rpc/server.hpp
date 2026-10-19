@@ -81,10 +81,6 @@ class Server {
    */
   Server(std::shared_ptr<PROTO_SERVICE_T> prototype, trellis::core::EventLoop loop, discovery::DiscoveryPtr discovery)
       : loop_{loop},
-        rpc_thread_([handler_loop = std::optional{handler_loop_}, loop]() mutable {
-          handler_loop->Run();
-          handler_loop.reset();  // before the loop: the handlers it drops own sockets on the loop
-        }),
         prototype_{prototype},
         discovery_{std::move(discovery)},
         tcp_server_{loop, /* port = */ 0, [this](const trellis::core::error_code& ec, network::TCP socket) mutable {
@@ -108,6 +104,17 @@ class Server {
     // before any member later in that list exists.
     discovery_handle_ = discovery_->RegisterServiceServer(std::string{PROTO_SERVICE_T::descriptor()->full_name()},
                                                           tcp_server_.GetPort(), methods_);
+    // Started last: a throw before this leaves no joinable thread, which would terminate the process as the members
+    // unwind. Requests accepted meanwhile wait on handler_loop_ until the thread runs it.
+    try {
+      rpc_thread_ = std::thread{[handler_loop = std::optional{handler_loop_}, loop]() mutable {
+        handler_loop->Run();
+        handler_loop.reset();  // before the loop: the handlers it drops own sockets on the loop
+      }};
+    } catch (...) {
+      discovery_->Unregister(discovery_handle_);
+      throw;
+    }
   }
 
   /**

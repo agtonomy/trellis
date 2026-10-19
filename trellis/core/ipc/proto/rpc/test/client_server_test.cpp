@@ -16,8 +16,10 @@
  */
 
 #include <gtest/gtest.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include <array>
 #include <atomic>
@@ -26,6 +28,7 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -1010,7 +1013,6 @@ TEST_F(TrellisFixture, HandlerFinishingAfterTheLoopStopsDoesNotLeakAServiceThatH
       << "the service was queued on the stopped loop it holds, so neither was destroyed";
 }
 
-// The loop stops before the client is released, as it does when an app shuts down.
 // A raw caller sends a request whose 4MB reply takes several writes, and a second request right behind it. The
 // server used to start the second reply while the first was still being written, interleaving their bytes, so the
 // caller read a length from inside the first reply's payload.
@@ -1079,6 +1081,25 @@ TEST_F(TrellisFixture, PipelinedRepliesAreWrittenOneAfterAnother) {
   GetNode().GetDiscovery()->StopReceive(discovery_handle);
 }
 
+// The handler thread used to start before the TCP server and the registration, so a throw from either left it
+// joinable while the members unwound, and std::thread's destructor terminated the process.
+TEST_F(TrellisFixture, ServerThatFailsToConstructThrows) {
+  // Caps descriptors at the next free one, so the server's listening socket is the first to fail (EMFILE).
+  const int next_fd = ::dup(0);
+  ASSERT_GE(next_fd, 0);
+  ::close(next_fd);
+  rlimit original{};
+  ASSERT_EQ(::getrlimit(RLIMIT_NOFILE, &original), 0);
+  rlimit capped = original;
+  capped.rlim_cur = static_cast<rlim_t>(next_fd);
+  ASSERT_EQ(::setrlimit(RLIMIT_NOFILE, &capped), 0);
+  const absl::Cleanup restore = [&original]() { ::setrlimit(RLIMIT_NOFILE, &original); };
+
+  EXPECT_THROW(GetNode().CreateServiceServer<TestServiceHandler>(std::make_shared<TestServiceHandler>()),
+               std::system_error);
+}
+
+// The loop stops before the client is released, as it does when an app shuts down.
 TEST_F(TrellisFixture, FailsCallsOnDestruction) {
   StartRunnerThread();
 
