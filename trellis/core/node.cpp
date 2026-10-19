@@ -129,12 +129,6 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
     time::EnableSimulatedClock();
   }
 
-  // A Discovery instance registers a process sample only for the node that built it, so a node adopting someone
-  // else's has to announce itself or it never shows up in `trellis node list`.
-  if (shares_context_) {
-    discovery_registration_ = discovery_->Register(discovery::utils::GetNodeProcessSample(name_));
-  }
-
   // The log level is process-wide, so the host's applies: a hosted node setting its own would change every sibling's.
   if (!shares_context_) {
     Log::SetLogLevel(config_.AsIfExists<std::string>("trellis.logging.log_level", "fatal"));
@@ -211,6 +205,13 @@ Node::Node(std::string_view name, trellis::core::Config config, std::optional<Si
     const auto clock_topic = config_.AsIfExists<std::string>("trellis.simulated_clock.topic",
                                                              std::string{SimController::kDefaultClockTopic});
     sim_controller_ = std::make_unique<SimController>(*this, clock_topic);
+  }
+
+  // A Discovery instance registers a process sample only for the node that built it, so a node adopting someone
+  // else's has to announce itself or it never shows up in `trellis node list`. Last, so a throw above leaves no sample
+  // behind: ~Node() would not run to withdraw it, and the host's Discovery would keep re-broadcasting it.
+  if (shares_context_) {
+    discovery_registration_ = discovery_->Register(discovery::utils::GetNodeProcessSample(name_));
   }
 }
 

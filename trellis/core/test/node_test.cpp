@@ -178,6 +178,22 @@ TEST(TrellisNodeSharedContext, GuestAnnouncesItselfInDiscovery) {
   EXPECT_TRUE(names.contains("guest")) << "a hosted node is invisible to `trellis node list`";
 }
 
+// ~Node() never runs for a guest whose constructor throws, so a registration made before the throw outlived it.
+TEST(TrellisNodeSharedContext, GuestThatFailsToConstructLeavesNoProcessSample) {
+  const auto config = SharedContextConfig();
+  Node host("host", config);
+  YAML::Node root = YAML::Clone(config.Root());
+  root["trellis"]["metrics"]["enabled"] = true;
+  root["trellis"]["metrics"]["interval_ms"] = 0;  // rejected after the guest's other setup
+  EXPECT_THROW({ Node failed("failed", Config{root}, std::nullopt, ContextOf(host)); }, std::invalid_argument);
+
+  // Registered after the failed guest would have been, so once it shows up the failed one would have too
+  Node guest("guest", config, std::nullopt, ContextOf(host));
+  RunUntil(host, [&host]() { return ProcessNames(host).contains("guest"); });
+  ASSERT_TRUE(ProcessNames(host).contains("guest"));
+  EXPECT_FALSE(ProcessNames(host).contains("failed")) << "a guest that failed to construct is still announced";
+}
+
 TEST(TrellisNodeSharedContext, AddSignalHandlerIsRefused) {
   const auto config = SharedContextConfig();
   Node host("host", config);
