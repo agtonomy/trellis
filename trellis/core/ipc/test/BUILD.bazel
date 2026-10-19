@@ -8,3 +8,12 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "named_resource_registry_test",
+    srcs = ["named_resource_registry_test.cpp"],
+    deps = [
+        "//trellis/core/ipc:named_resource_registry",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

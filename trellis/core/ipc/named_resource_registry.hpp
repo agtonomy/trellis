@@ -23,8 +23,11 @@
 
 #include <cstdlib>
 #include <exception>
-#include <queue>
+#include <mutex>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace trellis::core::ipc {
 
@@ -41,6 +44,9 @@ namespace trellis::core::ipc {
  * @note Constructing the singleton installs a process-wide `std::terminate` handler that calls `UnlinkAll`, so an
  * abort cleans up too. Callers still have to invoke `UnlinkAll` on the paths they control; the handler is only a last
  * resort. It cannot help when no handler runs at all, such as SIGKILL or a segfault.
+ *
+ * Thread-safe. The singleton is never destroyed, so the handler stays valid through static destruction. The lock is
+ * never held while blocking, and an exception never leaves a method with it held, so the handler can always take it.
  */
 class NamedResourceRegistry {
  public:
@@ -50,7 +56,8 @@ class NamedResourceRegistry {
    * @return Reference to the singleton instance of NamedResourceRegistry.
    */
   static NamedResourceRegistry& Get() {
-    static NamedResourceRegistry registry_;
+    // Leaked on purpose: the terminate handler outlives every static, and may run while they are destroyed.
+    static NamedResourceRegistry& registry_ = *new NamedResourceRegistry;
     return registry_;
   }
 
@@ -59,14 +66,14 @@ class NamedResourceRegistry {
    *
    * @param handle The path to the resource.
    */
-  void Insert(std::string_view handle) { named_resources_.emplace(std::string(handle)); }
+  void Insert(std::string_view handle) { Track(named_resources_, handle); }
 
   /**
    * @brief Insert a named shared memory resource to track for cleanup using `shm_unlink()`.
    *
    * @param handle The shared memory name (e.g., passed to `shm_open`).
    */
-  void InsertShm(std::string_view handle) { named_shm_.emplace(std::string(handle)); }
+  void InsertShm(std::string_view handle) { Track(named_shm_, handle); }
 
   /**
    * @brief Unlink all tracked resources.
@@ -75,17 +82,9 @@ class NamedResourceRegistry {
    * Errors are ignored (best-effort cleanup).
    */
   void UnlinkAll() {
-    while (!named_resources_.empty()) {
-      const auto& handle = named_resources_.front();
-      (void)::unlink(handle.c_str());  ///< Best-effort removal; ignore return value.
-      named_resources_.pop();
-    }
-
-    while (!named_shm_.empty()) {
-      const auto& handle = named_shm_.front();
-      (void)::shm_unlink(handle.c_str());  ///< Best-effort removal; ignore return value.
-      named_shm_.pop();
-    }
+    const std::lock_guard lock{mutex_};
+    Drain(named_resources_, ::unlink);
+    Drain(named_shm_, ::shm_unlink);
   }
 
  private:
@@ -93,8 +92,8 @@ class NamedResourceRegistry {
    * @brief Private constructor for singleton pattern. Installs the terminate handler described above.
    */
   NamedResourceRegistry() {
-    // std::terminate aborts without unwinding so destructors/catch blocks aren't run.
-    // This is insurance to prevent orphaning the pages behind the shm files.
+    // An uncaught exception reaches std::terminate without unwinding (libstdc++), so destructors and catch blocks
+    // don't run. This is insurance to prevent orphaning the pages behind the shm files.
     static std::terminate_handler previous_handler = std::set_terminate([]() {
       Get().UnlinkAll();
       if (previous_handler != nullptr) {
@@ -104,8 +103,36 @@ class NamedResourceRegistry {
     });
   }
 
-  std::queue<std::string> named_resources_;  ///< Queue of regular named resources for `unlink()`.
-  std::queue<std::string> named_shm_;        ///< Queue of shared memory names for `shm_unlink()`.
+  /**
+   * @brief Track `handle` in `names`.
+   *
+   * The name is built before the lock is taken, but growing `names` can still throw while it is held. The catch makes
+   * the lock release before the exception goes on, even when nothing above catches it: without unwinding, the
+   * terminate handler would otherwise wait on this thread's lock forever.
+   */
+  void Track(std::vector<std::string>& names, std::string_view handle) {
+    std::string name{handle};
+    try {
+      const std::lock_guard lock{mutex_};
+      names.push_back(std::move(name));
+    } catch (...) {
+      throw;
+    }
+  }
+
+  /**
+   * @brief Remove every name in `names` with `remove`, ignoring failures (best-effort cleanup), and forget them.
+   */
+  static void Drain(std::vector<std::string>& names, int (*remove)(const char*)) {
+    for (const auto& name : names) {
+      (void)remove(name.c_str());
+    }
+    names.clear();
+  }
+
+  std::mutex mutex_;                          ///< Guards both lists: resources are inserted on any thread.
+  std::vector<std::string> named_resources_;  ///< Regular named resources, for `unlink()`.
+  std::vector<std::string> named_shm_;        ///< Shared memory names, for `shm_unlink()`.
 };
 
 }  // namespace trellis::core::ipc
