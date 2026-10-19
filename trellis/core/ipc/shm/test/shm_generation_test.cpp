@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -187,6 +188,46 @@ TEST_F(ShmGenerationTest, WriteOnlyAdvancesTheSlotItTouches) {
   // Wrapping the ring back around to slot zero does advance it
   Write("laps back to slot zero");
   EXPECT_EQ(GenerationOf(0), slot_zero + 2);
+}
+
+// The publisher holds a slot through WriteAccessGuard, and its serializer may throw. The guard must then abandon the
+// write and release the slot, or the clobbered payload stays published and the slot stays locked.
+TEST_F(ShmGenerationTest, GuardAbandonsAWriteThatThrows) {
+  CreateWriter(/* num_buffers = */ 1);
+  Write("original");
+  const auto after_write = Slot(0).Borrow().header;
+
+  const auto write_that_throws = [this]() {
+    const auto info = Writer().GetWriteAccess(kInitialBufferSize);
+    ASSERT_NE(info.data, nullptr);
+    const ShmWriter::WriteAccessGuard guard{Writer(), trellis::core::time::Now()};
+    std::memset(info.data, 'x', 8);
+    throw std::runtime_error{"serialization failed"};
+  };
+  EXPECT_THROW(write_that_throws(), std::runtime_error);
+
+  const auto after_throw = Slot(0).Borrow().header;
+  EXPECT_EQ(after_throw.generation, after_write.generation + 2) << "the write window was left open";
+  EXPECT_EQ(after_throw.sequence, 0U) << "the clobbered payload is still published";
+  Write("retry");  // fails if the slot is still locked, since it is the only one
+  EXPECT_EQ(Slot(0).Borrow().header.sequence, after_write.sequence + 1);
+}
+
+TEST_F(ShmGenerationTest, GuardPublishesACommittedWrite) {
+  CreateWriter(/* num_buffers = */ 1);
+  const std::string payload = "committed";
+  {
+    const auto info = Writer().GetWriteAccess(payload.size());
+    ASSERT_NE(info.data, nullptr);
+    ShmWriter::WriteAccessGuard guard{Writer(), trellis::core::time::Now()};
+    std::memcpy(info.data, payload.data(), payload.size());
+    guard.Commit(payload.size());
+  }
+
+  const auto header = Slot(0).Borrow().header;
+  EXPECT_EQ(header.sequence, 1U);
+  EXPECT_EQ(header.data_size, payload.size());
+  EXPECT_EQ(header.generation % 2, 0U);
 }
 
 }  // namespace
