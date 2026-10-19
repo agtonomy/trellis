@@ -101,9 +101,10 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
                                      PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);
             tcp_client_ = Connect(tcp_port);
           } else {
-            // if for some reason tcp_client_ is set already, but on the wrong port
+            // The connection is to another port, or is dead: a socket its peer reset has no remote port, and would
+            // otherwise be kept until the old server's sample timed out.
             const auto maybe_remote_port = tcp_client_->GetRemotePort();
-            if (maybe_remote_port.has_value() && maybe_remote_port.value() != tcp_port) {
+            if (!maybe_remote_port.has_value() || maybe_remote_port.value() != tcp_port) {
               trellis::core::Log::Info(
                   "Received registration for service {} server on port {}, updating existing TCP connection",
                   PROTO_SERVICE_T::descriptor()->full_name(), tcp_port);

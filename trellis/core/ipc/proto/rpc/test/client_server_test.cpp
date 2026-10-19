@@ -1392,6 +1392,58 @@ TEST_F(TrellisFixture, RegistrationForAServerThatIsGoneKeepsTheLiveConnection) {
   GetNode().GetDiscovery()->Unregister(stale);
 }
 
+// The old server goes away while its registration lingers, as a crashed server's does until its sample times out, and
+// the peer's reset leaves the client's socket with no remote port. The new server's registration must replace that
+// socket at once; it was ignored until the old sample went, here never.
+TEST_F(TrellisFixture, NewRegistrationReplacesAConnectionThePeerReset) {
+  // Declared before the client: ~Client() runs the callbacks that reference it.
+  std::atomic<unsigned> successes{0};
+  std::atomic<unsigned> answered{0};
+  std::vector<network::TCP> accepted;
+  StartRunnerThread();
+
+  auto old_server = std::make_unique<network::TCPServer>(
+      GetNode().GetEventLoop(), /* port = */ 0, [&accepted](const trellis::core::error_code& ec, network::TCP socket) {
+        if (!ec) {
+          accepted.push_back(std::move(socket));
+        }
+      });
+  const auto stale = GetNode().GetDiscovery()->RegisterServiceServer(
+      std::string{TestService::descriptor()->full_name()}, old_server->GetPort(), MethodsMap{});
+  auto client = GetNode().CreateServiceClient<TestService>();
+  ASSERT_TRUE(WaitUntil([&]() { return RunOnLoop([&]() { return !accepted.empty(); }); }));
+
+  RunOnLoop([&]() {
+    accepted.clear();  // closes the client's connection from the server's end
+    old_server.reset();
+  });
+  const auto call = [&]() {
+    const auto before = answered.load();
+    client->CallAsync<test::Test, test::TestTwo>(
+        "DoStuff", test::Test{},
+        [&](ServiceCallStatus status, const test::TestTwo*) {
+          successes += status == kSuccess ? 1 : 0;
+          ++answered;
+        },
+        /* timeout_ms = */ 1000);
+    return WaitUntil([&]() { return answered.load() > before; });
+  };
+  // The first call reads the server's close; its send draws the reset the second one fails on.
+  ASSERT_TRUE(call());
+  ASSERT_TRUE(call());
+  ASSERT_EQ(successes.load(), 0u);
+
+  auto server = GetNode().CreateServiceServer<TestServiceHandler>(std::make_shared<TestServiceHandler>());
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{10 * kTestDiscoveryInterval};
+  while (successes.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+    ASSERT_TRUE(call());
+    std::this_thread::sleep_for(std::chrono::milliseconds{kTestDiscoveryInterval / 4});
+  }
+  StopAndJoinRunnerThread();  // the callbacks reference locals of this function
+  EXPECT_GT(successes.load(), 0u) << "the client kept the dead connection while the old registration lingered";
+  GetNode().GetDiscovery()->Unregister(stale);
+}
+
 // A reply still owed when the event loop stops is lost, because the send is posted to the loop and a stopped loop
 // never runs it. What keeps that from stranding the caller is ~Server() closing the caller's socket, which completes
 // the receive the caller is sitting on with an error. Shutdown therefore has to destroy the Server, not just stop the
