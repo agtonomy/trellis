@@ -42,6 +42,10 @@ namespace trellis::core::ipc::proto::rpc {
  * service. It must not block waiting on a reply from this one: the handler thread is already inside the outer call,
  * so the nested request is never dispatched. ~Server() then joins that thread with no timeout, hanging shutdown.
  *
+ * Nor can a handler that waits on the event loop finish if ~Server() runs on that loop's thread, or after the loop has
+ * stopped: the join then waits for good. Such a handler should wait through RunOnEventLoop(), which gives up on a
+ * stopped loop, or with a bound, and its server should be destroyed off the loop.
+ *
  * A handler answers by returning. The reply is built from the response as it stands then, and the `done` a handler is
  * given does nothing, so it must not keep `done`, the response or the controller to finish the call later. It fails the
  * call by calling SetFailed() on the controller or by throwing. Either is logged here and answered as failed, and the
