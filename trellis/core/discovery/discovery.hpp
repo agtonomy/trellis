@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <queue>
+#include <unordered_set>
 #include <utility>
 
 #include "trellis/core/config.hpp"
@@ -47,6 +48,10 @@ namespace trellis::core::discovery {
  * UpdatePubSubStats() and GetSampleId() are safe from any thread. The sample queries (the Get*Samples() methods and
  * FindResolvableTopicSample()) read caches the loop updates without a lock, so call them on the loop's thread or while
  * the loop is not running.
+ *
+ * Loopback: a callback added with an AsyncReceive*() method goes live on the loop, not before the method returns. It
+ * is first replayed the samples of its kind this instance has already received, so it need not wait for the next
+ * heartbeat to hear about them. The replay delivers each of them once; heartbeats deliver them again as usual.
  */
 class Discovery {
  public:
@@ -147,6 +152,9 @@ class Discovery {
   /**
    * @brief Subscribe to discovery updates about publishers
    *
+   * @note Do not call this or StopReceive() from a discovery callback. Callbacks run under the lock both take, so the
+   * call deadlocks. Post it to the event loop instead.
+   *
    * @param callback The callback invoked on discovery events
    * @return A handle to later stop receiving updates
    */
@@ -155,20 +163,32 @@ class Discovery {
   /**
    * @brief Subscribe to discovery updates about subscribers
    *
+   * @note Do not call this or StopReceive() from a discovery callback. Callbacks run under the lock both take, so the
+   * call deadlocks. Post it to the event loop instead.
+   *
    * @param callback The callback invoked on discovery events
    * @return A handle to later stop receiving updates
    */
   CallbackHandle AsyncReceiveSubscribers(SampleCallback callback);
 
   /**
-   * @brief Subscribe to discovery update about services (RPC)
+   * @brief Subscribe to discovery updates about services (RPC)
+   *
+   * @note Do not call this or StopReceive() from a discovery callback. Callbacks run under the lock both take, so the
+   * call deadlocks. Post it to the event loop instead.
+   *
+   * @param callback The callback invoked on discovery events
+   * @return A handle to later stop receiving updates
    */
   CallbackHandle AsyncReceiveServices(SampleCallback callback);
 
   /**
    * @brief Stop receiving discovery updates
    *
-   * @param handle The callback handle returned by AsyncReceivePublishers/Subscribers
+   * Once this returns the callback is not running and will not run again. Under loopback that includes a callback
+   * that has not gone live yet.
+   *
+   * @param handle The callback handle returned by an AsyncReceive*() method
    */
   void StopReceive(CallbackHandle handle);
 
@@ -281,7 +301,7 @@ class Discovery {
    *
    * This method is helpful for introspection tools
    *
-   * @return A vector of known discovery samples from remote peers
+   * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetPubSamples() const;
 
@@ -290,7 +310,7 @@ class Discovery {
    *
    * This method is helpful for introspection tools
    *
-   * @return A vector of known discovery samples from remote peers
+   * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetSubSamples() const;
 
@@ -299,7 +319,7 @@ class Discovery {
    *
    * This method is helpful for introspection tools
    *
-   * @return A vector of known discovery samples from remote peers
+   * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetPubSubSamples() const;
 
@@ -308,7 +328,7 @@ class Discovery {
    *
    * This method is helpful for introspection tools
    *
-   * @return A vector of known discovery samples from remote peers
+   * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetServiceSamples() const;
 
@@ -317,7 +337,7 @@ class Discovery {
    *
    * This method is helpful for introspection tools
    *
-   * @return A vector of known discovery samples from remote peers
+   * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetProcessSamples() const;
 
@@ -364,7 +384,7 @@ class Discovery {
   void Evaluate(const trellis::core::time::TimePoint& now);
   void BroadcastSamples();
   void BroadcastSample(RegistrationHandle handle, const Sample& sample);
-  CallbackHandle AddSampleCallback(SampleCallbackMap& callbacks, SampleCallback callback);
+  CallbackHandle AddSampleCallback(SampleCallbackMap& callbacks, const SamplesMap& samples, SampleCallback callback);
   void PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                          const SampleCallbackMap& callback_map);
   void PurgeStalePartialBuffers(const trellis::core::time::TimePoint& now);
@@ -388,16 +408,18 @@ class Discovery {
   CallbackHandle next_callback_handle_{0};              ///< Monotonically increasing callback ID
   std::array<uint8_t, kUdpPayloadSizeMax> send_buf_{};  ///< Reusable send buffer for UDP
 
-  std::mutex callback_mutex_{};                      ///< Protects access to callback maps
+  std::mutex callback_mutex_{};                      ///< Guards the callback maps and pending_callbacks_
   SampleCallbackMap process_sample_callbacks_{};     ///< Callbacks for process-level samples
   SampleCallbackMap publisher_sample_callbacks_{};   ///< Callbacks for publisher samples
   SampleCallbackMap subscriber_sample_callbacks_{};  ///< Callbacks for subscriber samples
   SampleCallbackMap service_sample_callbacks_{};     ///< Callbacks for service samples
+  /// Loopback callbacks added but not yet live, whose replay is still queued
+  std::unordered_set<CallbackHandle> pending_callbacks_{};
 
-  SamplesMap process_samples_{};     ///< Remote process samples
-  SamplesMap publisher_samples_{};   ///< Remote publisher samples by topic
-  SamplesMap subscriber_samples_{};  ///< Remote subscriber samples by topic
-  SamplesMap service_samples_{};     ///< Remote service server samples
+  SamplesMap process_samples_{};     ///< Known process samples by sample id
+  SamplesMap publisher_samples_{};   ///< Known publisher samples by sample id
+  SamplesMap subscriber_samples_{};  ///< Known subscriber samples by sample id
+  SamplesMap service_samples_{};     ///< Known service server samples by sample id
 
   // Multi-packet reassembly data structure
   struct PartialSample {

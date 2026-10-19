@@ -206,7 +206,19 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredBeforeCallback) {
     EXPECT_EQ(sample.topic().tname(), "/dummy/publisher");
   });
   ev.RunFor(std::chrono::milliseconds(10));
-  EXPECT_GT(receive_count, 0u);
+  EXPECT_EQ(receive_count, 1u);
+}
+
+// Registered before the callback was added, but its delivery had not run yet. That delivery and the replay both
+// reported it until the replay read only what had been received.
+TEST(DiscoveryTests, LoopbackReportsAQueuedSampleOnce) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  unsigned receive_count{0};
+  discovery.AsyncReceivePublishers([&receive_count](Discovery::EventType, const Sample&) { ++receive_count; });
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(receive_count, 1u);
 }
 
 // A publisher registered after the callback reaches it when it registers, not on the next heartbeat.
@@ -221,7 +233,7 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
   });
   discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
   ev.RunFor(std::chrono::milliseconds(10));
-  EXPECT_GT(receive_count, 0u);
+  EXPECT_EQ(receive_count, 1u);
 }
 
 // Unregistered before its loopback delivery ran: the delivery used to register it anyway, and it stayed until its
@@ -242,6 +254,137 @@ TEST(DiscoveryTests, LoopbackDropsADeliveryForASampleUnregisteredBeforeItRan) {
   EXPECT_EQ(received, std::vector<std::string>{"/dummy/kept/"});
   EXPECT_FALSE(HasTopic(discovery.GetPubSamples(), "/dummy/unregistered/" + padding));
   EXPECT_TRUE(HasTopic(discovery.GetPubSamples(), "/dummy/kept/" + padding));
+}
+
+// Adding a callback replays what has been received to that callback alone. It used to rebroadcast every sample to
+// every callback, so the first of M callbacks heard each of N publishers M times, and the total grew as N * M^2.
+TEST(DiscoveryTests, LoopbackReplaysReceivedSamplesOnlyToTheNewCallback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  constexpr unsigned kPublishers = 5;
+  constexpr unsigned kCallbacks = 4;
+  for (unsigned i = 0; i < kPublishers; ++i) {
+    discovery.RegisterPublisher<test::Test>("/dummy/replayed_" + std::to_string(i), "memfile", 2u);
+  }
+  discovery.RegisterSubscriber<test::Test>("/dummy/not_a_publisher");
+  ev.RunFor(std::chrono::milliseconds(10));  // delivered while no callback exists
+
+  std::vector<std::string> publishers;
+  for (unsigned i = 0; i < kPublishers; ++i) {
+    publishers.push_back("/dummy/replayed_" + std::to_string(i));
+  }
+  std::vector<std::vector<std::string>> received(kCallbacks);
+  for (unsigned i = 0; i < kCallbacks; ++i) {
+    discovery.AsyncReceivePublishers([&received, i](Discovery::EventType event, const Sample& sample) {
+      EXPECT_EQ(event, Discovery::EventType::kNewRegistration);
+      received[i].push_back(sample.topic().tname());
+    });
+    ev.RunFor(std::chrono::milliseconds(10));
+  }
+  for (auto& topics : received) {
+    std::ranges::sort(topics);
+    EXPECT_EQ(topics, publishers);
+  }
+}
+
+// Unregistered before its delivery ran, a sample never reaches the caches the replay reads, so a callback added
+// meanwhile does not hear of it. The one still registered shows the replay ran.
+TEST(DiscoveryTests, LoopbackReplaySkipsASampleUnregisteredBeforeItsDeliveryRan) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  discovery.RegisterPublisher<test::Test>("/dummy/kept", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(10));  // delivered while no callback exists
+  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
+  std::vector<std::string> received;
+  discovery.AsyncReceivePublishers(
+      [&received](Discovery::EventType, const Sample& sample) { received.push_back(sample.topic().tname()); });
+  discovery.Unregister(handle);
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(received, std::vector<std::string>{"/dummy/kept"});
+}
+
+// Unregistered after its delivery ran, a sample stays known until it times out, since Unregister sends no
+// unregistration. A callback added meanwhile is told what the callbacks before it were told.
+TEST(DiscoveryTests, LoopbackReplayTellsANewCallbackWhatTheExistingOnesHeard) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  std::vector<std::string> existing;
+  discovery.AsyncReceivePublishers(
+      [&existing](Discovery::EventType, const Sample& sample) { existing.push_back(sample.topic().tname()); });
+  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(10));
+  discovery.Unregister(handle);
+  std::vector<std::string> added;
+  discovery.AsyncReceivePublishers(
+      [&added](Discovery::EventType, const Sample& sample) { added.push_back(sample.topic().tname()); });
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(existing, std::vector<std::string>{"/dummy/unregistered"});
+  EXPECT_EQ(added, existing);
+}
+
+// The other half of the replay above: when that sample times out, the new callback hears it go, as the earlier one
+// does, so neither is left believing in it.
+TEST(DiscoveryTests, LoopbackTimesOutAReplayedSampleForEveryCallback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackConfig())));
+  using Events = std::vector<Discovery::EventType>;
+  Events existing;
+  discovery.AsyncReceivePublishers(
+      [&existing](Discovery::EventType event, const Sample&) { existing.push_back(event); });
+  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(30));  // heartbeats deliver it again while it is registered
+  discovery.Unregister(handle);
+  Events added;
+  discovery.AsyncReceivePublishers([&added](Discovery::EventType event, const Sample&) { added.push_back(event); });
+  ev.RunFor(std::chrono::milliseconds(20));
+  ASSERT_EQ(added, Events{Discovery::EventType::kNewRegistration});  // the replay
+  ev.RunFor(std::chrono::milliseconds(400));                         // past the 200 ms sample timeout
+
+  EXPECT_EQ(added, (Events{Discovery::EventType::kNewRegistration, Discovery::EventType::kNewUnregistration}));
+  ASSERT_FALSE(existing.empty());
+  EXPECT_EQ(existing.back(), Discovery::EventType::kNewUnregistration);
+  EXPECT_EQ(std::ranges::count(existing, Discovery::EventType::kNewUnregistration), 1);
+  EXPECT_FALSE(HasTopic(discovery.GetPubSamples(), "/dummy/unregistered"));
+}
+
+// Stopped before its replay ran, a callback hears nothing. The one left running shows the replay ran.
+TEST(DiscoveryTests, LoopbackReplaySkipsACallbackStoppedBeforeItRan) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(10));  // delivered while no callback exists
+  unsigned stopped_count{0};
+  unsigned kept_count{0};
+  const auto stopped =
+      discovery.AsyncReceivePublishers([&stopped_count](Discovery::EventType, const Sample&) { ++stopped_count; });
+  discovery.AsyncReceivePublishers([&kept_count](Discovery::EventType, const Sample&) { ++kept_count; });
+  discovery.StopReceive(stopped);
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(stopped_count, 0u);
+  EXPECT_EQ(kept_count, 1u);
+}
+
+// Each kind of callback is replayed the samples of its own kind and no others.
+TEST(DiscoveryTests, LoopbackReplaysEachKindToItsOwnCallbacks) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  discovery.RegisterPublisher<test::Test>("/dummy/publisher", "memfile", 2u);
+  discovery.RegisterSubscriber<test::Test>("/dummy/subscriber");
+  discovery.RegisterServiceServer("dummy.Service", 1234, {});
+  ev.RunFor(std::chrono::milliseconds(10));  // delivered while no callback exists
+  std::vector<std::string> publishers;
+  std::vector<std::string> subscribers;
+  std::vector<std::string> services;
+  discovery.AsyncReceivePublishers(
+      [&publishers](Discovery::EventType, const Sample& sample) { publishers.push_back(sample.topic().tname()); });
+  discovery.AsyncReceiveSubscribers(
+      [&subscribers](Discovery::EventType, const Sample& sample) { subscribers.push_back(sample.topic().tname()); });
+  discovery.AsyncReceiveServices(
+      [&services](Discovery::EventType, const Sample& sample) { services.push_back(sample.service().sname()); });
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(publishers, std::vector<std::string>{"/dummy/publisher"});
+  EXPECT_EQ(subscribers, std::vector<std::string>{"/dummy/subscriber"});
+  EXPECT_EQ(services, std::vector<std::string>{"dummy.Service"});
 }
 
 TEST(DiscoveryTests, RegisterSubscriber) {

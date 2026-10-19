@@ -319,7 +319,8 @@ class SubscriberImpl : public SubscriberBase,
           }
         },
         statistics_update_interval_ms_, 0, TimerKind::kManagement);
-    // `this` is safe: Discovery runs this under its callback lock, which Stop()'s StopReceive() waits on and removes.
+    // `this` is safe: Discovery runs this under its callback lock, which Stop()'s StopReceive() waits on before it
+    // removes the callback or, under loopback, keeps it from going live.
     callback_handle_ = discovery_->AsyncReceivePublishers(
         [this](const discovery::Discovery::EventType event, const discovery::Sample& sample) {
           ReceivePublisher(event, sample);

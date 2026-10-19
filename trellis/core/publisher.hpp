@@ -150,7 +150,7 @@ class PublisherImpl {
         converter_{std::move(converter)} {
     // Registered from the constructor body, not the member-initializer list: this callback reads members declared
     // after callback_handle_, and discovery can deliver to it on the loop thread the moment it is registered -- a
-    // loopback instance does so by replaying the registrations it already holds. Registering last means every
+    // loopback instance does so by replaying the samples it has already received. Registering last means every
     // member is constructed before the first delivery can arrive.
     callback_handle_ = discovery_->AsyncReceiveSubscribers(
         [this](discovery::Discovery::EventType event, const discovery::Sample& sample) {

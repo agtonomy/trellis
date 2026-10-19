@@ -513,30 +513,45 @@ void Discovery::BroadcastSample(RegistrationHandle handle, const Sample& sample)
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceivePublishers(SampleCallback callback) {
-  return AddSampleCallback(publisher_sample_callbacks_, std::move(callback));
+  return AddSampleCallback(publisher_sample_callbacks_, publisher_samples_, std::move(callback));
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveSubscribers(SampleCallback callback) {
-  return AddSampleCallback(subscriber_sample_callbacks_, std::move(callback));
+  return AddSampleCallback(subscriber_sample_callbacks_, subscriber_samples_, std::move(callback));
 }
 
 Discovery::CallbackHandle Discovery::AsyncReceiveServices(SampleCallback callback) {
-  return AddSampleCallback(service_sample_callbacks_, std::move(callback));
+  return AddSampleCallback(service_sample_callbacks_, service_samples_, std::move(callback));
 }
 
-Discovery::CallbackHandle Discovery::AddSampleCallback(SampleCallbackMap& callbacks, SampleCallback callback) {
-  CallbackHandle handle;
-  {
-    std::lock_guard guard(callback_mutex_);
-    handle = next_callback_handle_++;
+Discovery::CallbackHandle Discovery::AddSampleCallback(SampleCallbackMap& callbacks, const SamplesMap& samples,
+                                                       SampleCallback callback) {
+  std::lock_guard guard(callback_mutex_);
+  const CallbackHandle handle = next_callback_handle_++;
+  if (!config_.loopback_enabled) {
     callbacks[handle] = std::move(callback);
+    return handle;
   }
-  // A callback registered after its peers would otherwise not hear about them until the next heartbeat, so the
-  // samples already held go out again for it. Deliberately outside callback_mutex_: BroadcastSamples takes
-  // registered_samples_mutex_, and holding both here would be the only place in this class that orders them so.
-  if (config_.loopback_enabled) {
-    BroadcastSamples();
-  }
+  // A callback added after its peers would otherwise not hear about them until the next heartbeat, so the samples
+  // already received are replayed to it, and only to it. It goes live in the same handler, and the loop runs one
+  // handler at a time, so every loopback delivery either ran before it was live, and left its sample in `samples` for
+  // the replay, or is still queued and will reach it. Either way each sample reaches it once.
+  pending_callbacks_.insert(handle);
+  asio::post(*loop_, [this, &callbacks, &samples, handle, callback = std::move(callback)]() mutable {
+    std::lock_guard guard(callback_mutex_);
+    if (pending_callbacks_.erase(handle) == 0) {
+      return;  // StopReceive() ran first
+    }
+    const auto& added = callbacks[handle] = std::move(callback);
+    if (!added) {
+      return;
+    }
+    // Iterated in place, since a callback cannot change `samples`: only ReceiveData() and PurgeStaleSamples() do, each
+    // from its own loop handler, and Register() posts its delivery.
+    for (const auto& [stamp, sample] : samples | std::views::values) {
+      added(EventType::kNewRegistration, sample);
+    }
+  });
   return handle;
 }
 
@@ -545,15 +560,10 @@ void Discovery::StopReceive(Discovery::CallbackHandle handle) {
     return;
   }
   std::lock_guard guard(callback_mutex_);
-  if (publisher_sample_callbacks_.contains(handle)) {
-    publisher_sample_callbacks_.erase(handle);
-  }
-  if (subscriber_sample_callbacks_.contains(handle)) {
-    subscriber_sample_callbacks_.erase(handle);
-  }
-  if (service_sample_callbacks_.contains(handle)) {
-    service_sample_callbacks_.erase(handle);
-  }
+  pending_callbacks_.erase(handle);
+  publisher_sample_callbacks_.erase(handle);
+  subscriber_sample_callbacks_.erase(handle);
+  service_sample_callbacks_.erase(handle);
 }
 
 std::vector<Sample> Discovery::GetPubSamples() const {

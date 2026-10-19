@@ -78,7 +78,7 @@ class Client : public std::enable_shared_from_this<Client<PROTO_SERVICE_T>> {
       : loop_{loop}, discovery_{discovery}, callback_handle_{discovery::Discovery::kInvalidCallbackHandle} {
     // Registered from the constructor body, not the member-initializer list. This callback reads members declared
     // after callback_handle_ -- tcp_client_ among them -- and discovery can deliver to it on the loop thread as soon
-    // as it is registered, which a loopback instance does by replaying the registrations it already holds. From the
+    // as it is registered, which a loopback instance does by replaying the samples it has already received. From the
     // body every member is constructed before the first delivery can arrive; from the initializer list tcp_client_
     // was still uninitialized storage, and a delivery that dereferenced it segfaulted.
     callback_handle_ = discovery_->AsyncReceiveServices([this](discovery::Discovery::EventType event,
