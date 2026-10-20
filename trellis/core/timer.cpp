@@ -17,6 +17,7 @@
 
 #include "trellis/core/timer.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace trellis {
@@ -126,10 +127,11 @@ void TimerImpl::Fire(const time::TimePoint& horizon) {
     return;
   }
   // fire_time is the moment this callback belongs to; horizon is how far the caller is advancing overall. They
-  // are the same reading whenever a real clock drives the timer, and differ only while
-  // Node::UpdateSimulatedClock is stepping: it moves the clock to this timer's own expiry before firing, so the
-  // callback sees the slot it was scheduled for while the rearm still learns how many later slots the step
-  // passed over. Only RearmPolicy::kSkipAligned reads the horizon; everything else ignores it.
+  // are the same reading whenever a real clock drives the timer, and differ only while StepSimulatedTimers is
+  // stepping: it moves the clock to this timer's own expiry before firing (unless the clock is already past it), so
+  // the callback sees the slot it was scheduled for while the rearm still learns how many later slots the step
+  // passed over. Only a periodic timer's rearm reads the horizon: kSkipAligned to skip those slots, and both
+  // policies to count them as overruns.
   //
   // The callback may destroy this timer, taking every member with it. These copies are what's left: the callback,
   // so it can finish, and the generation counter, so the check below still has something to read.
@@ -142,7 +144,10 @@ void TimerImpl::Fire(const time::TimePoint& horizon) {
   if (*wait_generation != generation) {
     return;  // the callback destroyed, stopped or reset this timer; nothing here left to rearm
   }
-  OnFired(fire_time, horizon);
+  // A simulation-driven callback can step the clock itself, past the horizon this timer was fired with. Rearming
+  // against the stale horizon would leave the timer due behind the clock. A timer on a real clock keeps the horizon
+  // it was given, as it always has.
+  OnFired(fire_time, IsSimulationDriven() ? std::max(horizon, time::Now()) : horizon);
 }
 
 std::unique_ptr<asio::steady_timer> TimerImpl::CreateSteadyTimer(EventLoop loop, unsigned delay_ms, TimerKind kind) {

@@ -34,6 +34,11 @@ namespace trellis::core {
  * searched again after every fire, so a timer that a callback creates or resets fires in this same step if it falls
  * due by target.
  *
+ * The clock never moves backwards. A callback that steps it past target extends this step to wherever it left the
+ * clock: whatever falls due by then fires here too, and the clock is left there rather than at target. A timer whose
+ * expiry the clock has already passed, whether through such a callback or through a step of another registry, fires
+ * late, at time::Now(), rather than moving the clock back to its expiry.
+ *
  * Timers asio drives are skipped: their expiry is a steady clock reading, not comparable with simulated time. See
  * TimerImpl::IsSimulationDriven.
  *
@@ -47,7 +52,7 @@ namespace trellis::core {
  * @return the number of timers fired
  * @throws std::logic_error if the simulated clock is not enabled
  * @throws std::invalid_argument if target is before time::Now()
- * @throws std::runtime_error if more than max_fires timers fall due; the clock is left at the last one fired
+ * @throws std::runtime_error if more than max_fires timers fall due; the clock is left where the last one fired
  */
 std::size_t StepSimulatedTimers(const TimerRegistry& registry, const time::TimePoint& target,
                                 std::size_t max_fires = 1'000'000);

@@ -19,6 +19,8 @@
 
 #include <optional>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "trellis/core/node.hpp"
 
@@ -417,4 +419,36 @@ TEST(TrellisSimulatedClock, GuestClockUpdateStillStepsAfterTheGuestIsDestroyed) 
   host.RunUntilIdle();
 
   ASSERT_EQ(trellis::core::time::Now(), target);
+}
+
+// A timer callback that steps the clock further than the step running it. The outer step used to end by setting the
+// clock to its own, earlier target, moving time backwards.
+TEST(TrellisSimulatedClock, StepFromATimerCallbackPastTheOuterTargetDoesNotRewind) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time
+
+  trellis::core::Node node("test_simtime", {});
+
+  // The first update just resets the timers
+  const trellis::core::time::TimePoint start{trellis::core::time::Now() + std::chrono::milliseconds(1000)};
+  node.UpdateSimulatedClock(start);
+  node.RunOnce();
+
+  std::vector<std::pair<char, int64_t>> fires;
+  const auto record = [&fires, start](char timer, const trellis::core::time::TimePoint& now) {
+    fires.emplace_back(timer, std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
+  };
+  auto stepper = node.CreateOneShotTimer(100u, [&](const trellis::core::time::TimePoint& now) {
+    record('A', now);
+    node.UpdateSimulatedClock(start + std::chrono::milliseconds(500));  // on the loop's thread, so it runs inline
+  });
+  auto periodic = node.CreateTimer(200u, [&](const trellis::core::time::TimePoint& now) { record('B', now); });
+  auto one_shot = node.CreateOneShotTimer(250u, [&](const trellis::core::time::TimePoint& now) { record('C', now); });
+
+  node.UpdateSimulatedClock(start + std::chrono::milliseconds(300));
+  node.RunOnce();
+
+  const std::vector<std::pair<char, int64_t>> expected{{'A', 100}, {'B', 200}, {'C', 250}, {'B', 400}};
+  EXPECT_EQ(fires, expected);
+  EXPECT_EQ(trellis::core::time::Now(), start + std::chrono::milliseconds(500)) << "the outer step rewound the clock";
 }

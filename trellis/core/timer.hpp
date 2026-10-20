@@ -105,7 +105,9 @@ class TimerImpl {
    * @param horizon how far ahead the caller has advanced, used to decide how many interval slots this
    * timer has missed. Under a real clock that is simply now, which is the default. A caller stepping a
    * simulated clock passes the time it is stepping to, which is ahead of the slot being fired -- the
-   * callback still receives its own slot time, but the rearm needs to know about the slots in between.
+   * callback still receives its own slot time, but the rearm needs to know about the slots in between. If
+   * the callback steps the simulated clock past horizon, a simulation-driven timer rearms against where
+   * the clock now is instead.
    */
   void Fire(const time::TimePoint& horizon = time::Now());
 
