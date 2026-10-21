@@ -45,7 +45,8 @@ namespace trellis::core::ipc::proto::rpc {
 namespace {
 
 static constexpr unsigned kLargeMessageTestSize = 4194304u;
-static constexpr auto kServiceCallWaitTime = std::chrono::milliseconds{200};
+// How long a test waits for calls to finish. Generous, since a sanitizer slows them; a reply that comes ends the wait.
+static constexpr auto kServiceCallDeadline = std::chrono::seconds{10};
 static constexpr auto kTimeoutReconnectTime = std::chrono::milliseconds{400};
 
 class TestServiceHandler : public trellis::core::test::TestService {
@@ -290,7 +291,7 @@ TEST_F(TrellisFixture, BasicSingleServiceCall) {
                                                  }
                                                });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count > 0; }, kServiceCallDeadline)) << "no reply";
 
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(fail_count.load(), 0u);
@@ -325,7 +326,7 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
     std::this_thread::sleep_for(std::chrono::milliseconds{200});  // small delay to stagger calls
   }
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count == 5; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 5u);
   EXPECT_EQ(fail_count.load(), 0u);
 }
@@ -354,7 +355,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
                                                    }
                                                  });
 
-    std::this_thread::sleep_for(kServiceCallWaitTime);
+    EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
     EXPECT_EQ(success_count.load(), 1u);
   }
 
@@ -362,7 +363,8 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
   auto handler = std::make_shared<TestServiceHandler>();
   auto server2 = GetNode().CreateServiceServer<TestServiceHandler>(handler);
   WaitForDiscovery();
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  // The old server's sample goes stale after kTestDiscoveryTimeout, but the purge waits for the next discovery tick.
+  std::this_thread::sleep_for(std::chrono::milliseconds{200});
 
   test::Test req2;
   req2.set_id(2);
@@ -378,7 +380,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
                                                  }
                                                });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 1u);
 }
 
@@ -406,7 +408,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
                                                     }
                                                   });
 
-    std::this_thread::sleep_for(kServiceCallWaitTime);
+    EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
     EXPECT_EQ(success_count.load(), 1u);
   }
 
@@ -428,7 +430,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
                                                   }
                                                 });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 1u);
 }
 
@@ -457,7 +459,7 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
                                                  }
                                                });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count > 0; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 0u);
   EXPECT_EQ(fail_count.load(), 1u);
 }
@@ -567,7 +569,7 @@ TEST_F(TrellisFixture, BackToBackCallSucceeds) {
                                                  }
                                                });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count == 2; }, kServiceCallDeadline)) << "no reply";
 
   EXPECT_EQ(success_count.load(), 2u);
   EXPECT_EQ(fail_count.load(), 0u);
@@ -601,7 +603,7 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
                                                  }
                                                });
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count > 0; }, kServiceCallDeadline)) << "no reply";
 
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(fail_count.load(), 0u);
@@ -855,7 +857,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
       },
       /* timeout_ms = */ 100);
 
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return callback_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(callback_count.load(), 1u);
 
   // Wait some additional time for the underlying socket to reconnect
@@ -871,7 +873,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
         ++callback_count;
       },
       /* timeout_ms = */ 100);
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(WaitUntil([&]() { return callback_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(callback_count.load(), 1u);
 }
 
@@ -1268,7 +1270,9 @@ TEST_F(TrellisFixture, CallFromServiceHandler) {
                                                    ++fail_count;
                                                  }
                                                });
-  std::this_thread::sleep_for(kServiceCallWaitTime);
+  EXPECT_TRUE(
+      WaitUntil([&]() { return outer_success_count + nested_success_count + fail_count >= 2; }, kServiceCallDeadline))
+      << "no reply";
   StopAndJoinRunnerThread();  // the callbacks reference locals of this function
 
   EXPECT_EQ(outer_success_count.load(), 1u);
