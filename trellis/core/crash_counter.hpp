@@ -38,6 +38,10 @@ namespace crash_counter {
  * startup decisions (e.g. crash backoff). A corrupt marker is reported as 1,
  * matching the ctor's fallback so the peek result and the next constructed
  * count agree.
+ *
+ * Only meaningful while no CrashCounter for the marker is live in this process.
+ * A live one's marker reads as a crash here, whereas the next ctor would join
+ * that counter's run and report its count.
  */
 int PeekUncleanExitCount(std::string_view marker_dir, std::string_view node_name);
 
@@ -58,7 +62,8 @@ int PeekUncleanExitCount(const Config& config, std::string_view node_name);
  * event loop. A marker file at <marker_dir>/<node_name>_crash_counter is
  * consulted on construction: if present, the previous run did not reach the
  * destructor and is treated as a crash; the counter is incremented and
- * rewritten. Clean destruction deletes the marker so the next start sees zero.
+ * rewritten. Clean destruction deletes the marker so the next start sees zero
+ * (for counters sharing a run, see below, only the last one's destruction).
  *
  * Destruction during stack unwinding (std::uncaught_exceptions() > 0) is
  * auto-detected and treated as unclean. Callers that catch unrecoverable
@@ -74,8 +79,14 @@ int PeekUncleanExitCount(const Config& config, std::string_view node_name);
  * dictates which UIDs can later write into it, leading to EACCES on UDS bind
  * for subsequent processes.
  *
- * Assumes at most one instance of a given node name per host. Concurrent
- * instances would corrupt the on-disk count; enforce uniqueness upstream.
+ * Counters for the same marker in one process (same-named nodes, such as guests
+ * of one host) share a single run: each reports the count the first one found,
+ * and the marker is removed only when the last one is destroyed and none of
+ * them exited uncleanly. "The same marker" means the same path as spelled, so
+ * counters must name the directory consistently (no relative or symlinked
+ * aliases) to share a run. Across processes, assumes at most one instance of a
+ * given node name per host; concurrent instances would corrupt the on-disk
+ * count, so enforce uniqueness upstream.
  */
 class CrashCounter {
  public:
@@ -101,20 +112,22 @@ class CrashCounter {
    * Number of consecutive unclean exits leading up to the current start.
    * Zero on a clean start.
    */
-  int UncleanExitCount() const { return unclean_exit_count_; }
+  int UncleanExitCount() const;
 
   /**
    * Mark this run as having ended abnormally (e.g. an exception caught by
-   * Node::Run). Suppresses the marker delete in the destructor so the next
-   * start counts this run as a crash. Idempotent.
+   * Node::Run). The mark applies to the whole run, so no counter sharing it
+   * deletes the marker and the next start counts this run as a crash.
+   * Idempotent.
    */
   void MarkUncleanExit() { mark_unclean_ = true; }
 
  private:
-  std::filesystem::path marker_path_;
-  std::optional<uid_t> uid_;
-  std::optional<gid_t> gid_;
-  int unclean_exit_count_{0};
+  struct Run;
+  struct Runs;
+  static Runs& GetRuns();
+
+  Run* run_;  ///< Shared with this process's other counters for the same marker; owned by GetRuns()
   bool mark_unclean_{false};
 };
 

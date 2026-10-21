@@ -23,6 +23,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -195,4 +196,32 @@ TEST_F(CrashCounterTest, ConstructFromConfigDefaultUsesDefaultDir) {
     c.MarkUncleanExit();
   }
   EXPECT_TRUE(fs::exists(MarkerPath()));
+}
+
+// Same-named nodes in one process (guests of one host, say) used to share the marker file but not the run: the second
+// read the first's marker as a crash, and whichever ended first decided whether the marker survived.
+TEST_F(CrashCounterTest, SameNameInOneProcessSharesARun) {
+  auto first = std::make_unique<trellis::core::CrashCounter>(kMarkerDir, kNodeName);
+  auto second = std::make_unique<trellis::core::CrashCounter>(kMarkerDir, kNodeName);
+  EXPECT_EQ(first->UncleanExitCount(), 0);
+  EXPECT_EQ(second->UncleanExitCount(), 0) << "the other live counter's marker was read as a crash";
+
+  first.reset();
+  EXPECT_TRUE(fs::exists(MarkerPath())) << "the marker went while a counter for it was still live";
+  second.reset();
+  EXPECT_FALSE(fs::exists(MarkerPath()));
+}
+
+// The unclean counter ends first, so by the time the clean one decides whether to remove the marker, only the shared
+// run still knows about the unclean exit.
+TEST_F(CrashCounterTest, AnyUncleanCounterInOneProcessKeepsTheMarker) {
+  {
+    trellis::core::CrashCounter clean{kMarkerDir, kNodeName};
+    {
+      trellis::core::CrashCounter unclean{kMarkerDir, kNodeName};
+      unclean.MarkUncleanExit();
+    }
+  }
+  trellis::core::CrashCounter next{kMarkerDir, kNodeName};
+  EXPECT_EQ(next.UncleanExitCount(), 1) << "a clean counter removed the marker of one that exited uncleanly";
 }
