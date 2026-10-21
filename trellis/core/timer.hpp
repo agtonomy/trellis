@@ -40,9 +40,10 @@ namespace core {
  * construction contract:
  *
  * - Enabling or disabling the simulated clock while timers exist leaves those timers holding an expiry in
- *   the previous domain. Node::UpdateSimulatedClock re-anchors every simulation-driven timer on its first
- *   forward jump, which covers the usual case of enabling the clock during startup, but constructing
- *   timers on one side of the switch and relying on them from the other is not supported.
+ *   the previous domain. Node::UpdateSimulatedClock re-anchors a simulation-driven timer armed while the
+ *   clock had never been set on the first update of its own loop (see ArmedOnUnsetClock), which covers the
+ *   usual case of enabling the clock during startup, but constructing timers on one side of the switch and
+ *   relying on them from the other is not supported.
  * - IsSimulationDriven() is what keeps the two apart afterwards: a timer asio is driving is never stepped
  *   by the simulated clock, because comparing its expiry against simulated time would span two unrelated
  *   epochs.
@@ -141,6 +142,16 @@ class TimerImpl {
    * @return true if the simulated clock drives this timer, false if asio does
    */
   bool IsSimulationDriven() const { return timer_ == nullptr; }
+
+  /**
+   * ArmedOnUnsetClock returns true if this simulation-driven timer's pending expiry was computed while the simulated
+   * clock had never been set
+   *
+   * Such an expiry counts from 0 rather than from the time the clock will first show, so whoever first steps the clock
+   * for this timer's loop re-bases it with Reset() (see Node::StepSimulatedClock). Several loops in one process share
+   * the clock, so that need not be the step that first set it.
+   */
+  bool ArmedOnUnsetClock() const { return armed_on_unset_clock_; }
 
   /**
    * GetKind returns whether this is an application timer or one of trellis's own housekeeping timers
@@ -313,6 +324,9 @@ class TimerImpl {
   // like the flags below -- it is only ever written from the loop thread, which is where the methods that
   // touch it belong.
   time::TimePoint next_expiry_{};
+  // Whether next_expiry_ was computed from a simulated clock that had never been set. Loop thread only, like
+  // next_expiry_. See ArmedOnUnsetClock().
+  bool armed_on_unset_clock_{false};
   std::atomic<bool> did_fire_{false};
   std::atomic<bool> cancelled_{false};
   TimerRegistry::RegistrationHandle registration_{TimerRegistry::kInvalidRegistrationHandle};

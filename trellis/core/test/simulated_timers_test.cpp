@@ -243,10 +243,25 @@ TEST_F(StepSimulatedTimersTest, MovingBackwardsThrows) {
   EXPECT_THROW(StepSimulatedTimers(*registry_, Now() - milliseconds{1}), std::invalid_argument);
 }
 
+// Another loop's thread can move the process-global clock between a caller reading it and stepping, so on a shared
+// clock a target the clock has passed is not an error: what is due by now fires, and the clock stays where it is.
+TEST_F(StepSimulatedTimersTest, OnASharedClockATargetTheClockHasPassedFiresWhatIsDueByNowWithoutMovingTheClock) {
+  const auto start = Now();
+  std::optional<TimePoint> fired_at;
+  const OneShotTimerImpl timer{loop_, [&fired_at](const TimePoint& now) { fired_at = now; }, 100};
+  time::AdvanceSimulatedTime(start + milliseconds{300});
+
+  EXPECT_NO_THROW(StepSimulatedTimersOnSharedClock(*registry_, start + milliseconds{50}));
+
+  EXPECT_EQ(fired_at, start + milliseconds{300});
+  EXPECT_EQ(Now(), start + milliseconds{300});
+}
+
 TEST_F(StepSimulatedTimersTest, ThrowsWithoutTheSimulatedClock) {
   time::DisableSimulatedClock();
 
   EXPECT_THROW(StepSimulatedTimers(*registry_, Now()), std::logic_error);
+  EXPECT_THROW(StepSimulatedTimersOnSharedClock(*registry_, Now()), std::logic_error);
 }
 
 }  // namespace

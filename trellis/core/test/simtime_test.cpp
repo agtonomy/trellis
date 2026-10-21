@@ -17,7 +17,10 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <memory>
 #include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -451,4 +454,80 @@ TEST(TrellisSimulatedClock, StepFromATimerCallbackPastTheOuterTargetDoesNotRewin
   const std::vector<std::pair<char, int64_t>> expected{{'A', 100}, {'B', 200}, {'C', 250}, {'B', 400}};
   EXPECT_EQ(fires, expected);
   EXPECT_EQ(trellis::core::time::Now(), start + std::chrono::milliseconds(500)) << "the outer step rewound the clock";
+}
+
+// With several loops in one process, another loop can set the clock before this one's first step. This loop's timers,
+// armed while the clock was unset, are re-based by that first step rather than firing as if long overdue.
+TEST(TrellisSimulatedClock, ASecondLoopReBasesItsTimersWhenAnotherLoopSetTheClockFirst) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time to 0
+
+  trellis::core::Node first("test_simtime_first_loop", {});
+  trellis::core::Node second("test_simtime_second_loop", {});
+  const trellis::core::time::TimePoint start{std::chrono::milliseconds(1000)};
+  std::vector<int64_t> fires;
+  auto timer = second.CreateTimer(100u, [&fires, start](const trellis::core::time::TimePoint& now) {
+    fires.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count());
+  });
+
+  first.UpdateSimulatedClock(start);
+  first.RunOnce();
+  // The second loop's first step carries an older time than the clock already shows.
+  second.UpdateSimulatedClock(start - std::chrono::milliseconds(500));
+  second.RunOnce();
+  EXPECT_TRUE(fires.empty());
+
+  second.UpdateSimulatedClock(start + std::chrono::milliseconds(250));
+  second.RunOnce();
+  EXPECT_EQ(fires, (std::vector<int64_t>{100, 200}));
+}
+
+// Nodes with loops of their own, each run by its own thread, all stepping the one process-global clock at once. A
+// step whose target another thread has already passed must not throw, and the clock ends at the latest target.
+TEST(TrellisSimulatedClock, LoopsOnTheirOwnThreadsStepTheSharedClockConcurrently) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::time::SetSimulatedTime(trellis::core::time::TimePoint{});  // reset time to 0
+  constexpr int kLoops = 4;
+  constexpr int kSteps = 2000;
+  constexpr int kStepMs = 10;
+
+  std::vector<std::unique_ptr<trellis::core::Node>> nodes;
+  std::vector<std::unique_ptr<std::atomic<int>>> fires;
+  std::vector<trellis::core::Timer> timers;
+  for (int k = 0; k < kLoops; ++k) {
+    nodes.push_back(std::make_unique<trellis::core::Node>("test_simtime_threaded_loop_" + std::to_string(k),
+                                                          trellis::core::Config{}));
+    fires.push_back(std::make_unique<std::atomic<int>>(0));
+    timers.push_back(nodes.back()->CreateTimer(100u, [count = fires.back().get()](const auto&) { ++*count; }));
+  }
+
+  std::vector<std::thread> threads;
+  for (int k = 0; k < kLoops; ++k) {
+    threads.emplace_back([node = nodes[k].get()] {
+      for (int i = 1; i <= kSteps; ++i) {
+        node->UpdateSimulatedClock(trellis::core::time::TimePoint{std::chrono::milliseconds(i * kStepMs)});
+        node->RunUntilIdle();
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  const trellis::core::time::TimePoint end{std::chrono::milliseconds(kSteps * kStepMs)};
+  EXPECT_EQ(trellis::core::time::Now(), end);
+
+  // A loop whose thread started late may have been re-based against a clock the others had already run ahead, so how
+  // often each fired during the race depends on scheduling. Past the end, every loop's timer is due whatever happened.
+  const auto past_end = end + std::chrono::milliseconds(200);
+  for (int k = 0; k < kLoops; ++k) {
+    nodes[k]->UpdateSimulatedClock(past_end);
+    nodes[k]->RunUntilIdle();
+  }
+  for (int k = 0; k < kLoops; ++k) {
+    EXPECT_GT(*fires[k], 0) << "loop " << k << "'s timer never fired";
+    EXPECT_LE(*fires[k], (kSteps * kStepMs + 200) / 100)
+        << "loop " << k << "'s timer fired more often than its period allows";
+  }
+  timers.clear();
 }

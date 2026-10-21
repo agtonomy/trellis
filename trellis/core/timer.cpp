@@ -50,7 +50,11 @@ void TimerImpl::ArmInitialExpiry() {
   // due would make anything constructed while the clock was already running fire on the very next advance no
   // matter what wait it asked for. RestartDelayMs() is that wait -- the delay for a one shot, the interval for
   // a periodic timer -- which is also why this cannot be done from the constructor above.
-  next_expiry_ = time::Now() + std::chrono::milliseconds(RestartDelayMs());
+  // One reading for both: another loop's thread can set the clock between two, and an expiry counted from the unset
+  // clock but not flagged as such would never be re-based.
+  const auto now = time::Now();
+  next_expiry_ = now + std::chrono::milliseconds(RestartDelayMs());
+  armed_on_unset_clock_ = time::IsUnsetSimulatedTime(now);
 }
 
 TimerImpl::~TimerImpl() {
@@ -79,13 +83,17 @@ time::TimePoint TimerImpl::NowInOwnDomain() const {
 
 void TimerImpl::Reset() {
   Stop();
-  SetNextExpiry(NowInOwnDomain() + std::chrono::milliseconds(RestartDelayMs()));
+  // One reading for both, as in ArmInitialExpiry(). For a simulation-driven timer it is time::Now().
+  const auto now = NowInOwnDomain();
+  SetNextExpiry(now + std::chrono::milliseconds(RestartDelayMs()));
+  armed_on_unset_clock_ = IsSimulationDriven() && time::IsUnsetSimulatedTime(now);
   ClearFireState();
   KickOff();
 }
 
 void TimerImpl::SetNextExpiry(const time::TimePoint& expiry) {
   next_expiry_ = expiry;
+  armed_on_unset_clock_ = false;
   // A null check rather than !IsSimulationDriven(): here it guards the dereference, where the places asking
   // IsSimulationDriven() are asking which clock they are on
   if (timer_ != nullptr) {

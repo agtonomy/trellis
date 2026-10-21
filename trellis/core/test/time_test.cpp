@@ -19,7 +19,10 @@
 
 #include <gmock/gmock.h>
 
+#include <atomic>
+#include <stdexcept>
 #include <thread>
+#include <vector>
 
 namespace google::protobuf {
 bool operator==(const Timestamp& a, const Timestamp& b) { return a.seconds() == b.seconds() && a.nanos() == b.nanos(); }
@@ -236,6 +239,99 @@ TEST(TrellisTimeAPI, TimePointToTimestamp) {
   ASSERT_THAT(SystemTimePointToTimestamp(SystemTimePoint{12s + 18ns}), Eq(MakeTimestamp(12, 18)));
   ASSERT_THAT(SystemTimePointToTimestamp(SystemTimePoint{-12s + 18ns}), Eq(MakeTimestamp(-12, 18)))
       << "Protobuf timestamps should always have positive nanos.";
+}
+
+TEST(TrellisTimeAPI, AdvanceSimTimeNeverMovesBackwards) {
+  EnableSimulatedClock();
+  SetSimulatedTime(TimePoint{std::chrono::milliseconds(2000)});
+
+  EXPECT_EQ(AdvanceSimulatedTime(TimePoint{std::chrono::milliseconds(1000)}),
+            TimePoint{std::chrono::milliseconds(2000)});
+  EXPECT_EQ(Now(), TimePoint{std::chrono::milliseconds(2000)});
+  EXPECT_EQ(AdvanceSimulatedTime(TimePoint{std::chrono::milliseconds(3000)}),
+            TimePoint{std::chrono::milliseconds(3000)});
+  EXPECT_EQ(Now(), TimePoint{std::chrono::milliseconds(3000)});
+}
+
+TEST(TrellisTimeAPI, UnsetSimTimeIsAReadingUnderAMillisecond) {
+  EXPECT_TRUE(IsUnsetSimulatedTime(TimePoint{}));
+  EXPECT_TRUE(IsUnsetSimulatedTime(TimePoint{std::chrono::microseconds(999)}));
+  EXPECT_FALSE(IsUnsetSimulatedTime(TimePoint{std::chrono::milliseconds(1)}));
+}
+
+TEST(TrellisTimeAPI, AdvanceSimTimeWhileDisabledThrows) {
+  DisableSimulatedClock();
+  EXPECT_THROW(AdvanceSimulatedTime(TimePoint{std::chrono::milliseconds(1)}), std::runtime_error);
+  EnableSimulatedClock();
+}
+
+// Several loops in one process step the one clock from their own threads. Whatever the interleaving, the clock ends at
+// the latest time any of them advanced it to, and no reader ever sees it go backwards.
+TEST(TrellisTimeAPI, ConcurrentAdvancesEndAtTheLatestTimeAndNeverRewind) {
+  EnableSimulatedClock();
+  SetSimulatedTime(TimePoint{});
+  constexpr int kWriters = 8;
+  constexpr int kSteps = 20'000;
+
+  std::atomic<bool> done{false};
+  std::atomic<bool> rewound{false};
+  std::thread reader([&done, &rewound] {
+    auto previous = Now();
+    while (!done) {
+      const auto now = Now();
+      if (now < previous) {
+        rewound = true;
+      }
+      previous = now;
+    }
+  });
+  std::vector<std::thread> writers;
+  for (int w = 0; w < kWriters; ++w) {
+    writers.emplace_back([w] {
+      for (int i = 1; i <= kSteps; ++i) {
+        AdvanceSimulatedTime(TimePoint{std::chrono::milliseconds(i * kWriters + w)});
+      }
+    });
+  }
+  for (auto& writer : writers) {
+    writer.join();
+  }
+  done = true;
+  reader.join();
+
+  EXPECT_EQ(Now(), TimePoint{std::chrono::milliseconds(kSteps * kWriters + kWriters - 1)});
+  EXPECT_FALSE(rewound);
+}
+
+// The offset to system time is cached with every write. Whatever order concurrent writers finish in, the one left
+// cached is the one computed from the time the clock shows. Each writer's times are an hour apart from the others',
+// so an offset cached from any other writer's time would put system time off by at least that much. Whether writers
+// finish out of order depends on scheduling, so the race runs many rounds: against unordered writes, one round caught
+// it about one time in twenty.
+TEST(TrellisTimeAPI, ConcurrentAdvancesLeaveTheSystemTimeOffsetOfTheTimeTheClockShows) {
+  EnableSimulatedClock();
+  constexpr int kRounds = 500;
+  constexpr int kWriters = 8;
+  constexpr int kSteps = 2'000;
+
+  for (int round = 0; round < kRounds; ++round) {
+    SetSimulatedTime(TimePoint{});
+    std::vector<std::thread> writers;
+    for (int w = 0; w < kWriters; ++w) {
+      writers.emplace_back([w] {
+        for (int i = 1; i <= kSteps; ++i) {
+          AdvanceSimulatedTime(TimePoint{std::chrono::hours(i * kWriters + w)});
+        }
+      });
+    }
+    for (auto& writer : writers) {
+      writer.join();
+    }
+
+    const auto converted = TimePointToSystemTime(Now()).time_since_epoch();
+    const auto error = converted - std::chrono::system_clock::now().time_since_epoch();
+    ASSERT_LT(std::chrono::abs(error), std::chrono::minutes(1)) << "round " << round;
+  }
 }
 
 }  // namespace trellis::core::time

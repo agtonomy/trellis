@@ -20,6 +20,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/utils.hpp"
@@ -462,30 +463,38 @@ void Node::StepSimulatedClock(const std::shared_ptr<TimerRegistry>& registry, co
   }
   const auto existing_time = time::Now();
   if (new_time < existing_time) {
-    Log::Debug("Ignored attempt to rewind simulated clock. Current time {} Set time {}",
+    // The update, from a message or from UpdateSimulatedClock, is older than the clock, which another loop in this
+    // process may have moved. Time stays put, but this loop's timers due by now still fire below.
+    Log::Debug("Simulated clock update is behind the clock; not rewinding it. Current time {} Update time {}",
                time::TimePointToSeconds(existing_time), time::TimePointToSeconds(new_time));
+  }
+
+  // The first jump forward in time only sets the clock and re-bases timers.
+  const bool clock_was_unset = time::IsUnsetSimulatedTime(existing_time);
+  if (clock_was_unset) {
+    time::AdvanceSimulatedTime(new_time);
+  }
+
+  // Re-base the timers whose expiry was computed against a clock that had never been set. On a loop of its own this
+  // is every pending timer, on the first jump. With several loops in one process, another loop may have set the
+  // clock before this loop's first step, so the timers to re-base are the ones that say so rather than the ones
+  // that happen to be pending on the first jump. Reset() may run under ForEach's lock: on a simulation-driven timer it
+  // has no asio wait to arm, so it runs no callback and never re-enters the registry, and the clock it reads is a
+  // lock-free load. Only pending timers: Reset() clears both did_fire_ and cancelled_, so resetting an already-expired
+  // timer (a one-shot that fired, or any timer explicitly stopped) would silently bring it back to life.
+  registry->ForEach([](const TimerRegistry::Entry& entry) {
+    if (entry.timer->IsSimulationDriven() && entry.timer->ArmedOnUnsetClock() && !entry.timer->Expired()) {
+      entry.timer->Reset();
+    }
+  });
+  if (clock_was_unset) {
     return;
   }
 
   // Deliberately not filtered by owner, unlike the metrics collection above. Time is process-global, so a step has to
   // carry every timer in the registry, including those of siblings on this loop. That is what lets a host advance its
   // tenants' timers without each of them subscribing to the clock topic.
-  if (time::TimePointToMilliseconds(existing_time) != 0) {
-    StepSimulatedTimers(*registry, new_time);
-    return;
-  }
-
-  // This is our first jump forward in time, so reset the timers the simulated clock drives: their expiry times were
-  // computed against a clock that had never been set. It has to happen after the new time is set.
-  time::SetSimulatedTime(new_time);
-  for (const auto& entry : registry->GetEntries()) {
-    // Only re-base timers that are still pending. Reset() clears both did_fire_ and cancelled_, so resetting an
-    // already-expired timer (a one-shot that fired, or any timer explicitly stopped) would silently bring it back to
-    // life.
-    if (entry.timer->IsSimulationDriven() && !entry.timer->Expired()) {
-      entry.timer->Reset();
-    }
-  }
+  StepSimulatedTimersOnSharedClock(*registry, new_time);
 }
 
 void Node::BroadcastSimulatedClock(uint64_t epoch, const time::TimePoint& target_time) {

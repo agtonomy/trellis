@@ -17,19 +17,44 @@
 
 #include "trellis/core/time.hpp"
 
+#include <atomic>
+#include <mutex>
+#include <stdexcept>
+
 namespace trellis {
 namespace core {
 namespace time {
 
 namespace {
 
-bool sim_clock_enabled_{false};
-TimePoint simulated_now_{};
-TimePoint::duration cached_sim_offset_{};
+// Atomic because a process can run several event loops, each stepping the one simulated clock from its own thread.
+// Readers load both with std::memory_order_relaxed, since Now() is on every hot path. sim_clock_enabled_ is set before
+// the loop threads start, and starting a thread orders that write before the thread's reads; toggling it while timers
+// exist is unsupported. simulated_now_ is only moved forward, under writer_mutex_, so a relaxed load still never sees
+// the clock go back. Other data reaches a loop through the IPC that delivers it, never through Now().
+std::atomic<bool> sim_clock_enabled_{false};
+std::atomic<TimePoint> simulated_now_{TimePoint{}};
+std::atomic<TimePoint::duration> cached_sim_offset_{TimePoint::duration{}};
+static_assert(std::atomic<TimePoint>::is_always_lock_free);
+static_assert(std::atomic<TimePoint::duration>::is_always_lock_free);
+
+// Serializes the writers, so the offset cached last is always the one computed from the time set last. Without it, two
+// threads' writes could interleave and leave the offset of the earlier time next to the later one. Readers don't take
+// it: Now() stays a lock-free load.
+std::mutex writer_mutex_;
+
+// Call with writer_mutex_ held.
+void StoreSimulatedTime(const TimePoint& now) {
+  simulated_now_ = now;
+  cached_sim_offset_ = std::chrono::system_clock::now().time_since_epoch() - now.time_since_epoch();
+}
 
 }  // namespace
 
-TimePoint Now() { return sim_clock_enabled_ ? simulated_now_ : std::chrono::steady_clock::now(); }
+TimePoint Now() {
+  return sim_clock_enabled_.load(std::memory_order_relaxed) ? simulated_now_.load(std::memory_order_relaxed)
+                                                            : std::chrono::steady_clock::now();
+}
 
 double TimePointToSeconds(const TimePoint& tp) {
   return (tp.time_since_epoch().count() *
@@ -89,26 +114,47 @@ google::protobuf::Timestamp SystemTimePointToTimestamp(const SystemTimePoint& tp
 }
 
 void EnableSimulatedClock() {
+  std::lock_guard guard(writer_mutex_);
   sim_clock_enabled_ = true;
-  cached_sim_offset_ = std::chrono::system_clock::now().time_since_epoch() - simulated_now_.time_since_epoch();
+  StoreSimulatedTime(simulated_now_.load());
 }
 
 void DisableSimulatedClock() { sim_clock_enabled_ = false; }
 
-bool IsSimulatedClockEnabled() { return sim_clock_enabled_; }
+bool IsSimulatedClockEnabled() { return sim_clock_enabled_.load(std::memory_order_relaxed); }
 
 void SetSimulatedTime(const TimePoint& now) {
-  if (!sim_clock_enabled_) {
+  if (!sim_clock_enabled_.load(std::memory_order_relaxed)) {
     throw std::runtime_error("Attempt to set simulated time while sim_clock_enabled_ = false");
   }
-  simulated_now_ = now;
-  cached_sim_offset_ = std::chrono::system_clock::now().time_since_epoch() - now.time_since_epoch();
+  std::lock_guard guard(writer_mutex_);
+  StoreSimulatedTime(now);
 }
 
-void IncrementSimulatedTime(const std::chrono::milliseconds& duration) { SetSimulatedTime(simulated_now_ + duration); }
+TimePoint AdvanceSimulatedTime(const TimePoint& time) {
+  if (!sim_clock_enabled_.load(std::memory_order_relaxed)) {
+    throw std::runtime_error("Attempt to advance simulated time while sim_clock_enabled_ = false");
+  }
+  std::lock_guard guard(writer_mutex_);
+  if (simulated_now_.load() < time) {
+    StoreSimulatedTime(time);
+  }
+  return simulated_now_.load();
+}
+
+bool IsUnsetSimulatedTime(const TimePoint& time) { return TimePointToMilliseconds(time) == 0; }
+
+void IncrementSimulatedTime(const std::chrono::milliseconds& duration) {
+  if (!sim_clock_enabled_.load(std::memory_order_relaxed)) {
+    throw std::runtime_error("Attempt to set simulated time while sim_clock_enabled_ = false");
+  }
+  // Read and written under the one lock, so a concurrent writer's time is never lost.
+  std::lock_guard guard(writer_mutex_);
+  StoreSimulatedTime(simulated_now_.load() + duration);
+}
 
 TimePoint::duration TimePointToSystemTimeOffset() {
-  if (sim_clock_enabled_) {
+  if (sim_clock_enabled_.load(std::memory_order_relaxed)) {
     return cached_sim_offset_;
   }
   return std::chrono::system_clock::now().time_since_epoch() - Now().time_since_epoch();

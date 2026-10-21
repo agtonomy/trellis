@@ -57,6 +57,26 @@ namespace trellis::core {
 std::size_t StepSimulatedTimers(const TimerRegistry& registry, const time::TimePoint& target,
                                 std::size_t max_fires = 1'000'000);
 
+/**
+ * StepSimulatedTimersOnSharedClock StepSimulatedTimers for a registry whose loop shares the clock with others
+ *
+ * In a process that runs several event loops, each on its own thread, another loop can move the process-global clock
+ * between a caller reading it and stepping, so target can already be behind time::Now() through no fault of the
+ * caller's. This step accepts that: it fires whatever is due by time::Now() and leaves the clock where it is. Use
+ * StepSimulatedTimers everywhere else, so that a target before time::Now() still fails loudly.
+ *
+ * See time::AdvanceSimulatedTime for how timers on a loop that falls behind fire.
+ *
+ * @param registry the timers to step
+ * @param target the time to advance to
+ * @param max_fires as for StepSimulatedTimers
+ * @return the number of timers fired
+ * @throws std::logic_error if the simulated clock is not enabled
+ * @throws std::runtime_error if more than max_fires timers fall due; the clock is left where the last one fired
+ */
+std::size_t StepSimulatedTimersOnSharedClock(const TimerRegistry& registry, const time::TimePoint& target,
+                                             std::size_t max_fires = 1'000'000);
+
 }  // namespace trellis::core
 
 #endif  // TRELLIS_CORE_SIMULATED_TIMERS_HPP_

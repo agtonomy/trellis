@@ -40,8 +40,9 @@ namespace trellis::core {
  *
  * Both policies apply under a simulated clock as well, where "behind" means something slightly different.
  * A simulated timer is stepped by Node::UpdateSimulatedClock, which advances the clock to each expiry in
- * turn, so it is never dispatched late in the way a real one is. What stands in for lateness there is the
- * distance still to travel: a caller advancing the clock well past a timer's expiry is treated as a timer
+ * turn, so it is never dispatched late in the way a real one is, unless another event loop in the process
+ * has already moved the shared clock past it (see time::AdvanceSimulatedTime). What stands in for lateness
+ * there is the distance still to travel: a caller advancing the clock well past a timer's expiry is treated as a timer
  * that has fallen that far behind. kCatchUp therefore replays every slot the advance passed over, and
  * kSkipAligned fires once and lands on the first slot beyond it. Choosing kSkipAligned consequently changes
  * what a replay produces, which is the point -- a long gap in the data being replayed no longer costs a

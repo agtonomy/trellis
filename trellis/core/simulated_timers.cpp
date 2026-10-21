@@ -21,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 #include "trellis/core/timer.hpp"
@@ -48,21 +49,16 @@ std::optional<TimerRegistry::Entry> NextDueTimer(const TimerRegistry& registry, 
   return next;
 }
 
-// Move the simulated clock to time, or leave it where it is if it is already past time. Simulated time only moves
-// forwards, and the clock can be ahead of a step: a callback may have stepped it further, or a step of another
-// registry may have moved it, the clock being process-global.
-void AdvanceClockTo(const time::TimePoint& time) { time::SetSimulatedTime(std::max(time, time::Now())); }
-
-}  // namespace
-
-std::size_t StepSimulatedTimers(const TimerRegistry& registry, const time::TimePoint& target, std::size_t max_fires) {
+void RequireSimulatedClock(std::string_view caller) {
   if (!time::IsSimulatedClockEnabled()) {
-    throw std::logic_error("StepSimulatedTimers requires the simulated clock to be enabled");
+    throw std::logic_error(std::string{caller} + " requires the simulated clock to be enabled");
   }
-  if (target < time::Now()) {
-    throw std::invalid_argument("StepSimulatedTimers cannot move the simulated clock backwards");
-  }
+}
 
+// The step both entry points share. The clock can already be past target, and past any timer's expiry: a callback may
+// have stepped it further, or a step of another registry may have moved it, the clock being process-global.
+// time::AdvanceSimulatedTime never moves it back in either case.
+std::size_t Step(const TimerRegistry& registry, const time::TimePoint& target, std::size_t max_fires) {
   // How far this step reaches: target, or further if a callback has stepped the clock past it, since whatever is due by
   // the time the clock shows is due. The timer whose callback took the clock there was mid-fire, so that inner step
   // could not fire it; this is what still catches its later slots up.
@@ -79,12 +75,30 @@ std::size_t StepSimulatedTimers(const TimerRegistry& registry, const time::TimeP
     // ever dispatched late here, so a caller stepping well past a timer's expiry is treated as that timer having
     // fallen behind. That is what lets a rearm policy mean the same thing in a replay as it does on a real clock.
     // The one exception is an expiry the clock has already passed: that timer fires late, at Now().
-    AdvanceClockTo(next->timer->GetExpiry());
+    time::AdvanceSimulatedTime(next->timer->GetExpiry());
     next->timer->Fire(horizon());
     ++fired;
   }
-  AdvanceClockTo(target);
+  time::AdvanceSimulatedTime(target);
   return fired;
+}
+
+}  // namespace
+
+std::size_t StepSimulatedTimers(const TimerRegistry& registry, const time::TimePoint& target, std::size_t max_fires) {
+  RequireSimulatedClock("StepSimulatedTimers");
+  if (target < time::Now()) {
+    throw std::invalid_argument("StepSimulatedTimers cannot move the simulated clock backwards");
+  }
+  return Step(registry, target, max_fires);
+}
+
+std::size_t StepSimulatedTimersOnSharedClock(const TimerRegistry& registry, const time::TimePoint& target,
+                                             std::size_t max_fires) {
+  RequireSimulatedClock("StepSimulatedTimersOnSharedClock");
+  // A target the clock has already passed is expected here: another loop's thread may have moved the clock since the
+  // caller read it. The step's horizon covers it, firing whatever is due by time::Now().
+  return Step(registry, target, max_fires);
 }
 
 }  // namespace trellis::core

@@ -126,14 +126,53 @@ bool IsSimulatedClockEnabled();
 /**
  * SetSimulatedTime set the simulated system clock to the given time
  *
+ * Sets the clock unconditionally, backwards included, which is what resetting it needs. Code that advances the clock
+ * while more than one thread may be advancing it should use AdvanceSimulatedTime instead.
+ *
  * @param now the time point to set the simulated clock with
  */
 void SetSimulatedTime(const TimePoint& now);
 
 /**
+ * AdvanceSimulatedTime move the simulated system clock forward to the given time, or leave it if it is already there
+ *
+ * The clock is process-global, and a process can run several event loops that each step it from their own thread.
+ * This is the one way for them to move it: it is atomic and never moves the clock backwards, so whichever loop is
+ * furthest ahead sets the time every loop reads.
+ *
+ * That changes what a loop that falls behind sees, compared with the same node in a process of its own:
+ * - Its clock keeps moving while it is busy. In a process of its own, the clock showed the newest message the node
+ *   had received, so it stood still during a long callback. Here it shows the furthest-ahead loop's time, so a
+ *   watchdog or a "now minus the message's stamp" check also counts the time other loops moved it on.
+ * - Its timers can fire late, all at the same time. A step moves the clock to each due timer's expiry before firing
+ *   it, but another loop has often already moved the clock past those expiries. They then fire one after another at
+ *   time::Now(), so a kCatchUp timer that fell several slots behind replays them all at the same time, and a
+ *   callback that measures the time between its calls with time::Now() sees zero, then the whole gap.
+ *
+ * @param time the time to advance the simulated clock to
+ * @return the simulated time after the call, which is time or a later time another thread had already set
+ * @throws std::runtime_error if the simulated clock is not enabled
+ */
+TimePoint AdvanceSimulatedTime(const TimePoint& time);
+
+/**
+ * IsUnsetSimulatedTime returns true if a reading of the simulated clock is from before the clock was ever set
+ *
+ * The clock starts at 0, so a reading under a millisecond counts as unset. Pass the reading an expiry or decision was
+ * computed from rather than calling Now() again: another loop's thread may set the clock in between.
+ *
+ * @param time a reading of time::Now() under the simulated clock
+ */
+bool IsUnsetSimulatedTime(const TimePoint& time);
+
+/**
  * IncrementSimulatedTime increment simulated time
  *
+ * Like SetSimulatedTime, this does not keep the clock from moving backwards for a negative duration; code that
+ * advances the clock while other threads may also be advancing it should use AdvanceSimulatedTime instead.
+ *
  * @param duration a time duration in milliseconds
+ * @throws std::runtime_error if the simulated clock is not enabled
  */
 void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
 

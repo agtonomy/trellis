@@ -560,11 +560,15 @@ class Node {
    * moment they were scheduled for. A timer that one of those callbacks creates or resets fires in the same update if
    * it falls due by new_time. Time never moves backwards: a callback that updates the clock past new_time leaves it
    * there, and a timer whose expiry the clock has already passed fires late rather than rewinding it; see
-   * StepSimulatedTimers.
+   * StepSimulatedTimers. With several loops in one process, another loop has often moved the clock past those
+   * expiries already, and then the timers fire late, all at time::Now(); see time::AdvanceSimulatedTime. A new_time
+   * the clock has already passed fires whatever is due by time::Now() and leaves the clock where it is.
    *
-   * Only simulation-driven timers are stepped; see TimerImpl. The first forward jump re-anchors them
-   * instead of firing them, which is what makes enabling the clock after a node has been constructed work.
-   * How many times a timer that has fallen behind fires is its rearm policy's decision; see RearmPolicy.
+   * Only simulation-driven timers are stepped; see TimerImpl. A timer armed while the clock had never been set is
+   * re-anchored rather than fired by the first update of its own loop, whichever loop set the clock. That is what
+   * makes enabling the clock after a node has been constructed work, and what keeps a loop whose first update comes
+   * after another loop set the clock from firing its timers as long overdue. How many times a timer that has fallen
+   * behind fires is its rearm policy's decision; see RearmPolicy.
    *
    * Timers that keep falling due without the clock moving make the step throw rather than spin, from the event loop
    * that runs it; see StepSimulatedTimers.
