@@ -28,6 +28,8 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -124,6 +126,25 @@ std::optional<std::pair<ServiceCallStatus, float>> CallDoStuff(CLIENT_T& client,
       "DoStuff", request,
       [result](ServiceCallStatus status, const test::TestTwo* response) {
         result->set_value({status, response != nullptr ? response->foo() : 0.0f});
+      },
+      /* timeout_ms = */ 2000);
+  auto future = result->get_future();
+  if (future.wait_for(std::chrono::seconds{3}) != std::future_status::ready) {
+    return std::nullopt;
+  }
+  return future.get();
+}
+
+// As CallDoStuff(), but through the callback that is also told why a call failed.
+template <typename CLIENT_T>
+std::optional<std::pair<ServiceCallStatus, std::string>> CallDoStuffForError(CLIENT_T& client, unsigned id) {
+  auto result = std::make_shared<std::promise<std::pair<ServiceCallStatus, std::string>>>();
+  test::Test request;
+  request.set_id(id);
+  client.template CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", request,
+      [result](ServiceCallStatus status, const test::TestTwo*, std::string_view error) {
+        result->set_value({status, std::string{error}});
       },
       /* timeout_ms = */ 2000);
   auto future = result->get_future();
@@ -1312,6 +1333,36 @@ TEST_F(TrellisFixture, AnswersRetriesMadeDuringDestruction) {
 
 // When called on the loop's thread with no connection, CallAsync() invokes the callback with kFailure before it
 // returns.
+// A handler's reason for failing a call reaches the caller, not just kFailure.
+TEST_F(TrellisFixture, CallerSeesWhyAHandlerFailed) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();
+  auto server = GetNode().CreateServiceServer<FailingHandler>(std::make_shared<FailingHandler>());
+  WaitForDiscovery();
+
+  const std::vector<std::pair<unsigned, std::pair<ServiceCallStatus, std::string>>> cases{
+      {1, {kFailure, "handler failed"}},
+      {2, {kFailure, "handler threw a non-std::exception"}},
+      {3, {kFailure, "refused"}},
+      {7, {kSuccess, ""}},
+  };
+  for (const auto& [id, expected] : cases) {
+    const auto result = CallDoStuffForError(*client, id);
+    ASSERT_TRUE(result.has_value()) << "call " << id << " never reported an outcome";
+    EXPECT_EQ(*result, expected) << "call " << id;
+  }
+}
+
+// A failure the client reports itself says why too.
+TEST_F(TrellisFixture, CallerSeesWhyTheClientFailedACall) {
+  StartRunnerThread();
+  auto client = GetNode().CreateServiceClient<trellis::core::test::TestService>();  // no server
+
+  const auto result = CallDoStuffForError(*client, 7);
+  ASSERT_TRUE(result.has_value()) << "the call never reported an outcome";
+  EXPECT_EQ(*result, std::make_pair(kFailure, std::string{"not connected"}));
+}
+
 TEST_F(TrellisFixture, CallOnLoopWithoutConnectionFailsInline) {
   StartRunnerThread();
 
