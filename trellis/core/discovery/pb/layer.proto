@@ -28,17 +28,22 @@ message LayerParShm {
   uint32 buffer_count = 2;        // number of buffers
 }
 
+message LayerParInproc {
+  bytes process_token = 1;  // random per process, so equal only between entities in one address space
+}
+
 message TransportConfig  // connection parameter for reader / writer
 {
-  LayerParShm layer_par_shm = 2;  // parameter for shared memory
+  LayerParShm layer_par_shm = 2;        // parameter for shared memory
+  LayerParInproc layer_par_inproc = 3;  // parameter for the in-process bus
 }
 
 enum TransportLayerType  // transport layer
 {
   tl_none = 0;    // undefined
   tl_shm = 1;     // shared memory
-  tl_inproc = 2;  // in-process bus, usable only between entities sharing one address space; carries no parameters,
-                  // since Topic already reports the pid and host that identify the address space
+  tl_inproc = 2;  // in-process bus, usable only between entities sharing one address space, which its process token
+                  // identifies: pid and host alone do not, across PID namespaces
 }
 
 message TransportLayer {

@@ -18,6 +18,9 @@
 #include "trellis/core/discovery/utils.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <random>
 #include <sstream>
 #include <string_view>
 
@@ -121,6 +124,19 @@ void PopulateDescriptor(DescriptorStore& store, const std::string& fdset_bytes, 
   }
 }
 
+/// Random per process, and so equal only between entities in one address space.
+const std::string& ProcessToken() {
+  static const std::string token = [] {
+    std::random_device device;
+    std::array<uint32_t, 4> words{};
+    for (auto& word : words) {
+      word = device();
+    }
+    return std::string(reinterpret_cast<const char*>(words.data()), sizeof(words));
+  }();
+  return token;
+}
+
 }  // namespace
 
 std::string GetHostname() {
@@ -136,7 +152,8 @@ bool SharesThisProcess(const discovery::Sample& sample) {
     return false;
   }
   return std::ranges::any_of(sample.topic().tlayer(), [](const discovery::TransportLayer& layer) {
-    return layer.type() == discovery::tl_inproc;
+    return layer.type() == discovery::tl_inproc &&
+           layer.par_layer().layer_par_inproc().process_token() == ProcessToken();
   });
 }
 
@@ -208,10 +225,11 @@ Sample CreateProtoPubSubSample(DescriptorStore& store, const std::string& topic,
   }
 
   // Advertised by publishers and subscribers alike, since either end may need to decide whether the other shares its
-  // address space. It carries no parameters: this sample already reports the pid and hostname that answer that.
+  // address space, which the process token answers (see SharesThisProcess()).
   auto* inproc_layer = sample.mutable_topic()->add_tlayer();
   inproc_layer->set_type(discovery::tl_inproc);
   inproc_layer->set_version(1);
+  inproc_layer->mutable_par_layer()->mutable_layer_par_inproc()->set_process_token(ProcessToken());
 
   return sample;
 }

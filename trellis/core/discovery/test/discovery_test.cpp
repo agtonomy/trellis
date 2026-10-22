@@ -642,6 +642,37 @@ TEST(ProcessIdentityTests, SharesThisProcessRejectsASampleWithoutTheInProcessLay
   EXPECT_FALSE(utils::SharesThisProcess(sample));
 }
 
+// Mutable access to a sample's in-process layer, which CreateProtoPubSubSample always adds.
+discovery::TransportLayer& InProcessLayer(Sample& sample) {
+  for (auto& layer : *sample.mutable_topic()->mutable_tlayer()) {
+    if (layer.type() == discovery::tl_inproc) {
+      return layer;
+    }
+  }
+  throw std::logic_error{"no in-process layer"};
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessRejectsAnotherProcessWithOurPidAndHostname) {
+  // Containers with their own PID namespaces can share a pid and, under --network host, a hostname. Only the token
+  // tells them apart.
+  DescriptorStore store{""};
+  Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                 "memfile", /* buffer_count = */ 2u);
+  std::string& token = *InProcessLayer(sample).mutable_par_layer()->mutable_layer_par_inproc()->mutable_process_token();
+  ASSERT_FALSE(token.empty());
+  token[0] = static_cast<char>(token[0] ^ 1);
+  EXPECT_FALSE(utils::SharesThisProcess(sample));
+}
+
+TEST(ProcessIdentityTests, SharesThisProcessRejectsALayerWithoutAToken) {
+  // Older builds advertise the layer with no token. None of them can be in this address space, which runs this build.
+  DescriptorStore store{""};
+  Sample sample = utils::CreateProtoPubSubSample(store, "/dummy/topic", "", "test.Test", /* publisher = */ true,
+                                                 "memfile", /* buffer_count = */ 2u);
+  InProcessLayer(sample).clear_par_layer();
+  EXPECT_FALSE(utils::SharesThisProcess(sample));
+}
+
 TEST(DiscoveryTests, PollIntervalDefaultsToAsyncReceive) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));

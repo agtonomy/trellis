@@ -85,15 +85,11 @@ std::string GetHostname();
 /**
  * @brief Whether a discovery sample was published from this address space.
  *
- * True only when the sample advertises the in-process transport layer and reports this process's pid and hostname.
- * Both halves matter: a peer that cannot use the layer never advertises it, and a peer elsewhere reports a different
- * pid or a different host.
- *
- * @warning This is correct only while every process discovery can reach shares one PID namespace. A container started
- * with its own namespace numbers from 1, so two of them readily both hold a pid of 7, and under `--network host` they
- * report the same hostname as well. Two such peers would each decide the other shared its address space, route to
- * their own separate in-process buses, build no shared memory reader, and lose every message between them with
- * nothing logged. Deployments that run Trellis in containers must give them the host PID namespace.
+ * True only when the sample advertises the in-process transport layer with this process's random token, and reports
+ * this process's pid and hostname. The token is what tells processes apart: containers with their own PID namespaces
+ * can share a pid and, under `--network host`, a hostname. The pid still matters after `fork()`, whose child inherits
+ * the token. A peer whose layer carries no token, as older builds send, is never this process: anything in this
+ * address space was built with the token.
  *
  * @param sample The peer's discovery advertisement.
  * @return True when the peer shares this process's address space.
