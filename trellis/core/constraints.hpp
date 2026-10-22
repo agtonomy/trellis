@@ -21,13 +21,21 @@
 #include <google/protobuf/message.h>
 
 #include <concepts>
+#include <cstddef>
 
 namespace trellis::core::constraints {
 
+// A type that reports its serialized size and writes exactly that many bytes. Protobuf messages qualify, and so do
+// types that serialize a large payload straight into the output buffer.
 template <typename T>
-concept _IsSerializable = requires(T t, const void* read_data, void* write_data, int size) {
-  { t.ParseFromArray(read_data, size) } -> std::same_as<bool>;
+concept _IsSerializer = requires(const T t, void* write_data, int size) {
+  { t.ByteSizeLong() } -> std::same_as<size_t>;
   { t.SerializeToArray(write_data, size) } -> std::same_as<bool>;
+};
+
+template <typename T>
+concept _IsSerializable = _IsSerializer<T> && requires(T t, const void* read_data, int size) {
+  { t.ParseFromArray(read_data, size) } -> std::same_as<bool>;
 };
 
 template <typename FuncT, typename SourceT, typename DestT>

@@ -22,14 +22,17 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "trellis/core/constraints.hpp"
 #include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/in_process_bus.hpp"
@@ -1244,4 +1247,109 @@ TEST(InProcessTransport, SendReachesAnInProcessSubscriberWhileARemoteOneIsRegist
         << "delivered " << receive_count << " times";
   }
   EXPECT_EQ(received_msg, "mixed transport");
+}
+
+namespace {
+
+// Stands in for a type that serializes a large payload straight into the transport buffer: reports a size, writes
+// `payload` into the buffer it is handed, and records how large that buffer was.
+struct PayloadSerializer {
+  std::string payload;
+  bool fail{false};  // Report a failed write instead of writing
+  mutable size_t offered_size{0};
+
+  size_t ByteSizeLong() const { return payload.size(); }
+  bool SerializeToArray(void* data, int size) const {
+    offered_size = static_cast<size_t>(size);
+    if (fail) {
+      return false;
+    }
+    std::memcpy(data, payload.data(), payload.size());
+    return true;
+  }
+};
+
+// Reports a size past what SerializeToArray's int can express.
+struct OversizedSerializer {
+  size_t ByteSizeLong() const { return static_cast<size_t>(std::numeric_limits<int>::max()) + 1; }
+  bool SerializeToArray(void*, int) const {
+    ADD_FAILURE() << "SerializeToArray called for a message too large for its int size";
+    return false;
+  }
+};
+
+// A negative size would wrap to a huge size_t.
+struct SignedSizeSerializer {
+  int ByteSizeLong() const { return 0; }
+  bool SerializeToArray(void*, int) const { return true; }
+};
+
+static_assert(trellis::core::constraints::_IsSerializer<PayloadSerializer>);
+static_assert(trellis::core::constraints::_IsSerializer<test::Test>);
+static_assert(!trellis::core::constraints::_IsSerializer<SignedSizeSerializer>);
+
+}  // namespace
+
+TEST(SendInPlaceSharedMemory, SerializerGetsExactlyTheMessageSize) {
+  // Short by necessity: the node name goes into a Unix socket path, capped at 108 bytes.
+  trellis::core::Node node("sip_shm", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_sip_shm_topic");
+
+  // With no subscriber in this process, the serializer writes into the slot, which starts at initial_buffer_size and
+  // so is far larger than this message
+  test::Test msg;
+  msg.set_id(42);
+  const PayloadSerializer serializer{.payload = msg.SerializeAsString()};
+  pub->SendInPlace(serializer);
+  EXPECT_EQ(serializer.offered_size, msg.ByteSizeLong());
+}
+
+TEST(SendInPlaceSharedMemory, RefusesAFailedWrite) {
+  trellis::core::Node node("sip_fail", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_sip_fail_topic");
+
+  const PayloadSerializer serializer{.payload = "x", .fail = true};
+  EXPECT_THROW(pub->SendInPlace(serializer), std::runtime_error);
+}
+
+TEST(SendInPlaceSharedMemory, RefusesAMessageTooLargeForAnIntSize) {
+  trellis::core::Node node("sip_big", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_sip_big_topic");
+
+  EXPECT_THROW(pub->SendInPlace(OversizedSerializer{}), std::runtime_error);
+}
+
+TEST_F(TrellisFixture, SendInPlaceReachesAnInProcessSubscriber) {
+  std::string received_msg;
+  std::mutex m;
+  std::condition_variable cv;
+  bool got{false};
+
+  const Publisher<test::Test> pub = GetNode().CreatePublisher<test::Test>("test_sip_inproc_topic");
+  const Subscriber<test::Test> sub = GetNode().CreateSubscriber<test::Test>(
+      "test_sip_inproc_topic",
+      [&](const time::TimePoint&, const time::TimePoint&, trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) {
+        std::lock_guard<std::mutex> lock(m);
+        received_msg = msg->msg();
+        got = true;
+        cv.notify_one();
+      });
+
+  StartRunnerThread();
+  WaitForDiscovery();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  msg.set_msg("written in place");
+  const PayloadSerializer serializer{.payload = msg.SerializeAsString()};
+  pub->SendInPlace(serializer);
+
+  std::unique_lock<std::mutex> lock(m);
+  ASSERT_TRUE(cv.wait_for(lock, kProcessEventsWaitTime, [&got]() { return got; }));
+  EXPECT_EQ(received_msg, "written in place");
+  // The in-process payload is sized by the serializer, not by a shared memory slot
+  EXPECT_EQ(serializer.offered_size, msg.ByteSizeLong());
+
+  const PayloadSerializer failing{.payload = "x", .fail = true};
+  EXPECT_THROW(pub->SendInPlace(failing), std::runtime_error);
 }

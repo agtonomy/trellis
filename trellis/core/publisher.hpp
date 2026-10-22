@@ -25,11 +25,14 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "trellis/core/constraints.hpp"
@@ -196,11 +199,12 @@ class PublisherImpl {
    */
   trellis::core::time::TimePoint Send(const MsgT& msg, const trellis::core::time::TimePoint& now) {
     if constexpr (std::is_same_v<MsgT, SerializableT>) {
-      return SendSerializable(msg, now);
+      return SendInPlace(msg, now);
     } else {
       // The conversion runs before the shared memory slot is acquired, so user supplied converters never execute
-      // while holding a write lock that readers contend on
-      return SendSerializable(converter_(msg), now);
+      // while holding a write lock that readers contend on. SerializableT is named so that a converter returning a type
+      // convertible to it is converted, rather than sent as whatever it returned
+      return SendInPlace<SerializableT>(converter_(msg), now);
     }
   }
 
@@ -218,8 +222,8 @@ class PublisherImpl {
    * @return The timestamp used
    */
   trellis::core::time::TimePoint SendBytes(const void* data, size_t size, const trellis::core::time::TimePoint& now) {
-    return SendInternal(now, size, [data, size](ipc::shm::ShmFile::WriteInfo& write_info) {
-      std::memcpy(write_info.data, data, size);
+    return SendInternal(now, size, [data, size](std::span<uint8_t> buffer) {
+      std::memcpy(buffer.data(), data, size);
       return true;
     });
   }
@@ -229,6 +233,51 @@ class PublisherImpl {
    */
   trellis::core::time::TimePoint SendBytes(const void* data, size_t size) {
     return SendBytes(data, size, trellis::core::time::Now());
+  }
+
+  /**
+   * @brief Send a message that `serializer` writes straight into the transport buffer.
+   *
+   * `Send` ends up here with the converted message. Calling it directly with another type skips the converter and the
+   * copy into a message object, which matters for a large payload such as image pixels: the serializer can write the
+   * protobuf fields and then the pixels into the buffer. With a subscriber in this process, that buffer is on the heap
+   * rather than in shared memory.
+   *
+   * The serializer is held to the protobuf contract. `SerializeToArray` is handed exactly `ByteSizeLong()` bytes and
+   * must fill every one: subscribers parse all of them, and a shared memory slot still holds an earlier message, so a
+   * short write publishes stale bytes. Returning false, or throwing, fails the send.
+   *
+   * @note `SerializeToArray` runs under this publisher's lock, so a slow one stalls the event loop when a discovery
+   * sample for this topic arrives. It must not call this publisher or create or destroy publishers or subscribers,
+   * which can deadlock.
+   * @note `SerializeToArray` is not called when no transport takes the message, such as when readers hold every slot.
+   * @note Carries the same one-sender-at-a-time constraint as `Send`.
+   *
+   * @param serializer Writes a valid serialization of the topic's message type.
+   * @param now The timestamp to associate with the message.
+   * @return The timestamp used.
+   * @throws std::runtime_error if the message exceeds the topic's max buffer size or the 2 GiB that
+   * `SerializeToArray`'s `int` size can express, or if `SerializeToArray` returns false.
+   */
+  template <constraints::_IsSerializer SerializerT>
+  trellis::core::time::TimePoint SendInPlace(const SerializerT& serializer, const trellis::core::time::TimePoint& now) {
+    const size_t required_size = serializer.ByteSizeLong();
+    if (required_size > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      throw std::runtime_error(
+          fmt::format("PublisherImpl::SendInPlace message of {} bytes for topic {} exceeds {} bytes", required_size,
+                      topic_, std::numeric_limits<int>::max()));
+    }
+    return SendInternal(now, required_size, [&serializer](std::span<uint8_t> buffer) {
+      return serializer.SerializeToArray(buffer.data(), static_cast<int>(buffer.size()));
+    });
+  }
+
+  /**
+   * @brief Send a message that `serializer` writes straight into the transport buffer, using the current time.
+   */
+  template <constraints::_IsSerializer SerializerT>
+  trellis::core::time::TimePoint SendInPlace(const SerializerT& serializer) {
+    return SendInPlace(serializer, trellis::core::time::Now());
   }
 
   /**
@@ -249,20 +298,11 @@ class PublisherImpl {
 
  private:
   /**
-   * @brief Serializes an already converted message into shared memory and publishes it.
+   * @brief Writes one serialized message into a buffer of exactly the size passed to the send.
    *
-   * @param msg The message to serialize.
-   * @param now The timestamp to associate with the message.
-   * @return The timestamp used.
+   * Must write every byte. Returns false, or throws, to fail the send.
    */
-  trellis::core::time::TimePoint SendSerializable(const SerializableT& msg, const trellis::core::time::TimePoint& now) {
-    const size_t required_size = msg.ByteSizeLong();
-    return SendInternal(now, required_size, [&msg](ipc::shm::ShmFile::WriteInfo& write_info) {
-      return msg.SerializeToArray(write_info.data, write_info.size);
-    });
-  }
-
-  using WriteFunc = std::function<bool(ipc::shm::ShmFile::WriteInfo&)>;
+  using WriteFunc = std::function<bool(std::span<uint8_t>)>;
 
   /// @brief A message serialized for the in-process transport: the bytes, and the header delivered alongside them.
   struct InProcessMessage {
@@ -319,8 +359,8 @@ class PublisherImpl {
         inproc_message = SerializeForInProcess(now, required_size, write_fn);
         if (to_shared_memory) {
           const std::vector<uint8_t>& payload = *inproc_message->payload;
-          WriteToSharedMemory(now, payload.size(), [&payload](ipc::shm::ShmFile::WriteInfo& write_info) {
-            std::memcpy(write_info.data, payload.data(), payload.size());
+          WriteToSharedMemory(now, payload.size(), [&payload](std::span<uint8_t> buffer) {
+            std::memcpy(buffer.data(), payload.data(), payload.size());
             return true;
           });
         }
@@ -352,8 +392,7 @@ class PublisherImpl {
   InProcessMessage SerializeForInProcess(const trellis::core::time::TimePoint& now, const size_t required_size,
                                          const WriteFunc& write_fn) {
     auto payload = std::make_shared<std::vector<uint8_t>>(required_size);
-    ipc::shm::ShmFile::WriteInfo write_info{payload->data(), payload->size()};
-    if (!write_fn(write_info)) {
+    if (!write_fn(std::span<uint8_t>{*payload})) {
       throw std::runtime_error(
           fmt::format("PublisherImpl::Send failed to serialize {} bytes for topic {}", required_size, topic_));
     }
@@ -401,10 +440,10 @@ class PublisherImpl {
                       size, write_info.size));
     }
 
-    if (!fill(write_info)) {
-      throw std::runtime_error(
-          fmt::format("PublisherImpl::Send failed to serialize {} bytes into a {} byte buffer for topic {}", size,
-                      write_info.size, topic_));
+    // The slot can be larger than this message, since it only ever grows
+    if (!fill(std::span<uint8_t>{static_cast<uint8_t*>(write_info.data), size})) {
+      throw std::runtime_error(fmt::format(
+          "PublisherImpl::Send failed to serialize {} bytes into shared memory for topic {}", size, topic_));
     }
     write_guard.Commit(size);
   }
@@ -428,10 +467,11 @@ class PublisherImpl {
    * @param sample The discovery sample for the subscriber.
    */
   void ReceiveSubscriber(discovery::Discovery::EventType event, const discovery::Sample& sample) {
-    std::lock_guard guard(mutex_);
+    // topic_ is const, so other topics' samples are dropped without waiting on a send in progress
     if (sample.topic().tname() != topic_) {
       return;
     }
+    std::lock_guard guard(mutex_);
     if (event == discovery::Discovery::EventType::kNewRegistration) {
       // In the case of dynamic publishers, we have to learn our metadata from subscribers,
       // so we delay registration until we receive this data.
