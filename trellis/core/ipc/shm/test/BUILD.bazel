@@ -4,6 +4,7 @@ cc_test(
     name = "shm_file_test",
     srcs = ["shm_file_test.cpp"],
     deps = [
+        "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc/shm:shm_file",
         "@com_google_googletest//:gtest_main",
     ],
@@ -59,6 +60,7 @@ cc_test(
     name = "shm_read_write_lock_test",
     srcs = ["shm_read_write_lock_test.cpp"],
     deps = [
+        "//trellis/core/ipc:named_resource_registry",
         "//trellis/core/ipc/shm:shm_read_write_lock",
         "@com_google_googletest//:gtest_main",
     ],

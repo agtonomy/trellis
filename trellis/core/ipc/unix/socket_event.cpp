@@ -69,6 +69,9 @@ void SocketEvent::Stop() {
   }
   if (handle_.size() > 0 && reader_) {
     ::unlink(handle_.c_str());
+    // Drops one registration of the path. Stop() runs again from the destructor, which finds none to drop unless the
+    // path was registered again in between, and would then drop that one.
+    NamedResourceRegistry::Get().Remove(handle_);
   }
 }
 

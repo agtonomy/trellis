@@ -23,11 +23,13 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
+#include "trellis/core/ipc/named_resource_registry.hpp"
 
 namespace fs = std::filesystem;
 using namespace trellis::core::ipc::unix;
@@ -96,4 +98,16 @@ TEST_F(TrellisSocketEventTest, MultipleEventsAreReceived) {
   PumpLoopUntil([&] { return received_count.load() == kNumEvents; }, 500);
 
   EXPECT_EQ(received_count.load(), kNumEvents);
+}
+
+// Once a reader has unlinked its socket, the path may belong to someone else, so UnlinkAll() must leave it alone.
+// Stop() runs again from the destructor.
+TEST_F(TrellisSocketEventTest, ReaderForgetsItsPathWhenStopped) {
+  {
+    SocketEvent reader(*loop_, /* reader = */ true, socket_path_, config_);
+    reader.Stop();
+  }
+  std::ofstream{socket_path_}.close();  // a new file at the released path
+  trellis::core::ipc::NamedResourceRegistry::Get().UnlinkAll();
+  EXPECT_TRUE(fs::exists(socket_path_)) << "UnlinkAll() unlinked a path its owner had released";
 }

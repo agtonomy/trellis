@@ -23,12 +23,14 @@
 
 #include <csignal>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 
 #include "trellis/core/config.hpp"
+#include "trellis/core/ipc/named_resource_registry.hpp"
 
 namespace trellis::core::ipc::shm {
 
@@ -95,6 +97,16 @@ TEST(ShmReadWriteLock, OwnerThatFailsToCreateTheLockLeavesNoObject) {
 
   EXPECT_TRUE(threw);
   EXPECT_FALSE(Exists(name)) << "the half-created lock was left behind";
+}
+
+// Once the owner has unlinked its lock, the name may belong to someone else, so UnlinkAll() must leave it alone.
+TEST(ShmReadWriteLock, OwnerForgetsItsNameWhenDestroyed) {
+  const auto name = LockName("forget");
+  { const ShmReadWriteLock lock{name, /* owner = */ true, Config{}}; }
+  std::ofstream{"/dev/shm/" + name}.close();  // a new lock under the released name
+  NamedResourceRegistry::Get().UnlinkAll();
+  EXPECT_TRUE(Exists(name)) << "UnlinkAll() unlinked a name its owner had released";
+  ::shm_unlink(name.c_str());
 }
 
 }  // namespace trellis::core::ipc::shm

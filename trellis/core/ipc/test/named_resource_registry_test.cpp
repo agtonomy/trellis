@@ -130,5 +130,32 @@ TEST(NamedResourceRegistry, InsertAndUnlinkAllMayRunConcurrently) {
   registry.UnlinkAll();
 }
 
+// An owner that unlinks its resource itself removes the name, and UnlinkAll() then leaves that path alone (another
+// object may have it by then) while still unlinking what is still tracked.
+TEST(NamedResourceRegistry, UnlinkAllSkipsANameItsOwnerRemoved) {
+  const TrackedResources removed{"removed"};
+  const TrackedResources kept{"kept"};
+  removed.Insert();
+  kept.Insert();
+  auto& registry = NamedResourceRegistry::Get();
+  registry.Remove(removed.path);
+  registry.RemoveShm(removed.shm);
+  registry.UnlinkAll();
+  EXPECT_TRUE(removed.FileExists());
+  EXPECT_TRUE(removed.ShmExists());
+  EXPECT_FALSE(kept.FileExists());
+  EXPECT_FALSE(kept.ShmExists());
+}
+
+TEST(NamedResourceRegistry, RemoveForgetsOneRegistrationOfAName) {
+  const TrackedResources twice{"twice"};
+  auto& registry = NamedResourceRegistry::Get();
+  registry.Insert(twice.path);
+  registry.Insert(twice.path);
+  registry.Remove(twice.path);
+  registry.UnlinkAll();
+  EXPECT_FALSE(twice.FileExists());
+}
+
 }  // namespace
 }  // namespace trellis::core::ipc

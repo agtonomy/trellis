@@ -21,6 +21,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <mutex>
@@ -76,6 +77,22 @@ class NamedResourceRegistry {
   void InsertShm(std::string_view handle) { Track(named_shm_, handle); }
 
   /**
+   * @brief Stop tracking a resource its owner has unlinked itself, so the name doesn't stay for the process's life.
+   *
+   * Removes one registration of `handle`, if any. It doesn't allocate, so an owner's destructor may call it.
+   *
+   * @param handle The path passed to Insert().
+   */
+  void Remove(std::string_view handle) { Untrack(named_resources_, handle); }
+
+  /**
+   * @brief Stop tracking a shared memory resource its owner has unlinked itself. See Remove().
+   *
+   * @param handle The shared memory name passed to InsertShm().
+   */
+  void RemoveShm(std::string_view handle) { Untrack(named_shm_, handle); }
+
+  /**
    * @brief Unlink all tracked resources.
    *
    * Iterates over all tracked resource names and attempts to remove them using `unlink()` and `shm_unlink()`.
@@ -121,6 +138,16 @@ class NamedResourceRegistry {
   }
 
   /**
+   * @brief Forget one registration of `handle` in `names`.
+   */
+  void Untrack(std::vector<std::string>& names, std::string_view handle) {
+    const std::lock_guard lock{mutex_};
+    if (const auto it = std::ranges::find(names, handle); it != names.end()) {
+      names.erase(it);
+    }
+  }
+
+  /**
    * @brief Remove every name in `names` with `remove`, ignoring failures (best-effort cleanup), and forget them.
    */
   static void Drain(std::vector<std::string>& names, int (*remove)(const char*)) {
@@ -130,7 +157,7 @@ class NamedResourceRegistry {
     names.clear();
   }
 
-  std::mutex mutex_;                          ///< Guards both lists: resources are inserted on any thread.
+  std::mutex mutex_;                          ///< Guards both lists: resources are inserted and removed on any thread.
   std::vector<std::string> named_resources_;  ///< Regular named resources, for `unlink()`.
   std::vector<std::string> named_shm_;        ///< Shared memory names, for `shm_unlink()`.
 };

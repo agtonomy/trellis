@@ -143,6 +143,7 @@ ShmFile::~ShmFile() {
   if (fd_ >= 0) {
     if (owner_) {
       ::shm_unlink(handle_.c_str());
+      NamedResourceRegistry::Get().RemoveShm(handle_);
     }
     // MAP_SHARED mappings stay valid after close, so readers keep their memory
     ::close(fd_);

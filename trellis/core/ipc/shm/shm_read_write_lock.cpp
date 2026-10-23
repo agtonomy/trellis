@@ -121,6 +121,7 @@ ShmReadWriteLock::~ShmReadWriteLock() {
   }
   if (owner_) {
     ::shm_unlink(handle_.c_str());
+    NamedResourceRegistry::Get().RemoveShm(handle_);
   }
 }
 

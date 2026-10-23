@@ -22,11 +22,14 @@
 #include <unistd.h>
 
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
+
+#include "trellis/core/ipc/named_resource_registry.hpp"
 
 namespace trellis::core::ipc::shm {
 
@@ -171,6 +174,18 @@ TEST(ShmFile, MissingSegmentHoldsNoFd) {
   ShmFile reader(UniqueHandle("missing"), false, 0, config);
   EXPECT_FALSE(reader.IsInitialized());
   EXPECT_EQ(CountOpenFds(), baseline);
+}
+
+// Once the owner has unlinked its segment, the name may belong to someone else, so UnlinkAll() must leave it alone.
+TEST(ShmFile, OwnerForgetsItsNameWhenDestroyed) {
+  const trellis::core::Config config;
+  const auto handle = UniqueHandle("forget");
+  { const ShmFile file(handle, true, kRequestedSize, config); }
+  const std::string path = "/dev/shm/" + handle;
+  std::ofstream{path}.close();  // a new segment under the released name
+  NamedResourceRegistry::Get().UnlinkAll();
+  EXPECT_TRUE(std::filesystem::exists(path)) << "UnlinkAll() unlinked a name its owner had released";
+  ::shm_unlink(handle.c_str());
 }
 
 }  // namespace trellis::core::ipc::shm
