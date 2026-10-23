@@ -100,6 +100,49 @@ TEST_F(TrellisSocketEventTest, MultipleEventsAreReceived) {
   EXPECT_EQ(received_count.load(), kNumEvents);
 }
 
+TEST_F(TrellisSocketEventTest, SendFailsUntilTheReaderExists) {
+  SocketEvent writer(*loop_, false, socket_path_, config_);
+  EXPECT_FALSE(writer.Send(SocketEvent::Event{1}));
+
+  std::atomic<bool> received{false};
+  SocketEvent reader(*loop_, true, socket_path_, config_);
+  reader.AsyncReceive([&](SocketEvent::Event ev) { received = ev.buffer_number == 2; });
+  EXPECT_TRUE(writer.Send(SocketEvent::Event{2}));
+
+  PumpLoopUntil([&] { return received.load(); });
+  EXPECT_TRUE(received);
+}
+
+TEST_F(TrellisSocketEventTest, SendReachesAReaderReplacedOnTheSamePath) {
+  SocketEvent writer(*loop_, false, socket_path_, config_);
+  {
+    std::atomic<bool> received{false};
+    SocketEvent first_reader(*loop_, true, socket_path_, config_);
+    first_reader.AsyncReceive([&](SocketEvent::Event) { received = true; });
+    ASSERT_TRUE(writer.Send(SocketEvent::Event{1}));
+    PumpLoopUntil([&] { return received.load(); });
+    ASSERT_TRUE(received);
+  }
+
+  // The writer's socket is still connected to the first reader, which is gone.
+  std::atomic<unsigned> received_number{0};
+  SocketEvent second_reader(*loop_, true, socket_path_, config_);
+  second_reader.AsyncReceive([&](SocketEvent::Event ev) { received_number = ev.buffer_number; });
+  EXPECT_TRUE(writer.Send(SocketEvent::Event{7}));
+
+  PumpLoopUntil([&] { return received_number.load() == 7; });
+  EXPECT_EQ(received_number.load(), 7u);
+}
+
+TEST_F(TrellisSocketEventTest, SendFailsAfterTheReaderIsGone) {
+  SocketEvent writer(*loop_, false, socket_path_, config_);
+  {
+    SocketEvent reader(*loop_, true, socket_path_, config_);
+    ASSERT_TRUE(writer.Send(SocketEvent::Event{1}));
+  }
+  EXPECT_FALSE(writer.Send(SocketEvent::Event{2}));
+}
+
 // Once a reader has unlinked its socket, the path may belong to someone else, so UnlinkAll() must leave it alone.
 // Stop() runs again from the destructor.
 TEST_F(TrellisSocketEventTest, ReaderForgetsItsPathWhenStopped) {

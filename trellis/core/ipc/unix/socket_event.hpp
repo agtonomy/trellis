@@ -115,6 +115,7 @@ class SocketEvent {
 
   asio::local::datagram_protocol::socket socket_;      ///< ASIO socket for local domain datagrams.
   asio::local::datagram_protocol::endpoint endpoint_;  ///< Socket address.
+  bool connected_{false};                              ///< Whether a writer's socket is connected to `endpoint_`.
 
   ReceiveCallback callback_;  ///< User-provided callback for incoming events.
   Metrics metrics_;           ///< Metrics tracking for this socket event instance.

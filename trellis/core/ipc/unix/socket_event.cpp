@@ -76,13 +76,27 @@ void SocketEvent::Stop() {
 }
 
 bool SocketEvent::Send(Event event) {
-  try {
-    socket_.send_to(asio::buffer(&event, sizeof(Event)), endpoint_);
-  } catch (std::system_error& e) {
-    Log::Debug("SocketEvent::Send - {}", e.what());
-    return false;
+  // Connected once rather than addressed on every send, so the kernel looks up the reader's path and checks write
+  // permission on its socket file once instead of for every event. The LSM check on the peer (AppArmor's, in a
+  // container) still runs on every send. A send that finds the connected peer gone reconnects once, in case the reader
+  // was replaced on the same path. Any other error, such as a full queue, fails the send without reconnecting.
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    asio::error_code ec;
+    if (!connected_) {
+      socket_.connect(endpoint_, ec);
+      connected_ = !ec;
+    }
+    if (connected_) {
+      socket_.send(asio::buffer(&event, sizeof(Event)), asio::socket_base::message_flags(), ec);
+      if (!ec) return true;
+    }
+    Log::Debug("SocketEvent::Send - {}", ec.message());
+    const bool peer_gone = ec == asio::error::connection_refused || ec == asio::error::not_connected ||
+                           ec == asio::error::connection_reset;
+    if (!connected_ || !peer_gone) return false;
+    connected_ = false;
   }
-  return true;
+  return false;
 }
 
 void SocketEvent::AsyncReceive(ReceiveCallback callback) {
