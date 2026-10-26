@@ -129,6 +129,14 @@ class Discovery {
    */
   Discovery(std::string node_name, trellis::core::EventLoop loop, const trellis::core::Config& config);
 
+  /**
+   * @brief Withdraw what is still registered, so peers drop it rather than wait for it to time out
+   *
+   * Over UDP only. Under loopback the only receiver is this instance, and its delivery would be posted to the loop
+   * with a pointer to an instance that is being destroyed.
+   */
+  ~Discovery();
+
   Discovery(const Discovery&) = delete;
   Discovery& operator=(const Discovery&) = delete;
   Discovery(Discovery&&) = delete;
@@ -143,7 +151,9 @@ class Discovery {
   RegistrationHandle Register(Sample sample);
 
   /**
-   * @brief Unregister a previously registered sample
+   * @brief Unregister a previously registered sample, and tell peers it is gone
+   *
+   * A peer that misses the unregistration (a lost datagram) drops the sample when it times out instead.
    *
    * @param handle The handle returned by Register()
    */
@@ -377,13 +387,12 @@ class Discovery {
 
  private:
   void ReceiveData(trellis::core::time::TimePoint now, const void* data, size_t len);
-  void ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample);
-  void ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample);
-  void ProcessProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample);
-  void ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample);
+  void ProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample, SamplesMap& map,
+                     const SampleCallbackMap& callback_map);
   void Evaluate(const trellis::core::time::TimePoint& now);
   void BroadcastSamples();
   void BroadcastSample(RegistrationHandle handle, const Sample& sample);
+  void BroadcastUnregistration(Sample sample);
   CallbackHandle AddSampleCallback(SampleCallbackMap& callbacks, const SamplesMap& samples, SampleCallback callback);
   void PurgeStaleSamples(const trellis::core::time::TimePoint& now, SamplesMap& map,
                          const SampleCallbackMap& callback_map);

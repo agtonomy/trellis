@@ -182,6 +182,21 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
   Register(utils::GetNodeProcessSample(node_name_));
 }
 
+Discovery::~Discovery() {
+  if (config_.loopback_enabled) {
+    return;
+  }
+  try {
+    std::lock_guard lock(registered_samples_mutex_);
+    for (auto& sample : registered_samples_ | std::views::values) {
+      BroadcastUnregistration(std::move(sample));
+    }
+    registered_samples_.clear();
+  } catch (const std::exception& e) {
+    Log::Warn("Discovery: failed to send unregistrations on shutdown: {}", e.what());
+  }
+}
+
 Discovery::UdpReceiver::Callback Discovery::ReceiveCallback() {
   return
       [this](const void* data, size_t len, const asio::ip::udp::endpoint&) { ReceiveData(DiscoveryNow(), data, len); };
@@ -317,32 +332,36 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
     case discovery::unknown:
       break;
     case discovery::process_registration:
-      ProcessProcessSample(now, EventType::kNewRegistration, std::move(sample));
+      ProcessSample(now, EventType::kNewRegistration, std::move(sample), process_samples_, process_sample_callbacks_);
       break;
     case discovery::process_unregistration:
-      ProcessProcessSample(now, EventType::kNewUnregistration, std::move(sample));
+      ProcessSample(now, EventType::kNewUnregistration, std::move(sample), process_samples_, process_sample_callbacks_);
       break;
     case discovery::service_registration:
-      ProcessServiceSample(now, EventType::kNewRegistration, std::move(sample));
+      ProcessSample(now, EventType::kNewRegistration, std::move(sample), service_samples_, service_sample_callbacks_);
       break;
     case discovery::service_unregistration:
-      ProcessServiceSample(now, EventType::kNewUnregistration, std::move(sample));
+      ProcessSample(now, EventType::kNewUnregistration, std::move(sample), service_samples_, service_sample_callbacks_);
       break;
     case discovery::client_registration:
       break;
     case discovery::client_unregistration:
       break;
     case discovery::subscriber_registration:
-      ProcessSubscriberSample(now, EventType::kNewRegistration, std::move(sample));
+      ProcessSample(now, EventType::kNewRegistration, std::move(sample), subscriber_samples_,
+                    subscriber_sample_callbacks_);
       break;
     case discovery::subscriber_unregistration:
-      ProcessSubscriberSample(now, EventType::kNewUnregistration, std::move(sample));
+      ProcessSample(now, EventType::kNewUnregistration, std::move(sample), subscriber_samples_,
+                    subscriber_sample_callbacks_);
       break;
     case discovery::publisher_registration:
-      ProcessPublisherSample(now, EventType::kNewRegistration, std::move(sample));
+      ProcessSample(now, EventType::kNewRegistration, std::move(sample), publisher_samples_,
+                    publisher_sample_callbacks_);
       break;
     case discovery::publisher_unregistration:
-      ProcessPublisherSample(now, EventType::kNewUnregistration, std::move(sample));
+      ProcessSample(now, EventType::kNewUnregistration, std::move(sample), publisher_samples_,
+                    publisher_sample_callbacks_);
       break;
     default:
       break;
@@ -351,60 +370,53 @@ void Discovery::ReceiveData(trellis::core::time::TimePoint now, const void* data
 
 namespace {
 
-/**
- * @brief Adds or removes a sample in the given map, consuming the sample on a registration
- *
- * @param map The map of samples to update
- * @param now The time the sample was received
- * @param event Whether the sample is a registration or an unregistration
- * @param sample The sample to store or remove, moved into the map on a registration
- * @return The sample to hand to callbacks: the stored one on a registration, otherwise the argument. Both outlive
- *         the call, since unordered_map element references survive rehashing and nothing reachable from a callback
- *         erases from these maps.
- */
-const Sample& ProcessSamplesMap(Discovery::SamplesMap& map, trellis::core::time::TimePoint now,
-                                Discovery::EventType event, Sample&& sample) {
-  if (event == Discovery::EventType::kNewRegistration) {
-    // The key has to be read before `sample` is moved from, hence the separate statements.
-    auto& entry = map[sample.id()];
-    entry.stamp = now;
-    entry.sample = std::move(sample);
-    return entry.sample;
+/// The sample type that withdraws a registration of `type`, if it has one.
+std::optional<discovery::SampleType> UnregistrationType(discovery::SampleType type) {
+  switch (type) {
+    case discovery::publisher_registration:
+      return discovery::publisher_unregistration;
+    case discovery::subscriber_registration:
+      return discovery::subscriber_unregistration;
+    case discovery::process_registration:
+      return discovery::process_unregistration;
+    case discovery::service_registration:
+      return discovery::service_unregistration;
+    case discovery::client_registration:
+      return discovery::client_unregistration;
+    default:
+      return std::nullopt;
   }
-  if (event == Discovery::EventType::kNewUnregistration) {
-    map.erase(sample.id());
-  }
-  return sample;
 }
 
 }  // namespace
 
-void Discovery::ProcessProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  ProcessSamplesMap(process_samples_, now, event, std::move(sample));
-}
-
-void Discovery::ProcessSubscriberSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  const Sample& callback_sample = ProcessSamplesMap(subscriber_samples_, now, event, std::move(sample));
-  std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : subscriber_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, callback_sample);
+// Callbacks are handed the stored sample, which outlives them: unordered_map element references survive rehashing, and
+// nothing reachable from a callback changes these maps. An unregistration hands them what was registered, as a timeout
+// does, and one for a sample not stored here (a repeat, or one whose registration never arrived) is not passed on.
+void Discovery::ProcessSample(trellis::core::time::TimePoint now, EventType event, Sample sample, SamplesMap& map,
+                              const SampleCallbackMap& callback_map) {
+  if (event == EventType::kNewRegistration) {
+    // The key has to be read before `sample` is moved from, hence the separate statements.
+    auto& entry = map[sample.id()];
+    entry.stamp = now;
+    entry.sample = std::move(sample);
+    std::lock_guard guard(callback_mutex_);
+    for (const auto& callback : callback_map | std::views::values) {
+      if (callback) callback(event, entry.sample);
+    }
+    return;
   }
-}
-
-void Discovery::ProcessPublisherSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  const Sample& callback_sample = ProcessSamplesMap(publisher_samples_, now, event, std::move(sample));
-  std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : publisher_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, callback_sample);
+  const auto it = map.find(sample.id());
+  if (it == map.end()) {
+    return;
   }
-}
-
-void Discovery::ProcessServiceSample(trellis::core::time::TimePoint now, EventType event, Sample sample) {
-  const Sample& callback_sample = ProcessSamplesMap(service_samples_, now, event, std::move(sample));
-  std::lock_guard guard(callback_mutex_);
-  for (const auto& callback : service_sample_callbacks_ | std::views::values) {
-    if (callback) callback(event, callback_sample);
+  {
+    std::lock_guard guard(callback_mutex_);
+    for (const auto& callback : callback_map | std::views::values) {
+      if (callback) callback(event, it->second.sample);
+    }
   }
+  map.erase(it);
 }
 
 Discovery::RegistrationHandle Discovery::Register(Sample sample) {
@@ -426,9 +438,24 @@ void Discovery::Unregister(RegistrationHandle handle) {
   }
   std::lock_guard lock(registered_samples_mutex_);
   const auto it = registered_samples_.find(handle);
-  if (it != registered_samples_.end()) {
-    registered_samples_.erase(it);
+  if (it == registered_samples_.end()) {
+    return;
   }
+  Sample sample = std::move(it->second);
+  registered_samples_.erase(it);
+  BroadcastUnregistration(std::move(sample));
+}
+
+// Called with registered_samples_mutex_ held. Peers otherwise keep the sample until it times out. Under loopback the
+// delivery is queued after any of the registration's, so it finds the sample stored or, if that delivery was dropped,
+// unknown, which callbacks don't hear about.
+void Discovery::BroadcastUnregistration(Sample sample) {
+  const auto type = UnregistrationType(sample.type());
+  if (!type.has_value()) {
+    return;
+  }
+  sample.set_type(*type);
+  BroadcastSample(kInvalidRegistrationHandle, sample);
 }
 
 void Discovery::BroadcastSamples() {
@@ -438,7 +465,9 @@ void Discovery::BroadcastSamples() {
   }
 }
 
-// Called with registered_samples_mutex_ held, which guards the shared send_buf_ below.
+// Called with registered_samples_mutex_ held, which guards the shared send_buf_ below. A loopback delivery for
+// `handle` is dropped if it has been unregistered by the time it runs; one for kInvalidRegistrationHandle, an
+// unregistration, is not.
 void Discovery::BroadcastSample(RegistrationHandle handle, const Sample& sample) {
   const uint16_t sample_id_string_length = sample.id().size() + 1;
   const size_t preamble_length = sizeof(SampleHeader) + sizeof(sample_id_string_length) + sample_id_string_length;
@@ -497,9 +526,9 @@ void Discovery::BroadcastSample(RegistrationHandle handle, const Sample& sample)
   // registered_samples_mutex_. By deferring to the next event loop iteration, we break this synchronous chain.
   // One handler delivers all of the sample's packets, so it arrives whole or not at all.
   asio::post(*loop_, [this, handle, packets = std::move(loopback_packets)]() {
-    // Unregistered since this was posted. Unregister sends no unregistration, so delivering it would register the
-    // sample until it timed out. The lock is released before ReceiveData, whose callbacks may call Register().
-    {
+    // Unregistered since this was posted: delivering it would register the sample again until it timed out. The lock
+    // is released before ReceiveData, whose callbacks may call Register().
+    if (handle != kInvalidRegistrationHandle) {
       std::lock_guard lock(registered_samples_mutex_);
       if (!registered_samples_.contains(handle)) {
         return;

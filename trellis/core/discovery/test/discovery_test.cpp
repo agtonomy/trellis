@@ -23,8 +23,10 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "trellis/core/discovery/utils.hpp"
@@ -71,6 +73,16 @@ std::string LoopbackNoHeartbeatConfig() {
          "    loopback_enabled: true\n"
          "    port: " +
          std::to_string(Port(9)) + "\n";
+}
+
+// UDP, with a sample timeout no test outlasts, so a peer drops a sample only when it is told the sample is gone.
+std::string LongSampleTimeoutConfig(unsigned slot) {
+  return "trellis:\n"
+         "  discovery:\n"
+         "    interval: 10\n"
+         "    sample_timeout: 200000\n"
+         "    port: " +
+         std::to_string(Port(slot)) + "\n";
 }
 
 // Poll tests use their own ports so a slow drain in one of them cannot show up as a stray sample in another.
@@ -237,7 +249,8 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
 }
 
 // Unregistered before its loopback delivery ran: the delivery used to register it anyway, and it stayed until its
-// sample timed out, since Unregister sends no unregistration. The one still registered shows the delivery ran.
+// sample timed out. Nor do callbacks hear the unregistration queued after it, since the sample it withdraws was never
+// stored. The one still registered shows the delivery ran.
 TEST(DiscoveryTests, LoopbackDropsADeliveryForASampleUnregisteredBeforeItRan) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
@@ -303,47 +316,46 @@ TEST(DiscoveryTests, LoopbackReplaySkipsASampleUnregisteredBeforeItsDeliveryRan)
   EXPECT_EQ(received, std::vector<std::string>{"/dummy/kept"});
 }
 
-// Unregistered after its delivery ran, a sample stays known until it times out, since Unregister sends no
-// unregistration. A callback added meanwhile is told what the callbacks before it were told.
-TEST(DiscoveryTests, LoopbackReplayTellsANewCallbackWhatTheExistingOnesHeard) {
+// Unregistered after its delivery ran, a sample goes away for the callbacks that heard it, so a callback added
+// afterwards is told nothing of it: the replay tells it only what the ones before it still know.
+TEST(DiscoveryTests, LoopbackReplayOmitsASampleUnregisteredAfterItsDeliveryRan) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
-  std::vector<std::string> existing;
-  discovery.AsyncReceivePublishers(
-      [&existing](Discovery::EventType, const Sample& sample) { existing.push_back(sample.topic().tname()); });
-  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
-  ev.RunFor(std::chrono::milliseconds(10));
-  discovery.Unregister(handle);
-  std::vector<std::string> added;
-  discovery.AsyncReceivePublishers(
-      [&added](Discovery::EventType, const Sample& sample) { added.push_back(sample.topic().tname()); });
-  ev.RunFor(std::chrono::milliseconds(10));
-  EXPECT_EQ(existing, std::vector<std::string>{"/dummy/unregistered"});
-  EXPECT_EQ(added, existing);
-}
-
-// The other half of the replay above: when that sample times out, the new callback hears it go, as the earlier one
-// does, so neither is left believing in it.
-TEST(DiscoveryTests, LoopbackTimesOutAReplayedSampleForEveryCallback) {
-  auto ev = trellis::core::EventLoop();
-  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackConfig())));
   using Events = std::vector<Discovery::EventType>;
   Events existing;
   discovery.AsyncReceivePublishers(
       [&existing](Discovery::EventType event, const Sample&) { existing.push_back(event); });
   const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
-  ev.RunFor(std::chrono::milliseconds(30));  // heartbeats deliver it again while it is registered
+  ev.RunFor(std::chrono::milliseconds(10));
   discovery.Unregister(handle);
   Events added;
   discovery.AsyncReceivePublishers([&added](Discovery::EventType event, const Sample&) { added.push_back(event); });
-  ev.RunFor(std::chrono::milliseconds(20));
-  ASSERT_EQ(added, Events{Discovery::EventType::kNewRegistration});  // the replay
-  ev.RunFor(std::chrono::milliseconds(400));                         // past the 200 ms sample timeout
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_EQ(existing, (Events{Discovery::EventType::kNewRegistration, Discovery::EventType::kNewUnregistration}));
+  EXPECT_TRUE(added.empty());
+}
 
-  EXPECT_EQ(added, (Events{Discovery::EventType::kNewRegistration, Discovery::EventType::kNewUnregistration}));
-  ASSERT_FALSE(existing.empty());
-  EXPECT_EQ(existing.back(), Discovery::EventType::kNewUnregistration);
-  EXPECT_EQ(std::ranges::count(existing, Discovery::EventType::kNewUnregistration), 1);
+// A callback added while a sample is registered hears it in the replay, and then hears it go along with the callbacks
+// before it, long before it would time out.
+TEST(DiscoveryTests, LoopbackUnregistersAReplayedSampleForEveryCallback) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+  using Events = std::vector<Discovery::EventType>;
+  Events existing;
+  discovery.AsyncReceivePublishers(
+      [&existing](Discovery::EventType event, const Sample&) { existing.push_back(event); });
+  const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(10));
+  Events added;
+  discovery.AsyncReceivePublishers([&added](Discovery::EventType event, const Sample&) { added.push_back(event); });
+  ev.RunFor(std::chrono::milliseconds(10));
+  ASSERT_EQ(added, Events{Discovery::EventType::kNewRegistration});  // the replay
+  discovery.Unregister(handle);
+  ev.RunFor(std::chrono::milliseconds(10));
+
+  const Events heard{Discovery::EventType::kNewRegistration, Discovery::EventType::kNewUnregistration};
+  EXPECT_EQ(existing, heard);
+  EXPECT_EQ(added, heard);
   EXPECT_FALSE(HasTopic(discovery.GetPubSamples(), "/dummy/unregistered"));
 }
 
@@ -426,11 +438,79 @@ TEST(DiscoveryTests, UnregisterPublisher) {
   ev.RunFor(std::chrono::milliseconds(50));
   discovery.Unregister(handle);
 
-  ev.RunFor(std::chrono::milliseconds(400));  // wait longer than timeout
+  ev.RunFor(std::chrono::milliseconds(50));  // well inside the 200 ms sample timeout, so only the unregistration counts
   auto samples = discovery.GetPubSubSamples();
   ASSERT_TRUE(samples.empty());
   ASSERT_NE(reg_count, 0);
-  ASSERT_NE(unreg_count, 0);
+  ASSERT_EQ(unreg_count, 1);
+}
+
+// A peer hears an unregistration at once rather than keeping the sample until it times out.
+TEST(DiscoveryTests, UnregisterTellsAPeerAtOnce) {
+  auto ev = trellis::core::EventLoop();
+  const auto config = trellis::core::Config(YAML::Load(LongSampleTimeoutConfig(23)));
+  Discovery registering("registering_node", ev, config);
+  Discovery peer("peer_node", ev, config);
+  std::vector<Discovery::EventType> events;
+  peer.AsyncReceivePublishers([&events](Discovery::EventType event, const Sample& sample) {
+    if (sample.topic().tname() == "/dummy/unregistered") events.push_back(event);
+  });
+  const auto handle = registering.RegisterPublisher<test::Test>("/dummy/unregistered", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(100));
+  ASSERT_FALSE(events.empty()) << "the registration never arrived";
+  registering.Unregister(handle);
+  ev.RunFor(std::chrono::milliseconds(100));
+
+  EXPECT_EQ(events.back(), Discovery::EventType::kNewUnregistration);
+  EXPECT_EQ(std::ranges::count(events, Discovery::EventType::kNewUnregistration), 1);
+  EXPECT_FALSE(HasTopic(peer.GetPubSamples(), "/dummy/unregistered"));
+}
+
+// A peer that goes without a word, as a crashed process does or one whose unregistration was lost, is dropped when
+// its sample times out, and callbacks are handed the sample it registered.
+TEST(DiscoveryTests, SilentPeerTimesOut) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig(25))));
+  std::vector<std::pair<Discovery::EventType, Sample>> events;
+  discovery.AsyncReceivePublishers(
+      [&events](Discovery::EventType event, const Sample& sample) { events.emplace_back(event, sample); });
+  Sample publisher;
+  publisher.set_id("silent_publisher");
+  publisher.set_type(discovery::publisher_registration);
+  publisher.mutable_topic()->set_tname("/dummy/silent");
+  SendToDiscoveryPort(Port(25), WellFormedDatagram(publisher));
+  ev.RunFor(std::chrono::milliseconds(50));
+  ASSERT_EQ(events.size(), 1u) << "the registration never arrived";
+  ASSERT_TRUE(HasTopic(discovery.GetPubSamples(), "/dummy/silent"));
+  ev.RunFor(std::chrono::milliseconds(400));  // past the 200 ms sample timeout
+
+  ASSERT_EQ(events.size(), 2u);
+  EXPECT_EQ(events[1].first, Discovery::EventType::kNewUnregistration);
+  EXPECT_EQ(events[1].second.type(), discovery::publisher_registration);
+  EXPECT_EQ(events[1].second.topic().tname(), "/dummy/silent");
+  EXPECT_FALSE(HasTopic(discovery.GetPubSamples(), "/dummy/silent"));
+}
+
+// A Discovery destroyed with samples still registered, its own process sample included, withdraws them from its peers.
+TEST(DiscoveryTests, DestroyedDiscoveryWithdrawsItsSamples) {
+  auto ev = trellis::core::EventLoop();
+  const auto config = trellis::core::Config(YAML::Load(LongSampleTimeoutConfig(24)));
+  auto leaving = std::make_unique<Discovery>("leaving_node", ev, config);
+  Discovery peer("peer_node", ev, config);
+  std::vector<Discovery::EventType> events;
+  peer.AsyncReceivePublishers([&events](Discovery::EventType event, const Sample& sample) {
+    if (sample.topic().tname() == "/dummy/left") events.push_back(event);
+  });
+  leaving->RegisterPublisher<test::Test>("/dummy/left", "memfile", 2u);
+  ev.RunFor(std::chrono::milliseconds(100));
+  ASSERT_FALSE(events.empty()) << "the registration never arrived";
+  ASSERT_EQ(peer.GetProcessSamples().size(), 2u);
+  leaving.reset();
+  ev.RunFor(std::chrono::milliseconds(100));
+
+  EXPECT_EQ(events.back(), Discovery::EventType::kNewUnregistration);
+  EXPECT_FALSE(HasTopic(peer.GetPubSamples(), "/dummy/left"));
+  EXPECT_EQ(peer.GetProcessSamples().size(), 1u);
 }
 
 TEST(DiscoveryTests, GetSampleIdReturnsStableValue) {
@@ -801,10 +881,10 @@ TEST(DiscoveryTests, UnregisterPublisherWhilePolling) {
   ev.RunFor(std::chrono::milliseconds(50));
   discovery.Unregister(handle);
 
-  ev.RunFor(std::chrono::milliseconds(400));  // wait longer than timeout
+  ev.RunFor(std::chrono::milliseconds(50));  // past a 20 ms drain, well inside the 200 ms sample timeout
   EXPECT_TRUE(discovery.GetPubSubSamples().empty());
   EXPECT_NE(reg_count, 0);
-  EXPECT_NE(unreg_count, 0);
+  EXPECT_EQ(unreg_count, 1);
 }
 
 // An id of 127 bytes, with its NUL, puts 0x80 in the id length field's low byte, which a signed char sign-extended.

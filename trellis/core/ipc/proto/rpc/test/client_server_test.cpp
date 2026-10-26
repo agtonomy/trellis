@@ -1202,8 +1202,7 @@ class UnregisterTest : public TrellisFixture {
     EXPECT_EQ(fail_count.load(), 0u);
     EXPECT_EQ(timeout_count.load(), 0u);
 
-    // The client only learns of this when discovery's stale-sample scan runs, up to one interval plus one timeout
-    // later, and the failures then cascade through posted handlers.
+    // Discovery delivers the unregistration on the loop, and the failures then cascade through posted handlers.
     const auto unregistered_at = std::chrono::steady_clock::now();
     GetNode().GetDiscovery()->Unregister(handle);
     const auto deadline = unregistered_at + std::chrono::seconds{2};
@@ -1228,10 +1227,8 @@ class UnregisterTest : public TrellisFixture {
 // With no timer, closing the connection is the only thing that can complete the calls.
 TEST_F(UnregisterTest, FailsCallsWithoutTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 0); }
 
-// The timeout outlasts discovery's purge, so the calls fail before it fires. Unregister() only stops the broadcast,
-// so the client hears about it once the sample goes stale: kTestDiscoveryTimeout to expire, plus up to one
-// kTestDiscoveryInterval before the management tick that scans for it. 1000 ms is comfortably clear of that 300 ms
-// worst case without making a loaded machine flaky.
+// The calls fail on the unregistration, before their timeout fires. Unregister() delivers it on the loop at once, and
+// 1000 ms is comfortably clear of that without making a loaded machine flaky.
 TEST_F(UnregisterTest, FailsCallsBeforeTimeout) { ExpectAllCallsFail(/* timeout_ms = */ 1000); }
 
 TEST_F(TrellisFixture, CallFromServiceHandler) {
