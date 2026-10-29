@@ -190,8 +190,8 @@ class PublisherImpl {
    *
    * @note At most one thread may send on a given publisher at a time. That thread need not be the node's event loop
    * thread -- publishing from a dedicated worker thread is an established pattern -- but two concurrent senders race
-   * on the converter and on the send statistics. This holds on either transport: the in-process transport posts each
-   * delivery onto the subscriber's loop, so a send never runs a subscriber callback on the sending thread.
+   * on the converter and on the send statistics. This holds on either transport: the in-process transport delivers on
+   * the subscriber's loop, so a send never runs a subscriber callback on the sending thread.
    *
    * @param msg The message to send.
    * @param now The timestamp to associate with the message.
@@ -304,12 +304,6 @@ class PublisherImpl {
    */
   using WriteFunc = std::function<bool(std::span<uint8_t>)>;
 
-  /// @brief A message serialized for the in-process transport: the bytes, and the header delivered alongside them.
-  struct InProcessMessage {
-    std::shared_ptr<const std::vector<uint8_t>> payload;
-    ipc::shm::ShmFile::SMemFileHeader header;
-  };
-
   /**
    * @brief Internal send function
    *
@@ -341,7 +335,7 @@ class PublisherImpl {
     // read is picked up by the next send.
     const bool to_in_process = inproc_route_count_->load(std::memory_order_relaxed) > 0;
 
-    std::optional<InProcessMessage> inproc_message;
+    std::optional<ipc::InProcessBus::Message> inproc_message;
     {
       // The lock covers this publisher's own state and the shared memory slot. It ends before the in-process publish
       // and before UpdateStatistics, each of which takes a lock of its own; UpdateStatistics reaches the discovery
@@ -372,7 +366,7 @@ class PublisherImpl {
     }
 
     if (inproc_message.has_value()) {
-      inproc_bus_->Publish(inproc_route_, inproc_message->header, std::move(inproc_message->payload));
+      inproc_bus_->Publish(inproc_route_, *inproc_message, num_write_buffers_);
     }
     UpdateStatistics(now);
     return now;
@@ -389,8 +383,8 @@ class PublisherImpl {
    * @param write_fn Serializes the message into the buffer it is given.
    * @return The payload and its header.
    */
-  InProcessMessage SerializeForInProcess(const trellis::core::time::TimePoint& now, const size_t required_size,
-                                         const WriteFunc& write_fn) {
+  ipc::InProcessBus::Message SerializeForInProcess(const trellis::core::time::TimePoint& now,
+                                                   const size_t required_size, const WriteFunc& write_fn) {
     auto payload = std::make_shared<std::vector<uint8_t>>(required_size);
     if (!write_fn(std::span<uint8_t>{*payload})) {
       throw std::runtime_error(
@@ -401,7 +395,7 @@ class PublisherImpl {
     header.sequence = ++inproc_sequence_;
     header.clock = time::TimePointToNanoseconds(now);
     header.writer_id = inproc_writer_id_;
-    return InProcessMessage{std::move(payload), header};
+    return ipc::InProcessBus::Message{header, std::move(payload)};
   }
 
   /**

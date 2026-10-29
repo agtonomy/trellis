@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -46,6 +47,12 @@ namespace trellis::core::ipc {
  *
  * @note Delivery is posted onto the subscriber's loop, never called inline, matching the shm path's async wake. This
  * keeps handling order deterministic and avoids re-entering a callback from inside Send.
+ *
+ * @note Each subscriber holds at most `depth` undelivered messages per writer, as many as that writer's shared memory
+ * slots, and a new one pushes out the oldest. So a slow subscriber, or one whose loop isn't running, gets recent data
+ * rather than a backlog, as over shm, and the dropped messages show up as gaps in the writer's sequence. A shm reader
+ * that falls behind gets between one and all of the writer's slots, depending on where the writer wrapped, so this is
+ * the most it could get.
  */
 class InProcessBus {
  public:
@@ -56,6 +63,13 @@ class InProcessBus {
    * @param payload An immutable borrow of the serialized message.
    */
   using ReceiveFn = std::function<void(const shm::ShmFile::SMemFileHeader&, BorrowedPayload)>;
+
+  /// @brief A serialized message and the header delivered alongside it.
+  struct Message {
+    shm::ShmFile::SMemFileHeader header;  ///< Its writer_id and sequence identify the message.
+    /// Kept alive until every delivery completes and every borrow is released, or until every subscriber drops it.
+    std::shared_ptr<const std::vector<uint8_t>> payload;
+  };
 
   /// The subscription handle that is used for bookkeeping active subscriptions.
   using Handle = int;
@@ -121,11 +135,11 @@ class InProcessBus {
    * @brief Deliver a serialized message to every subscriber on the topic.
    *
    * @param topic The topic to publish to.
-   * @param header The header to deliver alongside the payload.
-   * @param payload The serialized message, kept alive until every delivery completes and every borrow is released.
+   * @param message The message and its header.
+   * @param depth How many of this writer's messages a subscriber may hold undelivered; the oldest are dropped beyond
+   *        it. The writer's shared memory slot count. At least 1.
    */
-  void Publish(const std::string& topic, const shm::ShmFile::SMemFileHeader& header,
-               std::shared_ptr<const std::vector<uint8_t>> payload);
+  void Publish(const std::string& topic, const Message& message, size_t depth);
 
   /**
    * @brief Observe how many subscribers this process currently has on a topic.
@@ -145,14 +159,24 @@ class InProcessBus {
  private:
   InProcessBus() = default;
 
-  /// @brief One subscriber's registration for a topic.
-  struct Route {
-    trellis::core::EventLoop loop;
-    ReceiveFn fn;
+  /// @brief One subscriber's registration for a topic, with its undelivered messages. Shared with the handler that
+  /// delivers them.
+  struct Subscription {
+    Subscription(trellis::core::EventLoop loop, ReceiveFn fn) : loop{std::move(loop)}, fn{std::move(fn)} {}
+
+    const trellis::core::EventLoop loop;
+    const ReceiveFn fn;
+    std::mutex mutex;  ///< Guards the members below: publishers push on their threads, the loop drains.
+    std::deque<Message> pending;
+    bool drain_posted{false};  ///< One drain handler at a time, so a stopped loop holds at most the queue.
   };
 
-  /// Routes for one topic, keyed by handle. Node-based because `EventLoop` is copy-constructible but not
-  /// move-assignable (const members), which erasing from a vector would need.
+  using Route = std::shared_ptr<Subscription>;
+
+  /// Delivers what is queued, on the subscriber's loop, and posts itself again if more arrived meanwhile.
+  static void Drain(const std::shared_ptr<Subscription>& subscription);
+
+  /// Routes for one topic, keyed by handle.
   using TopicRoutes = std::unordered_map<Handle, Route>;
 
   /**

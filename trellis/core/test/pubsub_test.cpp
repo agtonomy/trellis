@@ -22,11 +22,13 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <future>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <random>
 #include <string>
 #include <thread>
@@ -1148,6 +1150,84 @@ TEST(InProcessTransport, IsolatedLoopbackNodesDoNotShareTheBus) {
   own_domain_pub->Send(msg);
   node2.RunUntilIdle();
   EXPECT_EQ(received, std::vector<std::string>{"from node2"});
+}
+
+// A subscriber that falls behind gets the publisher's newest num_buffers messages, the most a shared memory reader
+// could still find, instead of the whole backlog late.
+TEST(InProcessTransport, ASubscriberThatFallsBehindGetsTheNewestNumBuffers) {
+  trellis::core::Node node("bounded_bus", trellis::core::Config(YAML::Load(R"(
+    trellis:
+      publisher:
+        attributes:
+          num_buffers: 3
+      discovery:
+        loopback_enabled: true
+    )")));
+  std::vector<int> received;
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_bounded_bus_topic");
+  const Subscriber<test::Test> sub = node.CreateSubscriber<test::Test>(
+      "test_bounded_bus_topic",
+      [&received](const time::TimePoint&, const time::TimePoint&,
+                  trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) { received.push_back(msg->id()); });
+  node.RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  for (int id = 0; id < 10; ++id) {  // all sent before the loop delivers any
+    msg.set_id(id);
+    pub->Send(msg);
+  }
+  node.RunUntilIdle();
+  EXPECT_EQ(received, (std::vector<int>{7, 8, 9}));
+}
+
+// The messages pushed out leave a gap in the writer's sequence, which the subscriber counts as dropped once it has
+// heard from that writer. The count reaches discovery with the subscriber's statistics.
+TEST(InProcessTransport, MessagesPushedOutAreCountedAsDropped) {
+  trellis::core::Node node("bounded_bus_drops", trellis::core::Config(YAML::Load(R"(
+    trellis:
+      publisher:
+        attributes:
+          num_buffers: 3
+      subscriber:
+        attributes:
+          statistics_update_interval_ms: 10
+      discovery:
+        interval: 20
+        loopback_enabled: true
+    )")));
+  std::vector<int> received;
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_bounded_bus_drops_topic");
+  const Subscriber<test::Test> sub = node.CreateSubscriber<test::Test>(
+      "test_bounded_bus_drops_topic",
+      [&received](const time::TimePoint&, const time::TimePoint&,
+                  trellis::core::SubscriberImpl<test::Test>::MsgTypePtr msg) { received.push_back(msg->id()); });
+  node.RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  test::Test msg;
+  msg.set_id(0);
+  pub->Send(msg);
+  node.RunUntilIdle();
+  for (int id = 1; id <= 10; ++id) {  // all sent before the loop delivers any
+    msg.set_id(id);
+    pub->Send(msg);
+  }
+  node.RunUntilIdle();
+  ASSERT_EQ(received, (std::vector<int>{0, 8, 9, 10}));
+
+  const auto reported_drops = [&node]() -> std::optional<int32_t> {
+    for (const auto& sample : node.GetDiscovery()->GetSubSamples()) {
+      if (sample.topic().tname() == "test_bounded_bus_drops_topic") {
+        return sample.topic().message_drops();
+      }
+    }
+    return std::nullopt;
+  };
+  for (int step = 0; step < 300 && reported_drops() != 7; ++step) {
+    node.RunFor(std::chrono::milliseconds{10});
+  }
+  EXPECT_EQ(reported_drops(), 7) << "the 7 messages pushed out were not counted as dropped";
 }
 
 // Nodes in one process whose UDP discovery shares a port do discover each other, and keep using the bus between them.

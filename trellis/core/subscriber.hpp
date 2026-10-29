@@ -456,7 +456,7 @@ class SubscriberImpl : public SubscriberBase,
    * Handles throttling, parsing, and dispatching to user callbacks.
    */
   void ReceiveData(const ipc::shm::ShmFile::SMemFileHeader& header, ipc::BorrowedPayload payload) {
-    // A transport can deliver after Stop(): the in-process bus posts each message ahead of time, and Stop() cannot
+    // A transport can deliver after Stop(): the in-process bus queues messages ahead of time, and Stop() cannot
     // recall those. Returning here also keeps the watchdog below from being re-armed after Stop() disarmed it.
     if (stopped_.load(std::memory_order_acquire)) {
       return;
