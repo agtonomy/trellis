@@ -117,7 +117,7 @@ class InProcessBus {
    * @brief Register a subscriber's delivery callback for a topic.
    *
    * @param topic The topic to receive messages for.
-   * @param loop The loop to post deliveries onto.
+   * @param loop The loop to post deliveries onto. Kept alive until Unsubscribe().
    * @param fn The callback to invoke per message.
    * @return An opaque handle, for Unsubscribe().
    */
@@ -159,19 +159,29 @@ class InProcessBus {
  private:
   InProcessBus() = default;
 
-  /// @brief One subscriber's registration for a topic, with its undelivered messages. Shared with the handler that
+  using Executor = trellis::core::EventLoop::IOContext::executor_type;
+
+  /// @brief One subscriber's delivery callback for a topic, with its undelivered messages. Shared with the handler that
   /// delivers them.
   struct Subscription {
-    Subscription(trellis::core::EventLoop loop, ReceiveFn fn) : loop{std::move(loop)}, fn{std::move(fn)} {}
+    Subscription(Executor executor, ReceiveFn fn) : executor{executor}, fn{std::move(fn)} {}
 
-    const trellis::core::EventLoop loop;
+    /// Not the loop itself: a queued drain holds this subscription, so owning the loop here would keep the io_context,
+    /// and with it that drain, alive for good if the loop never ran again. The route holds the loop instead, and a
+    /// drain only reposts from the loop.
+    const Executor executor;
     const ReceiveFn fn;
     std::mutex mutex;  ///< Guards the members below: publishers push on their threads, the loop drains.
     std::deque<Message> pending;
     bool drain_posted{false};  ///< One drain handler at a time, so a stopped loop holds at most the queue.
   };
 
-  using Route = std::shared_ptr<Subscription>;
+  /// @brief One subscriber's registration for a topic.
+  struct Route {
+    /// Held for as long as the route exists, so Publish never posts onto a destroyed io_context.
+    trellis::core::EventLoop loop;
+    std::shared_ptr<Subscription> subscription;
+  };
 
   /// Delivers what is queued, on the subscriber's loop, and posts itself again if more arrived meanwhile.
   static void Drain(const std::shared_ptr<Subscription>& subscription);

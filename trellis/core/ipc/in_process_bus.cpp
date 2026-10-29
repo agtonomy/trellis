@@ -46,7 +46,8 @@ uint64_t InProcessBus::NextWriterId() {
 InProcessBus::Handle InProcessBus::Subscribe(const std::string& topic, trellis::core::EventLoop loop, ReceiveFn fn) {
   std::lock_guard<std::mutex> lock(mutex_);
   const Handle handle = next_handle_++;
-  routes_[topic].AddRoute(handle, std::make_shared<Subscription>(std::move(loop), std::move(fn)));
+  auto subscription = std::make_shared<Subscription>((*loop).get_executor(), std::move(fn));
+  routes_[topic].AddRoute(handle, Route{std::move(loop), std::move(subscription)});
   return handle;
 }
 
@@ -81,7 +82,7 @@ void InProcessBus::Publish(const std::string& topic, const Message& message, siz
   }
   // Each queued copy holds the payload, so it outlives this call.
   for (const TopicRoutes::value_type& entry : it->second.Routes()) {
-    const Route& subscription = entry.second;
+    const std::shared_ptr<Subscription>& subscription = entry.second.subscription;
     bool post = false;
     {
       std::lock_guard<std::mutex> queue_lock(subscription->mutex);
@@ -95,7 +96,7 @@ void InProcessBus::Publish(const std::string& topic, const Message& message, siz
       post = !std::exchange(subscription->drain_posted, true);
     }
     if (post) {
-      asio::post(*subscription->loop, [subscription]() { Drain(subscription); });
+      asio::post(subscription->executor, [subscription]() { Drain(subscription); });
     }
   }
 }
@@ -115,7 +116,7 @@ void InProcessBus::Drain(const std::shared_ptr<Subscription>& subscription) {
         return;
       }
     }
-    asio::post(*subscription->loop, [subscription]() { Drain(subscription); });
+    asio::post(subscription->executor, [subscription]() { Drain(subscription); });
   };
   auto next = batch.begin();
   try {

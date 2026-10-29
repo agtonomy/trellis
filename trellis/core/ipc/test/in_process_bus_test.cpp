@@ -239,5 +239,33 @@ TEST(InProcessBusBackpressure, ASubscriberThatIsBehindDoesNotHoldBackAnother) {
   bus->Unsubscribe("/dummy/two_subscriber_topic", running);
 }
 
+// A drain still queued when the subscriber goes away holds the subscription. If the subscription held the loop in turn,
+// the io_context would never be destroyed, and the drain and its messages would leak.
+TEST(InProcessBusBackpressure, ADrainLeftOnALoopThatNeverRunsAgainIsFreedWithTheLoop) {
+  const auto bus = InProcessBus::Instance();
+  const auto payload = Payload();
+  const std::weak_ptr<const std::vector<uint8_t>> observed = payload;
+  {
+    trellis::core::EventLoop loop;
+    const auto handle = bus->Subscribe("/dummy/abandoned_topic", loop, NoopReceiver());
+    bus->Publish("/dummy/abandoned_topic", {Header(1, 1), payload}, /* depth = */ 3);
+    bus->Unsubscribe("/dummy/abandoned_topic", handle);
+  }
+  EXPECT_EQ(observed.use_count(), 1) << "only this test still holds the payload";
+}
+
+// The route holds the loop, so a subscriber that lets go of its own handle early can still be published to, and the
+// loop goes, with its drain, when the route does.
+TEST(InProcessBusBackpressure, ARouteKeepsItsLoopAliveUntilUnsubscribed) {
+  const auto bus = InProcessBus::Instance();
+  const auto payload = Payload();
+  const std::weak_ptr<const std::vector<uint8_t>> observed = payload;
+  const auto handle = bus->Subscribe("/dummy/released_loop_topic", trellis::core::EventLoop{}, NoopReceiver());
+  bus->Publish("/dummy/released_loop_topic", {Header(1, 1), payload}, /* depth = */ 3);
+  EXPECT_EQ(observed.use_count(), 2) << "the queued drain holds the payload";
+  bus->Unsubscribe("/dummy/released_loop_topic", handle);
+  EXPECT_EQ(observed.use_count(), 1) << "only this test still holds the payload";
+}
+
 }  // namespace
 }  // namespace trellis::core::ipc
