@@ -18,11 +18,11 @@
 #ifndef TRELLIS_CORE_TIMER_HPP
 #define TRELLIS_CORE_TIMER_HPP
 
-#include <asio.hpp>
 #include <atomic>
 #include <memory>
 #include <optional>
 
+#include "trellis/core/asio.hpp"
 #include "trellis/core/error_code.hpp"
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/time.hpp"

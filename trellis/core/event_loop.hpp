@@ -18,7 +18,6 @@
 #ifndef TRELLIS_CORE_EVENT_LOOP_HPP_
 #define TRELLIS_CORE_EVENT_LOOP_HPP_
 
-#include <asio.hpp>
 #include <atomic>
 #include <chrono>
 #include <future>
@@ -27,6 +26,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "trellis/core/asio.hpp"
 #include "trellis/core/timer_options.hpp"
 
 namespace trellis {

@@ -18,8 +18,7 @@
 #ifndef TRELLIS_CORE_ERROR_CODE_HPP
 #define TRELLIS_CORE_ERROR_CODE_HPP
 
-#include <asio.hpp>
-#include <asio/error.hpp>
+#include "trellis/core/asio.hpp"
 
 namespace trellis {
 namespace core {

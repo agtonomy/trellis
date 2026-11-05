@@ -18,9 +18,10 @@
 #include "trellis/core/ipc/in_process_bus.hpp"
 
 #include <algorithm>
-#include <asio.hpp>
 #include <iterator>
 #include <utility>
+
+#include "trellis/core/asio.hpp"
 
 namespace trellis::core::ipc {
 

@@ -19,11 +19,11 @@
 #define TRELLIS_CORE_IPC_UNIX_SOCKET_EVENT_HPP_
 
 #include <array>
-#include <asio.hpp>
 #include <functional>
 #include <memory>
 #include <string>
 
+#include "trellis/core/asio.hpp"
 #include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
 

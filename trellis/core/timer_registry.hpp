@@ -18,12 +18,13 @@
 #ifndef TRELLIS_CORE_TIMER_REGISTRY_HPP_
 #define TRELLIS_CORE_TIMER_REGISTRY_HPP_
 
-#include <asio.hpp>
 #include <cstdint>
 #include <mutex>
 #include <ranges>
 #include <unordered_map>
 #include <vector>
+
+#include "trellis/core/asio.hpp"
 
 namespace trellis::core {
 

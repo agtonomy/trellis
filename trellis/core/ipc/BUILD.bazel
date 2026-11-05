@@ -28,9 +28,9 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":borrowed_payload",
+        "//trellis/core:core_asio",
         "//trellis/core:core_event_loop",
         "//trellis/core/ipc/shm:shm_file",
-        "@asio",
     ],
 )
 

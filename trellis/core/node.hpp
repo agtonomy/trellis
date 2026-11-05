@@ -18,7 +18,6 @@
 #ifndef TRELLIS_CORE_NODE_HPP_
 #define TRELLIS_CORE_NODE_HPP_
 
-#include <asio.hpp>
 #include <functional>
 #include <list>
 #include <memory>
@@ -28,6 +27,7 @@
 #include <string_view>
 #include <utility>
 
+#include "trellis/core/asio.hpp"
 #include "trellis/core/bind.hpp"
 #include "trellis/core/config.hpp"
 #include "trellis/core/constraints.hpp"

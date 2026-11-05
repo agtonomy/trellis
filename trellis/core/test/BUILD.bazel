@@ -67,6 +67,18 @@ cc_test(
 )
 
 cc_test(
+    name = "asio_single_state_test",
+    size = "small",
+    srcs = ["asio_single_state_test.cpp"],
+    data = ["//trellis:trellis_shared"],
+    linkopts = ["-ldl"],
+    deps = [
+        ":test_paths",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "core_node_test",
     srcs = ["node_test.cpp"],
     data = [

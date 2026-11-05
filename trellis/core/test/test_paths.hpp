@@ -36,6 +36,18 @@ namespace trellis::core::test {
 std::string DataPath(std::string_view filename);
 
 /**
+ * @brief Resolve a data dependency from any package of this repository into an absolute filesystem path
+ *
+ * Like DataPath(), for a file that another package provides, such as a library a test loads at run time.
+ *
+ * @param package_path the package that provides the file, relative to the repository root (e.g. "trellis")
+ * @param filename the name of the file, relative to that package
+ * @return the absolute path to the file
+ * @throws std::runtime_error if the runfiles tree cannot be read or does not contain the file
+ */
+std::string RunfilePath(std::string_view package_path, std::string_view filename);
+
+/**
  * @brief Resolve a filename into an absolute path inside the test's writable temporary directory
  *
  * The runfiles tree is not a writable location, so tests that produce output must write here instead.

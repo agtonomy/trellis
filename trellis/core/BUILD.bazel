@@ -53,6 +53,17 @@ cc_library(
     ],
 )
 
+# BCR's asio compiles asio.cpp with ASIO_SEPARATE_COMPILATION as a local define, which reaches none of its consumers.
+# Every trellis target reaches asio through here instead, so each compiles asio's headers in the mode asio.cpp was
+# built in, whether or not trellis is the root module. See asio.hpp.
+cc_library(
+    name = "core_asio",
+    hdrs = ["asio.hpp"],
+    defines = ["ASIO_SEPARATE_COMPILATION"],
+    visibility = ["//visibility:public"],
+    deps = ["@asio"],
+)
+
 cc_library(
     name = "core_error_code",
     hdrs = [
@@ -60,7 +71,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@asio",
+        ":core_asio",
     ],
 )
 
@@ -71,8 +82,8 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_asio",
         ":core_timer_options",
-        "@asio",
     ],
 )
 
@@ -109,7 +120,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@asio",
+        ":core_asio",
     ],
 )
 
@@ -149,12 +160,12 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_asio",
         ":core_error_code",
         ":core_event_loop",
         ":core_time",
         ":core_timer_options",
         ":core_timer_registry",
-        "@asio",
     ],
 )
 
@@ -223,6 +234,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":core_asio",
         ":core_bind",
         ":core_config",
         ":core_crash_counter",

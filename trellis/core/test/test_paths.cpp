@@ -40,14 +40,16 @@ constexpr auto kPackagePath = "trellis/core/test";
 
 }  // namespace
 
-std::string DataPath(std::string_view filename) {
+std::string DataPath(std::string_view filename) { return RunfilePath(kPackagePath, filename); }
+
+std::string RunfilePath(std::string_view package_path, std::string_view filename) {
   auto error = std::string{};
   const auto runfiles = std::unique_ptr<Runfiles>{Runfiles::CreateForTest(BAZEL_CURRENT_REPOSITORY, &error)};
   if (runfiles == nullptr) {
     throw std::runtime_error{fmt::format("Unable to read the runfiles tree: {}", error)};
   }
 
-  const auto key = fmt::format("{}/{}/{}", kRepoName, kPackagePath, filename);
+  const auto key = fmt::format("{}/{}/{}", kRepoName, package_path, filename);
   const auto path = runfiles->Rlocation(key);
   if (path.empty()) {
     throw std::runtime_error{fmt::format("No runfile found for {}, is it listed as a data dependency?", key)};
