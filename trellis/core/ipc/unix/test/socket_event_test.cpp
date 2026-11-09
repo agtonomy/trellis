@@ -26,6 +26,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 
 #include "trellis/core/config.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -153,4 +154,10 @@ TEST_F(TrellisSocketEventTest, ReaderForgetsItsPathWhenStopped) {
   std::ofstream{socket_path_}.close();  // a new file at the released path
   trellis::core::ipc::NamedResourceRegistry::Get().UnlinkAll();
   EXPECT_TRUE(fs::exists(socket_path_)) << "UnlinkAll() unlinked a path its owner had released";
+}
+
+// A moved-from reader used to keep its path, so destroying it unlinked the socket its new owner was using.
+TEST_F(TrellisSocketEventTest, CannotBeMoved) {
+  static_assert(!std::is_move_constructible_v<SocketEvent>);
+  static_assert(!std::is_move_assignable_v<SocketEvent>);
 }

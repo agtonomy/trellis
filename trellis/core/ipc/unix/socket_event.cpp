@@ -51,7 +51,9 @@ SocketEvent::SocketEvent(trellis::core::EventLoop loop, bool reader, std::string
       socket_.bind(endpoint_);
     }
     if (::chmod(endpoint_.path().c_str(), 0777) < 0) {
-      throw std::system_error(errno, std::generic_category(), "SocketEvent::chmod failed");
+      const int error = errno;    // captured first: unlink below may overwrite errno
+      ::unlink(handle_.c_str());  // bind created the file, and no destructor runs when the constructor throws
+      throw std::system_error(error, std::generic_category(), "SocketEvent::chmod failed");
     }
     NamedResourceRegistry::Get().Insert(handle_);
   } else {

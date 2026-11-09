@@ -9,3 +9,14 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# A test binary of its own: it replaces chmod for everything linked into it.
+cc_test(
+    name = "socket_event_bind_failure_test",
+    srcs = ["socket_event_bind_failure_test.cpp"],
+    deps = [
+        "//trellis/core/ipc:named_resource_registry",
+        "//trellis/core/ipc/unix:socket_event",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

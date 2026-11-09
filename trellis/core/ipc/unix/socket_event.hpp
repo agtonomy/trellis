@@ -97,8 +97,10 @@ class SocketEvent {
 
   SocketEvent(const SocketEvent&) = delete;
   SocketEvent& operator=(const SocketEvent&) = delete;
-  SocketEvent(SocketEvent&&) = default;
-  SocketEvent& operator=(SocketEvent&&) = default;
+  // Not movable: a moved-from reader would still unlink the path its new owner holds, and a pending receive holds
+  // `this`. Build one in place instead.
+  SocketEvent(SocketEvent&&) = delete;
+  SocketEvent& operator=(SocketEvent&&) = delete;
 
  private:
   static constexpr size_t kMaxEventNumEvents = 1000;
