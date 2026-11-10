@@ -23,6 +23,7 @@
 
 #include <array>
 #include <cerrno>
+#include <stop_token>
 #include <utility>
 
 #include "trellis/core/error_code.hpp"
@@ -206,6 +207,7 @@ class UDPReceiver {
   }
 
   ~UDPReceiver() {
+    stop_.request_stop();
     // Only the released descriptor is ours to close. With a callback the asio socket still owns it.
     if (!callback_) ::close(fd_);
   }
@@ -253,16 +255,23 @@ class UDPReceiver {
   int TakeSocket() { return callback_ ? udp_.GetSocket().native_handle() : udp_.GetSocket().release(); }
 
   void ArmReceive() {
-    udp_.AsyncReceiveFrom(buffer_.data(), buffer_.size(),
-                          [this](const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, void*,
-                                 size_t size) { DidReceive(code, ep, size); });
+    // asio can't recall a queued completion, so it can run after this receiver is gone; it checks stop_ first. It skips
+    // UDP::AsyncReceiveFrom, whose handler reads its UDP object unguarded and whose std::function would allocate.
+    udp_.GetSocket().async_receive_from(
+        asio::buffer(buffer_), sender_, 0,
+        [this, stop = stop_.get_token()](const trellis::core::error_code& code, size_t size) {
+          if (code == asio::error::operation_aborted || stop.stop_requested()) {
+            return;
+          }
+          DidReceive(code, size);
+        });
   }
 
-  void DidReceive(const trellis::core::error_code& code, const asio::ip::udp::endpoint& ep, size_t size) {
+  void DidReceive(const trellis::core::error_code& code, size_t size) {
     // A failed receive completes with size 0, which must not reach the callback looking like an empty datagram
     if (!code) {
       // call to user for the first packet
-      callback_(buffer_.data(), size, ep);
+      callback_(buffer_.data(), size, sender_);
 
       // Take the rest of the backlog before going back to the event loop. Stopping on would_block costs one receive
       // per datagram, where checking socket.available() first cost an extra ioctl(FIONREAD) each time.
@@ -272,10 +281,12 @@ class UDPReceiver {
   }
 
   std::array<uint8_t, BUFFER_SIZE> buffer_;
+  asio::ip::udp::endpoint sender_;  ///< Before udp_, so it outlives the socket that writes it
   UDP udp_;
   Callback callback_;
-  const uint16_t port_;  ///< Read before the socket may be released, since asio cannot report it afterwards
-  const int fd_;         ///< asio's while a callback is armed, otherwise released from it and ours to close
+  const uint16_t port_;    ///< Read before the socket may be released, since asio cannot report it afterwards
+  const int fd_;           ///< asio's while a callback is armed, otherwise released from it and ours to close
+  std::stop_source stop_;  ///< Stopped on destruction, which must be on the loop's thread or while it is stopped
 };
 
 }  // namespace network

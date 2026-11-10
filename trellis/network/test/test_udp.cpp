@@ -19,6 +19,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -182,6 +183,26 @@ TEST(UDPTests, DrainDeliversZeroLengthDatagram) {
   EXPECT_EQ(received_sizes[0], msg.size());
   EXPECT_EQ(received_sizes[1], size_t{0});
   EXPECT_EQ(received_sizes[2], msg.size());
+}
+
+// A datagram already waiting completes the receive as it's armed, and asio queues that completion. A receiver
+// destroyed before the loop runs it must not be called back.
+TEST(UDPTests, ReceiverDestroyedWithAQueuedCompletionIsNotCalledBack) {
+  trellis::core::EventLoop loop;
+  asio::io_context io;
+  asio::ip::udp::socket bound{io, asio::ip::udp::endpoint{asio::ip::make_address("127.0.0.1"), 0}};
+  const uint16_t port = bound.local_endpoint().port();
+  UDP sender(loop);
+  const std::string msg{"queued"};
+  size_t bytes_sent = 0;
+  ASSERT_FALSE(sender.SendTo("127.0.0.1", port, msg.data(), msg.size(), bytes_sent));
+
+  bool called = false;
+  auto receiver = std::make_unique<UDPReceiver<1024>>(
+      loop, bound.release(), [&called](const void*, size_t, const asio::ip::udp::endpoint&) { called = true; });
+  receiver.reset();
+  loop.RunFor(std::chrono::milliseconds(10));
+  EXPECT_FALSE(called);
 }
 
 // Without a callback the receiver releases its socket from asio so epoll never wakes the loop for it. The callback
