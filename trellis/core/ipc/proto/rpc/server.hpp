@@ -49,8 +49,8 @@ namespace trellis::core::ipc::proto::rpc {
  *
  * Nor can a handler that waits on the event loop finish once ~Server() is running, since the loop is then busy in it or
  * not running: the join then waits for good. ~Server() cancels the running call before it joins, so such a handler
- * should stop waiting once its controller's IsCanceled(), or wait through RunOnEventLoop() with a stop flag set before
- * the Server is destroyed, or with a bound. The overload without a flag gives up only once the loop is stopped.
+ * should stop waiting once its controller's IsCanceled(): wait through RunOnEventLoop() with that as its stop
+ * condition, or with a bound. The overload without a stop condition gives up only once the loop is stopped.
  *
  * A handler answers by returning. The reply is built from the response as it stands then, and the `done` a handler is
  * given does nothing, so it must not keep `done`, the response or the controller to finish the call later. It fails the

@@ -198,6 +198,21 @@ TEST(TrellisRunOnEventLoop, GivesUpOnceStoppingIsSet) {
   EXPECT_EQ(result, std::nullopt);
 }
 
+TEST(TrellisRunOnEventLoop, ReturnsTheResultWhileTheStopConditionIsFalse) {
+  const auto running = RunningLoop{};
+  EXPECT_EQ(trellis::core::RunOnEventLoop(running.loop(), []() { return 7; }, []() { return false; }), 7);
+}
+
+TEST(TrellisRunOnEventLoop, GivesUpOnceTheStopConditionIsTrue) {
+  // Never run, so the work stays queued and only the stop condition can end the wait.
+  trellis::core::EventLoop loop;
+  auto checks = 0;
+  const auto result = trellis::core::RunOnEventLoop(
+      loop, []() { return 7; }, [&checks]() { return ++checks == 3; }, std::chrono::milliseconds{1});
+  EXPECT_EQ(result, std::nullopt);
+  EXPECT_EQ(checks, 3);
+}
+
 // A stopped loop never runs queued work again, so waiting for it would never end.
 TEST(TrellisRunOnEventLoop, ThrowsOnceTheLoopIsStoppedInsteadOfWaiting) {
   trellis::core::EventLoop loop;

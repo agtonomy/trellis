@@ -157,6 +157,32 @@ class CancelWaitingHandler : public trellis::core::test::TestService {
   const bool register_late_;
 };
 
+// Once `go` is set, waits on the loop through RunOnEventLoop() until its call is canceled.
+class LoopWaitingHandler : public trellis::core::test::TestService {
+ public:
+  static constexpr auto kWaitForCancel = std::chrono::seconds{5};
+
+  explicit LoopWaitingHandler(trellis::core::EventLoop loop) : loop_{std::move(loop)} {}
+
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test*,
+               ::trellis::core::test::TestTwo*, ::google::protobuf::Closure*) override {
+    entered = true;
+    while (!go) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    const auto deadline = std::chrono::steady_clock::now() + kWaitForCancel;
+    const auto result = trellis::core::RunOnEventLoop(
+        loop_, []() { return 0; },
+        [controller, deadline]() { return controller->IsCanceled() || std::chrono::steady_clock::now() >= deadline; });
+    gave_up_canceled = !result.has_value() && controller->IsCanceled();
+  }
+
+  std::atomic<bool> entered{false};
+  std::atomic<bool> go{false};
+  std::atomic<bool> gave_up_canceled{false};
+
+ private:
+  trellis::core::EventLoop loop_;
+};
+
 // Calls DoStuff with `id` and returns the status and the response's foo, or nothing if no outcome arrives in time.
 template <typename CLIENT_T>
 std::optional<std::pair<ServiceCallStatus, float>> CallDoStuff(CLIENT_T& client, unsigned id) {
@@ -1155,6 +1181,27 @@ TEST_F(TrellisFixture, DestroyingTheServerCancelsTheRunningCall) {
   EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds{2}) << "~Server() waited out the handler";
   EXPECT_TRUE(handler->saw_canceled.load());
   EXPECT_EQ(handler->cancel_callbacks.load(), 1);
+  StopAndJoinRunnerThread();  // the client must be destroyed with its loop not running
+}
+
+// The loop is busy in ~Server() and can't run the handler's work, so only the cancellation lets ~Server() join.
+TEST_F(TrellisFixture, HandlerWaitingOnTheLoopGivesUpWhenTheServerIsDestroyedOnIt) {
+  StartRunnerThread();
+  auto handler = std::make_shared<LoopWaitingHandler>(GetNode().GetEventLoop());
+  auto server = GetNode().CreateServiceServer<LoopWaitingHandler>(handler);
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{}, [](ServiceCallStatus, const test::TestTwo*) {}, /* timeout_ms = */ 0);
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  const auto start = std::chrono::steady_clock::now();
+  RunOnLoop([&server, &handler]() {
+    handler->go = true;
+    server.reset();
+  });
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds{2}) << "~Server() waited out the handler";
+  EXPECT_TRUE(handler->gave_up_canceled.load());
   StopAndJoinRunnerThread();  // the client must be destroyed with its loop not running
 }
 

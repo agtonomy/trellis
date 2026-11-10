@@ -226,7 +226,7 @@ struct EventLoopStopped : std::runtime_error {
  * itself.
  *
  * Blocks for as long as the loop takes to run the work, which is forever if the loop is never run again without being
- * stopped. A caller that can be left waiting through shutdown should pass a stop flag to the overload below.
+ * stopped. A caller that can be left waiting through shutdown should pass a stop condition to an overload below.
  *
  * @param loop the loop to run the work on
  * @param work the work to run
@@ -254,33 +254,45 @@ std::invoke_result_t<WORK_T> RunOnEventLoop(const EventLoop& loop, WORK_T work) 
 }
 
 /**
- * @brief Run work on an event loop and block until it returns, or until `stopping` is set
+ * @brief Run work on an event loop and block until it returns, or until `should_stop` returns true
  *
- * As the overload above, except that it gives up once `stopping` is set, which is how a caller that is torn down after
- * its loop has stopped avoids waiting on work that will never run: set the flag before joining the thread that waits.
+ * As the first overload, except that it gives up once `should_stop()` is true, which is how a caller that is torn down
+ * after its loop has stopped, or while the loop is busy tearing it down, avoids waiting on work that will never run. An
+ * RPC handler passes `[controller] { return controller->IsCanceled(); }`, which turns true once ~Server() starts.
  *
  * The work must own what it uses rather than refer into the caller's frame: on giving up this returns while the work
  * may still be queued, and the loop may yet run it.
  *
  * @param loop the loop to run the work on
  * @param work the work to run, which must return a value
- * @param stopping checked every `poll_period` while waiting
- * @param poll_period how long a waiter can take to notice `stopping`
- * @return what the work returned, or nullopt if `stopping` was set before it ran; an exception the work threw is
- *         rethrown here
+ * @param should_stop called on the waiting thread every `poll_period` while waiting
+ * @param poll_period how long a waiter can take to notice `should_stop`
+ * @return what the work returned, or nullopt if `should_stop` returned true before it ran; an exception the work threw
+ *         is rethrown here
+ */
+template <typename WORK_T, typename STOP_T>
+  requires(!std::is_void_v<std::invoke_result_t<WORK_T>> && std::is_invocable_r_v<bool, STOP_T&>)
+std::optional<std::invoke_result_t<WORK_T>> RunOnEventLoop(
+    const EventLoop& loop, WORK_T work, STOP_T should_stop,
+    std::chrono::milliseconds poll_period = std::chrono::milliseconds{100}) {
+  auto task = std::packaged_task<std::invoke_result_t<WORK_T>()>{std::move(work)};
+  auto result = task.get_future();
+  asio::dispatch(*loop, [task = std::move(task)]() mutable { task(); });
+  while (result.wait_for(poll_period) != std::future_status::ready) {
+    if (should_stop()) return std::nullopt;
+  }
+  return result.get();
+}
+
+/**
+ * @brief As the overload above, giving up once `stopping` is set. Set it before joining the thread that waits.
  */
 template <typename WORK_T>
   requires(!std::is_void_v<std::invoke_result_t<WORK_T>>)
 std::optional<std::invoke_result_t<WORK_T>> RunOnEventLoop(
     const EventLoop& loop, WORK_T work, const std::atomic<bool>& stopping,
     std::chrono::milliseconds poll_period = std::chrono::milliseconds{100}) {
-  auto task = std::packaged_task<std::invoke_result_t<WORK_T>()>{std::move(work)};
-  auto result = task.get_future();
-  asio::dispatch(*loop, [task = std::move(task)]() mutable { task(); });
-  while (result.wait_for(poll_period) != std::future_status::ready) {
-    if (stopping) return std::nullopt;
-  }
-  return result.get();
+  return RunOnEventLoop(loop, std::move(work), [&stopping]() { return stopping.load(); }, poll_period);
 }
 
 }  // namespace core
