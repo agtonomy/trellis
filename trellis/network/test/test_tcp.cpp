@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
+#include <optional>
 
 #include "trellis/network/tcp.hpp"
 
@@ -115,4 +116,22 @@ TEST(TCPTests, AsyncConnect) {
   loop.RunOne();
   ASSERT_EQ(connection_count, 1);
   ASSERT_EQ(connection_complete_count, 1);
+}
+
+// The callback may destroy its own TCPServer, and nothing is accepted after that.
+TEST(TCPTests, CallbackMayDestroyItsServer) {
+  trellis::core::EventLoop loop;
+  unsigned connection_count{0};
+  std::optional<TCPServer> server;
+  server.emplace(loop, 0, [&connection_count, &server](const trellis::core::error_code&, TCP) {
+    ++connection_count;
+    server.reset();
+  });
+  const auto server_port = server->GetPort();
+
+  TCP client1(loop, "127.0.0.1", server_port);
+  TCP client2(loop, "127.0.0.1", server_port);
+  loop.RunFor(std::chrono::milliseconds{100});
+  EXPECT_EQ(connection_count, 1u);
+  EXPECT_FALSE(server.has_value());
 }

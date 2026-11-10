@@ -295,6 +295,7 @@ TEST_F(TrellisFixture, BasicSingleServiceCall) {
 
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(fail_count.load(), 0u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
@@ -329,6 +330,7 @@ TEST_F(TrellisFixture, RepeatedServiceCallsInLoop) {
   EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count == 5; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 5u);
   EXPECT_EQ(fail_count.load(), 0u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
@@ -357,9 +359,10 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
 
     EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
     EXPECT_EQ(success_count.load(), 1u);
+    RunOnLoop([&server1]() { server1.reset(); });  // on its loop's thread, as a server must be destroyed
   }
 
-  // Old server destructs here; now create a new one
+  // Now create a new one
   auto handler = std::make_shared<TestServiceHandler>();
   auto server2 = GetNode().CreateServiceServer<TestServiceHandler>(handler);
   WaitForDiscovery();
@@ -382,6 +385,7 @@ TEST_F(TrellisFixture, ServerRestartsBetweenCalls) {
 
   EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 1u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
@@ -432,6 +436,7 @@ TEST_F(TrellisFixture, ClientRestartsBetweenCalls) {
 
   EXPECT_TRUE(WaitUntil([&]() { return success_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 1u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
@@ -462,6 +467,7 @@ TEST_F(TrellisFixture, UnknownMethodReturnsFailure) {
   EXPECT_TRUE(WaitUntil([&]() { return success_count + fail_count > 0; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(success_count.load(), 0u);
   EXPECT_EQ(fail_count.load(), 1u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // The generated body of an unimplemented method dereferences the controller and `done`, which were null.
@@ -478,6 +484,7 @@ TEST_F(TrellisFixture, UnimplementedMethodReturnsFailure) {
   const auto again = CallDoStuff(*client, 8);
   ASSERT_TRUE(again.has_value()) << "the call never reported an outcome";
   EXPECT_EQ(again->first, kFailure) << "the server keeps serving";
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // `done` was null, so a handler that ran it crashed the server.
@@ -491,6 +498,7 @@ TEST_F(TrellisFixture, HandlerMayRunDone) {
   ASSERT_TRUE(result.has_value()) << "the call never reported an outcome";
   EXPECT_EQ(result->first, kSuccess);
   EXPECT_EQ(result->second, 7.0f);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // A throw used to leave the handler thread and terminate the process.
@@ -508,6 +516,7 @@ TEST_F(TrellisFixture, ThrowingHandlerReturnsFailureAndTheServerKeepsServing) {
   ASSERT_TRUE(served.has_value()) << "the call never reported an outcome";
   EXPECT_EQ(served->first, kSuccess);
   EXPECT_EQ(served->second, 7.0f);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // RpcController requires a NotifyOnCancel() callback to run exactly once when an uncanceled call completes, and a
@@ -528,6 +537,7 @@ TEST_F(TrellisFixture, CancelCallbackRunsOnceTheHandlerReturns) {
   ASSERT_TRUE(failed.has_value()) << "the call never reported an outcome";
   EXPECT_EQ(failed->first, kFailure);
   EXPECT_EQ(handler->cancel_callbacks.load(), 2);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, BackToBackCallSucceeds) {
@@ -573,6 +583,7 @@ TEST_F(TrellisFixture, BackToBackCallSucceeds) {
 
   EXPECT_EQ(success_count.load(), 2u);
   EXPECT_EQ(fail_count.load(), 0u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, LargeRequestResponse) {
@@ -607,6 +618,7 @@ TEST_F(TrellisFixture, LargeRequestResponse) {
 
   EXPECT_EQ(success_count.load(), 1u);
   EXPECT_EQ(fail_count.load(), 0u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // A request whose length prefix is over the limit closes the connection instead of waiting for a body that size.
@@ -875,6 +887,7 @@ TEST_F(TrellisFixture, LongRunningCallTimeout) {
       /* timeout_ms = */ 100);
   EXPECT_TRUE(WaitUntil([&]() { return callback_count == 1; }, kServiceCallDeadline)) << "no reply";
   EXPECT_EQ(callback_count.load(), 1u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
@@ -917,6 +930,7 @@ TEST_F(TrellisFixture, QueuedCallsWithTimeouts) {
   EXPECT_EQ(success_count.load(), 3u);  // all three calls should succeed
   EXPECT_EQ(timeout_count.load(), 0u);
   EXPECT_EQ(fail_count.load(), 0u);
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // The second call goes out while the timed-out call's reply is still owed. Sharing a socket, that late reply arrived
@@ -992,11 +1006,12 @@ TEST_F(TrellisFixture, ServerDestroyedWithAQueuedRequestDoesNotRunIt) {
   WaitForSendReceive();
 
   // ~Server() waits for the running handler, so it is let go from another thread once ~Server() has dropped the rest.
+  // ~Server() runs on the loop's thread, as it must, so the loop waits with it.
   std::thread releaser([&handler]() {
     WaitForSendReceive();
     handler->release = true;
   });
-  server.reset();
+  RunOnLoop([&server]() { server.reset(); });
   releaser.join();
   EXPECT_EQ(handler->calls, 1) << "a request queued behind the running one ran after the server was gone";
   StopAndJoinRunnerThread();  // before the clients go
@@ -1034,6 +1049,53 @@ TEST_F(TrellisFixture, HandlerFinishingAfterTheLoopStopsDoesNotLeakAServiceThatH
   own.node.reset();
   EXPECT_TRUE(WaitUntil([&own]() { return own.loop_destroyed->load(); }))
       << "the service was queued on the stopped loop it holds, so neither was destroyed";
+}
+
+// asio can't recall a handler it has queued, so an accept or receive that completed before ~Server() still runs
+// afterwards, and without an error. Each server here is destroyed on its loop's thread, with the loop not running, one
+// step of that loop later than the last. So in turn an accept, a request's header and its body are left completed and
+// waiting on the loop, which then runs them. They used to run against the destroyed server: a sanitizer reports it,
+// and without one the loop may crash.
+TEST_F(TrellisFixture, LoopHandlersCompletedBeforeTheServerIsDestroyedDoNothing) {
+  constexpr int kMaxSteps{12};
+  std::atomic<uint16_t> port{0};
+  const auto discovery_handle = GetNode().GetDiscovery()->AsyncReceiveServices(
+      [&port](discovery::Discovery::EventType event, const discovery::Sample& sample) {
+        if (event == discovery::Discovery::EventType::kNewRegistration &&
+            sample.service().sname() == trellis::core::test::TestService::descriptor()->full_name()) {
+          port = static_cast<uint16_t>(sample.service().tcp_port());
+        }
+      });
+  discovery::Request request;
+  request.mutable_header()->set_mname("DoStuff");
+  const std::string wire = request.SerializeAsString();
+  const uint32_t size = wire.size();
+  const std::string frame = std::string(reinterpret_cast<const char*>(&size), sizeof(size)) + wire;
+  const auto handler = std::make_shared<TestServiceHandler>();
+
+  for (int steps = 0; steps <= kMaxSteps; ++steps) {
+    // A loop of the server's own, so each step is one of the server's handlers
+    trellis::core::EventLoop server_loop;
+    port = 0;
+    auto server = std::make_unique<Server<TestServiceHandler>>(handler, server_loop, GetNode().GetDiscovery());
+    for (int i = 0; i < 100 && port == 0; ++i) {
+      GetNode().RunFor(std::chrono::milliseconds{10});  // delivers the registration
+    }
+    ASSERT_NE(port.load(), 0) << "server " << steps << " never registered";
+
+    // Two callers, so that the second one's accept completes while the first one's runs
+    trellis::core::EventLoop caller_loop;
+    network::TCP first{caller_loop, "127.0.0.1", port.load()};
+    network::TCP second{caller_loop, "127.0.0.1", port.load()};
+    first.Send(frame.data(), frame.size());
+    second.Send(frame.data(), frame.size());
+    for (int step = 0; step < steps; ++step) {
+      server_loop.PollOne();
+    }
+    server.reset();
+    server_loop.RunFor(std::chrono::milliseconds{20});  // runs what completed before the server went
+  }
+  GetNode().GetDiscovery()->StopReceive(discovery_handle);
 }
 
 // A raw caller sends a request whose 4MB reply takes several writes, and a second request right behind it. The
@@ -1352,6 +1414,7 @@ TEST_F(TrellisFixture, CallerSeesWhyAHandlerFailed) {
     ASSERT_TRUE(result.has_value()) << "call " << id << " never reported an outcome";
     EXPECT_EQ(*result, expected) << "call " << id;
   }
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
 }
 
 // A failure the client reports itself says why too.

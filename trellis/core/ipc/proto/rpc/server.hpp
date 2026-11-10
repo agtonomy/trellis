@@ -24,6 +24,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -42,9 +43,12 @@ namespace trellis::core::ipc::proto::rpc {
  * service. It must not block waiting on a reply from this one: the handler thread is already inside the outer call,
  * so the nested request is never dispatched. ~Server() then joins that thread with no timeout, hanging shutdown.
  *
- * Nor can a handler that waits on the event loop finish if ~Server() runs on that loop's thread, or after the loop has
- * stopped: the join then waits for good. Such a handler should wait through RunOnEventLoop(), which gives up on a
- * stopped loop, or with a bound, and its server should be destroyed off the loop.
+ * Destroy a Server on its loop's thread, or while that loop is not running, as with the timers. A loop handler that
+ * completes afterwards finds the Server gone and does nothing.
+ *
+ * Nor can a handler that waits on the event loop finish once ~Server() is running, since the loop is then busy in it or
+ * not running: the join then waits for good. Such a handler should wait through RunOnEventLoop() with a stop flag set
+ * before the Server is destroyed, or with a bound. The overload without a flag gives up only once the loop is stopped.
  *
  * A handler answers by returning. The reply is built from the response as it stands then, and the `done` a handler is
  * given does nothing, so it must not keep `done`, the response or the controller to finish the call later. It fails the
@@ -121,6 +125,7 @@ class Server {
    * @brief Destroy the Server instance and clean up clients and threads.
    */
   ~Server() {
+    stop_.request_stop();
     discovery_->Unregister(discovery_handle_);
     for (auto& client : clients_) {
       if (auto shared = client.lock()) {
@@ -219,10 +224,12 @@ class Server {
     // 1. Receive 4-byte request payload size
     // 2. Receive request payload
     auto receive_header_buf = std::make_shared<std::array<uint8_t, sizeof(uint32_t)>>();
+    auto stop = stop_.get_token();
     client->AsyncReceiveAll(
         receive_header_buf->data(), receive_header_buf->size(),
-        [this, receive_header_buf, client, replies](const trellis::core::error_code& ec, size_t len) {
-          if (ec) {
+        [this, stop, receive_header_buf, client, replies](const trellis::core::error_code& ec, size_t len) {
+          // A receive that completed before ~Server() still runs, and without an error
+          if (ec || stop.stop_requested()) {
             return;  // nothing to do, this socket will get destructed
           }
           const uint32_t length = ReadFrameLength(*receive_header_buf);
@@ -233,8 +240,8 @@ class Server {
           auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
           client->AsyncReceiveAll(
               receive_buffer->data(), receive_buffer->size(),
-              [this, receive_buffer, client, replies](const trellis::core::error_code& ec, size_t len) {
-                if (ec) {
+              [this, stop, receive_buffer, client, replies](const trellis::core::error_code& ec, size_t len) {
+                if (ec || stop.stop_requested()) {
                   return;  // nothing to do, this socket will get destructed
                 }
                 ProcessRequest(client, replies, receive_buffer->data(), len);
@@ -378,8 +385,11 @@ class Server {
   std::thread rpc_thread_;                        ///< Thread running the RPC handler event loop
   std::shared_ptr<PROTO_SERVICE_T> prototype_{};  ///< Protobuf service instance
   discovery::DiscoveryPtr discovery_;             ///< Discovery system for registering the service
-  // clients_ before tcp_server_: the accept handler writes here, and can fire as soon as tcp_server_ is built.
-  std::deque<std::weak_ptr<network::TCP>> clients_{};             ///< Active client connections
+  // clients_ and stop_ before tcp_server_: the accept handler uses them, and can fire as soon as tcp_server_ is built.
+  std::deque<std::weak_ptr<network::TCP>> clients_{};  ///< Active client connections
+  /// Stopped by ~Server(). The receive handlers hold a token from it, since asio can't recall a queued handler. The
+  /// accept handler needs none: tcp_server_ drops it once destroyed.
+  std::stop_source stop_;
   network::TCPServer tcp_server_;                                 ///< TCP server for incoming RPC connections
   MethodsMap methods_{GetMethodsFromService(*prototype_.get())};  ///< Map of method metadata
   discovery::Discovery::RegistrationHandle discovery_handle_{

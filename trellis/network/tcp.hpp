@@ -18,7 +18,9 @@
 #ifndef TRELLIS_NETWORK_TCP_HPP
 #define TRELLIS_NETWORK_TCP_HPP
 
+#include <memory>
 #include <optional>
+#include <stop_token>
 
 #include "trellis/core/error_code.hpp"
 #include "trellis/core/event_loop.hpp"
@@ -300,6 +302,9 @@ class TCP {
 
 /**
  * TCPServer class to manage a passive socket responsible for listening/accepting inbound connections
+ *
+ * Destroy it on its loop's thread, or while that loop is not running. The callback may destroy its own TCPServer, and
+ * nothing is accepted after that.
  */
 class TCPServer {
  public:
@@ -315,9 +320,11 @@ class TCPServer {
   TCPServer(trellis::core::EventLoop loop, uint16_t ipv4_listen_port, NewConnectionHandler callback)
       : loop_{loop},
         acceptor_{*loop, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), ipv4_listen_port)},
-        connection_callback_{callback} {
+        connection_callback_{std::make_shared<NewConnectionHandler>(std::move(callback))} {
     AcceptNextConnection();
   }
+
+  ~TCPServer() { stop_.request_stop(); }
 
   uint16_t GetPort() const { return acceptor_.local_endpoint().port(); }
   std::string GetAddress() const { return acceptor_.local_endpoint().address().to_string(); }
@@ -325,18 +332,24 @@ class TCPServer {
  private:
   void AcceptNextConnection() {
     auto socket = std::make_shared<asio::ip::tcp::socket>(*loop_);
-    acceptor_.async_accept(*socket, [this, socket](const trellis::core::error_code& error) {
-      if (error == asio::error::operation_aborted) {
-        // Exit immediately because `this` would have been inavlidated
+    acceptor_.async_accept(*socket, [this, stop = stop_.get_token(), callback = connection_callback_,
+                                     socket](const trellis::core::error_code& error) {
+      // An accept that completed before ~TCPServer() still runs, and without an error
+      if (stop.stop_requested() || error == asio::error::operation_aborted) {
         return;
       }
-      connection_callback_(error, TCP(socket));  // pass socket back to user
-      AcceptNextConnection();                    // accept any other inbounds
+      (*callback)(error, TCP(socket));  // pass socket back to user, who may destroy this TCPServer
+      if (!stop.stop_requested()) {
+        AcceptNextConnection();  // accept any other inbounds
+      }
     });
   }
   trellis::core::EventLoop loop_;
   asio::ip::tcp::acceptor acceptor_;
-  NewConnectionHandler connection_callback_;
+  /// Shared with the accept handler, so a callback that destroys this TCPServer is not itself destroyed while it runs
+  std::shared_ptr<NewConnectionHandler> connection_callback_;
+  /// Stopped by ~TCPServer(). The accept handler holds a token from it, since asio can't recall a queued handler
+  std::stop_source stop_;
 };
 
 }  // namespace network
