@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <queue>
+#include <stop_token>
 #include <unordered_set>
 #include <utility>
 
@@ -439,6 +440,11 @@ class Discovery {
   };
 
   std::unordered_map<std::string, PartialSample> partial_samples_;  ///< Track partial samples by ID
+
+  // Stopped by the destructor. A handler posted to the loop holds a token from it and returns once it is stopped:
+  // asio cannot recall a handler it has queued, and the loop may run again after this instance is gone. Like the
+  // timers' own guard, it assumes this instance is destroyed on the loop's thread or while the loop is stopped.
+  std::stop_source stop_;
 
   // Last, so every member their handlers touch exists before they are armed: the loop may already be running on
   // another thread. Destroyed first for the same reason.

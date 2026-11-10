@@ -376,6 +376,23 @@ TEST(DiscoveryTests, LoopbackReplaySkipsACallbackStoppedBeforeItRan) {
   EXPECT_EQ(kept_count, 1u);
 }
 
+// A loopback delivery and a replay still queued when their Discovery is destroyed are dropped, not run against the
+// freed instance, as they would be by a loop that outlives it. Without the guard this reads freed memory, which a
+// sanitizer reports; an unsanitized build may crash or call back instead.
+TEST(DiscoveryTests, LoopbackDropsHandlersQueuedPastItsDestruction) {
+  auto ev = trellis::core::EventLoop();
+  bool called = false;
+  {
+    Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
+    discovery.AsyncReceivePublishers([&called](Discovery::EventType, const Sample&) { called = true; });
+    const auto handle = discovery.RegisterPublisher<test::Test>("/dummy/orphaned", "memfile", 2u);
+    discovery.RegisterPublisher<test::Test>("/dummy/kept", "memfile", 2u);
+    discovery.Unregister(handle);
+  }
+  ev.RunFor(std::chrono::milliseconds(10));
+  EXPECT_FALSE(called);
+}
+
 // Each kind of callback is replayed the samples of its own kind and no others.
 TEST(DiscoveryTests, LoopbackReplaysEachKindToItsOwnCallbacks) {
   auto ev = trellis::core::EventLoop();

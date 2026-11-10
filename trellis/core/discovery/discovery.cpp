@@ -183,6 +183,8 @@ Discovery::Discovery(std::string node_name, trellis::core::EventLoop loop, const
 }
 
 Discovery::~Discovery() {
+  // First, so it covers the early return below and comes before any member is destroyed.
+  stop_.request_stop();
   if (config_.loopback_enabled) {
     return;
   }
@@ -525,7 +527,10 @@ void Discovery::BroadcastSample(RegistrationHandle handle, const Sample& sample)
   // holds registered_samples_mutex_, and ReceiveData triggers callbacks that may call Register() which also needs
   // registered_samples_mutex_. By deferring to the next event loop iteration, we break this synchronous chain.
   // One handler delivers all of the sample's packets, so it arrives whole or not at all.
-  asio::post(*loop_, [this, handle, packets = std::move(loopback_packets)]() {
+  asio::post(*loop_, [this, stop = stop_.get_token(), handle, packets = std::move(loopback_packets)]() {
+    if (stop.stop_requested()) {
+      return;
+    }
     // Unregistered since this was posted: delivering it would register the sample again until it timed out. The lock
     // is released before ReceiveData, whose callbacks may call Register().
     if (handle != kInvalidRegistrationHandle) {
@@ -566,7 +571,11 @@ Discovery::CallbackHandle Discovery::AddSampleCallback(SampleCallbackMap& callba
   // handler at a time, so every loopback delivery either ran before it was live, and left its sample in `samples` for
   // the replay, or is still queued and will reach it. Either way each sample reaches it once.
   pending_callbacks_.insert(handle);
-  asio::post(*loop_, [this, &callbacks, &samples, handle, callback = std::move(callback)]() mutable {
+  auto stop = stop_.get_token();
+  asio::post(*loop_, [this, stop, &callbacks, &samples, handle, callback = std::move(callback)]() mutable {
+    if (stop.stop_requested()) {
+      return;
+    }
     std::lock_guard guard(callback_mutex_);
     if (pending_callbacks_.erase(handle) == 0) {
       return;  // StopReceive() ran first
