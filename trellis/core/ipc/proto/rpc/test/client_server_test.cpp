@@ -23,6 +23,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <functional>
 #include <future>
@@ -31,6 +32,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -115,6 +117,44 @@ class CancelNotifyingHandler : public TestServiceHandler {
 
  private:
   void CountCancelCallback() { ++cancel_callbacks; }
+};
+
+// Waits, at most kWaitForCancel, for its call to be canceled, and records what it saw. It registers a NotifyOnCancel()
+// callback before the wait, or with `register_late`, after it.
+class CancelWaitingHandler : public trellis::core::test::TestService {
+ public:
+  static constexpr auto kWaitForCancel = std::chrono::seconds{5};
+
+  explicit CancelWaitingHandler(bool register_late = false) : register_late_{register_late} {}
+
+  void DoStuff(::google::protobuf::RpcController* controller, const ::trellis::core::test::Test*,
+               ::trellis::core::test::TestTwo*, ::google::protobuf::Closure*) override {
+    if (!register_late_) {
+      controller->NotifyOnCancel(google::protobuf::NewCallback(this, &CancelWaitingHandler::CountCancelCallback));
+    }
+    entered = true;
+    const auto deadline = std::chrono::steady_clock::now() + kWaitForCancel;
+    while (!controller->IsCanceled() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    saw_canceled = controller->IsCanceled();
+    if (register_late_) {
+      controller->NotifyOnCancel(google::protobuf::NewCallback(this, &CancelWaitingHandler::CountCancelCallback));
+      late_callback_ran_at_once = cancel_callbacks.load() == 1;
+    }
+    returned = true;
+  }
+
+  std::atomic<bool> entered{false};
+  std::atomic<bool> saw_canceled{false};
+  std::atomic<bool> late_callback_ran_at_once{false};
+  std::atomic<bool> returned{false};
+  std::atomic<int> cancel_callbacks{0};
+
+ private:
+  void CountCancelCallback() { ++cancel_callbacks; }
+
+  const bool register_late_;
 };
 
 // Calls DoStuff with `id` and returns the status and the response's foo, or nothing if no outcome arrives in time.
@@ -1096,6 +1136,86 @@ TEST_F(TrellisFixture, LoopHandlersCompletedBeforeTheServerIsDestroyedDoNothing)
     server_loop.RunFor(std::chrono::milliseconds{20});  // runs what completed before the server went
   }
   GetNode().GetDiscovery()->StopReceive(discovery_handle);
+}
+
+// ~Server() used to join a handler that waits for its call to be canceled for the handler's whole wait, since nothing
+// canceled it. It runs on the loop's thread here, as it may, so nothing but the cancellation lets the handler go.
+TEST_F(TrellisFixture, DestroyingTheServerCancelsTheRunningCall) {
+  StartRunnerThread();
+  auto handler = std::make_shared<CancelWaitingHandler>();
+  auto server = GetNode().CreateServiceServer<CancelWaitingHandler>(handler);
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{}, [](ServiceCallStatus, const test::TestTwo*) {}, /* timeout_ms = */ 0);
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  const auto start = std::chrono::steady_clock::now();
+  RunOnLoop([&server]() { server.reset(); });
+  EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds{2}) << "~Server() waited out the handler";
+  EXPECT_TRUE(handler->saw_canceled.load());
+  EXPECT_EQ(handler->cancel_callbacks.load(), 1);
+  StopAndJoinRunnerThread();  // the client must be destroyed with its loop not running
+}
+
+// A caller that hangs up mid-call cancels the call, so its handler can stop working for nobody.
+TEST_F(TrellisFixture, CallerHangingUpCancelsTheCall) {
+  StartRunnerThread();
+  auto handler = std::make_shared<CancelWaitingHandler>();
+  auto server = GetNode().CreateServiceServer<CancelWaitingHandler>(handler);
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{}, [](ServiceCallStatus, const test::TestTwo*) {}, /* timeout_ms = */ 0);
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  RunOnLoop([&client]() { client.reset(); });  // closes its connection
+  EXPECT_TRUE(WaitUntil([&handler]() { return handler->cancel_callbacks.load() == 1; }))
+      << "the handler waited out its bound";
+  EXPECT_TRUE(handler->saw_canceled.load());
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
+  EXPECT_EQ(handler->cancel_callbacks.load(), 1);
+}
+
+// A call that times out cancels its handler too, since the client replaces the connection it went out on.
+TEST_F(TrellisFixture, CallTimingOutCancelsTheCall) {
+  StartRunnerThread();
+  auto handler = std::make_shared<CancelWaitingHandler>();
+  auto server = GetNode().CreateServiceServer<CancelWaitingHandler>(handler);
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+  std::atomic<bool> timed_out{false};
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{},
+      [&timed_out](ServiceCallStatus status, const test::TestTwo*) { timed_out = status == kTimedOut; },
+      /* timeout_ms = */ 100);
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  EXPECT_TRUE(WaitUntil([&handler]() { return handler->cancel_callbacks.load() == 1; }))
+      << "the handler waited out its bound";
+  EXPECT_TRUE(handler->saw_canceled.load());
+  EXPECT_TRUE(timed_out.load());
+  StopAndJoinRunnerThread();  // the client and server must be destroyed with their loop not running
+  EXPECT_EQ(handler->cancel_callbacks.load(), 1);
+}
+
+// A NotifyOnCancel() callback registered once the call is canceled runs at once, and not again when the handler
+// returns.
+TEST_F(TrellisFixture, CancelCallbackRegisteredAfterTheCancellationRunsAtOnce) {
+  StartRunnerThread();
+  auto handler = std::make_shared<CancelWaitingHandler>(/* register_late = */ true);
+  auto server = GetNode().CreateServiceServer<CancelWaitingHandler>(handler);
+  auto client = GetNode().CreateServiceClient<TestService>();
+  WaitForDiscovery();
+  client->CallAsync<test::Test, test::TestTwo>(
+      "DoStuff", test::Test{}, [](ServiceCallStatus, const test::TestTwo*) {}, /* timeout_ms = */ 0);
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->entered.load(); }));
+
+  RunOnLoop([&client]() { client.reset(); });
+  ASSERT_TRUE(WaitUntil([&handler]() { return handler->returned.load(); })) << "the handler waited out its bound";
+  StopAndJoinRunnerThread();  // the server must be destroyed with its loop not running
+  EXPECT_TRUE(handler->late_callback_ran_at_once.load());
+  EXPECT_EQ(handler->cancel_callbacks.load(), 1);
 }
 
 // A raw caller sends a request whose 4MB reply takes several writes, and a second request right behind it. The

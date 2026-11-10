@@ -21,6 +21,7 @@
 #include <google/protobuf/service.h>
 
 #include <cstring>
+#include <deque>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -47,14 +48,18 @@ namespace trellis::core::ipc::proto::rpc {
  * completes afterwards finds the Server gone and does nothing.
  *
  * Nor can a handler that waits on the event loop finish once ~Server() is running, since the loop is then busy in it or
- * not running: the join then waits for good. Such a handler should wait through RunOnEventLoop() with a stop flag set
- * before the Server is destroyed, or with a bound. The overload without a flag gives up only once the loop is stopped.
+ * not running: the join then waits for good. ~Server() cancels the running call before it joins, so such a handler
+ * should stop waiting once its controller's IsCanceled(), or wait through RunOnEventLoop() with a stop flag set before
+ * the Server is destroyed, or with a bound. The overload without a flag gives up only once the loop is stopped.
  *
  * A handler answers by returning. The reply is built from the response as it stands then, and the `done` a handler is
  * given does nothing, so it must not keep `done`, the response or the controller to finish the call later. It fails the
  * call by calling SetFailed() on the controller or by throwing. Either is logged here and answered as failed, and the
- * caller sees only kFailure, not the text. The call is never canceled, so a NotifyOnCancel() callback runs once the
- * handler returns.
+ * caller sees only kFailure, not the text. The call is canceled when ~Server() starts, or when the server stops reading
+ * its caller's connection: the caller closed it, even only for sending, it failed, or it sent a frame too large to
+ * take. A Client closes it when a call times out and when it is destroyed. IsCanceled() then turns true. A
+ * NotifyOnCancel() callback runs at once if the call is already canceled, and otherwise once the handler returns,
+ * canceled or not, so always on the handler's thread.
  *
  * ~Server() drops the handlers that have not started and waits for the running one. The running handler keeps the
  * service implementation alive and the handler thread keeps the loop, but nothing else: a service must own whatever
@@ -100,8 +105,12 @@ class Server {
                         trellis::core::Log::Warn("Failed to set TCP_NODELAY on an RPC connection: {}",
                                                  nodelay_ec.message());
                       }
-                      clients_.emplace_back(client);
-                      ReceiveNextRequest(client, std::make_shared<ReplyQueue>());
+                      // Drop connections that have ended, or clients_ grows with every connection ever accepted. An
+                      // expired socket has no handler or reply left, so ~Server() has nothing to cancel or close.
+                      std::erase_if(clients_, [](const Connection& c) { return c.socket.expired(); });
+                      std::stop_source cancel;
+                      clients_.push_back({client, cancel});
+                      ReceiveNextRequest(client, std::make_shared<ReplyQueue>(), std::move(cancel));
                     }} {
     // Registered here, not in the member-initializer list. Registering publishes our port, and a loopback Discovery
     // hands it to clients on the loop thread at once. A client can connect, and the accept handler above can run,
@@ -127,8 +136,9 @@ class Server {
   ~Server() {
     stop_.request_stop();
     discovery_->Unregister(discovery_handle_);
-    for (auto& client : clients_) {
-      if (auto shared = client.lock()) {
+    for (auto& connection : clients_) {
+      connection.cancel.request_stop();  // before the join, so a handler waiting on IsCanceled() returns
+      if (auto shared = connection.socket.lock()) {
         shared->Cancel();
         shared->Close();
       }
@@ -141,19 +151,27 @@ class Server {
   }
 
  private:
-  /// What a handler reports failure through. Generated bodies of unimplemented methods call SetFailed().
+  /// What a handler reports failure through, and learns of its call's cancellation from. Generated bodies of
+  /// unimplemented methods call SetFailed().
   class Controller : public google::protobuf::RpcController {
    public:
+    explicit Controller(std::stop_token canceled) : canceled_{std::move(canceled)} {}
+
     void Reset() override { error_.reset(); }
     bool Failed() const override { return error_.has_value(); }
     std::string ErrorText() const override { return error_.value_or(""); }
     void StartCancel() override {}
     void SetFailed(const std::string& reason) override { error_ = reason; }
-    bool IsCanceled() const override { return false; }
-    void NotifyOnCancel(google::protobuf::Closure* callback) override { on_cancel_ = callback; }
+    bool IsCanceled() const override { return canceled_.stop_requested(); }
+    void NotifyOnCancel(google::protobuf::Closure* callback) override {
+      on_cancel_ = callback;
+      if (IsCanceled()) {
+        Complete();
+      }
+    }
 
-    /// Runs the NotifyOnCancel() callback, if any. RpcController requires it to run once the call completes, even
-    /// uncanceled, and a self-deleting callback leaks if it never does.
+    /// Runs the NotifyOnCancel() callback, unless it already ran. RpcController requires it to run once the call
+    /// completes, even uncanceled, and a self-deleting callback leaks if it never does.
     void Complete() {
       if (auto* const callback = std::exchange(on_cancel_, nullptr)) {
         callback->Run();
@@ -163,6 +181,7 @@ class Server {
    private:
     std::optional<std::string> error_;
     google::protobuf::Closure* on_cancel_{nullptr};
+    std::stop_token canceled_;  ///< Requested by the loop or ~Server(); read on the handler's thread
   };
 
   /// Passed as `done`. The reply goes out when the handler returns, so running this does nothing.
@@ -207,6 +226,13 @@ class Server {
     return map;
   }
 
+  /// An accepted connection, so ~Server() can cancel its calls and close its socket
+  struct Connection {
+    std::weak_ptr<network::TCP> socket;
+    /// Requested once the caller hangs up or the server goes. Each call's controller reads it.
+    std::stop_source cancel;
+  };
+
   /// Replies owed on one connection, sent one at a time. Touched only on the socket's executor.
   struct ReplyQueue {
     std::deque<std::string> frames;  ///< Each a 4-byte length followed by the serialized response
@@ -218,8 +244,9 @@ class Server {
    *
    * @param client Shared pointer to the TCP client.
    * @param replies The client's reply queue.
+   * @param cancel Cancels the connection's calls.
    */
-  void ReceiveNextRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies) {
+  void ReceiveNextRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies, std::stop_source cancel) {
     // We chain together two receive attempts
     // 1. Receive 4-byte request payload size
     // 2. Receive request payload
@@ -227,25 +254,28 @@ class Server {
     auto stop = stop_.get_token();
     client->AsyncReceiveAll(
         receive_header_buf->data(), receive_header_buf->size(),
-        [this, stop, receive_header_buf, client, replies](const trellis::core::error_code& ec, size_t len) {
+        [this, stop, receive_header_buf, client, replies, cancel](const trellis::core::error_code& ec, size_t len) {
           // A receive that completed before ~Server() still runs, and without an error
           if (ec || stop.stop_requested()) {
-            return;  // nothing to do, this socket will get destructed
+            cancel.request_stop();  // the caller has gone, or the server has
+            return;                 // nothing to do, this socket will get destructed
           }
           const uint32_t length = ReadFrameLength(*receive_header_buf);
           if (IsFrameTooLarge(length)) {
             trellis::core::Log::Warn("Closing an RPC connection: request claims {} bytes", length);
+            cancel.request_stop();
             return;  // dropping the last reference to client closes the socket
           }
           auto receive_buffer = std::make_shared<std::vector<uint8_t>>(length);
           client->AsyncReceiveAll(
               receive_buffer->data(), receive_buffer->size(),
-              [this, stop, receive_buffer, client, replies](const trellis::core::error_code& ec, size_t len) {
+              [this, stop, receive_buffer, client, replies, cancel](const trellis::core::error_code& ec, size_t len) {
                 if (ec || stop.stop_requested()) {
-                  return;  // nothing to do, this socket will get destructed
+                  cancel.request_stop();  // the caller has gone, or the server has
+                  return;                 // nothing to do, this socket will get destructed
                 }
-                ProcessRequest(client, replies, receive_buffer->data(), len);
-                ReceiveNextRequest(client, replies);
+                ProcessRequest(client, replies, cancel.get_token(), receive_buffer->data(), len);
+                ReceiveNextRequest(client, replies, cancel);
               });
         });
   }
@@ -255,10 +285,12 @@ class Server {
    *
    * @param client Shared pointer to the TCP client.
    * @param replies The client's reply queue.
+   * @param canceled Requested once the call is canceled.
    * @param data Pointer to raw request data.
    * @param len Length of the data in bytes.
    */
-  void ProcessRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies, void* data, size_t len) {
+  void ProcessRequest(TCPClientPointer client, std::shared_ptr<ReplyQueue> replies, std::stop_token canceled,
+                      void* data, size_t len) {
     discovery::Request req;
     // The frame's length is already checked, so the stream stays in step: a bad body still gets its failed reply.
     const bool parsed = req.ParseFromArray(data, len);
@@ -266,7 +298,7 @@ class Server {
     // After parsing the request, we perform the remaining work on the background thread. The loop's io_context outlives
     // this, since the handler thread holds the loop.
     asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop_context = &*loop_, client,
-                                replies, parsed, req = std::move(req)]() {
+                                replies, parsed, req = std::move(req), canceled = std::move(canceled)]() {
       // Owned while this runs, so a Server destroyed meanwhile does not take the service with it.
       auto prototype = service.lock();
       if (!prototype) {
@@ -290,7 +322,7 @@ class Server {
         response.mutable_header()->set_error("method not found");
       } else {
         std::unique_ptr<google::protobuf::Message> rpc_response(prototype->GetResponsePrototype(method_desc).New());
-        Controller controller;
+        Controller controller{canceled};
         NoOpClosure done;
         // Runs the handler's code, failing the call with what it throws. A throw would otherwise end the handler
         // thread and, with it, the process.
@@ -386,7 +418,7 @@ class Server {
   std::shared_ptr<PROTO_SERVICE_T> prototype_{};  ///< Protobuf service instance
   discovery::DiscoveryPtr discovery_;             ///< Discovery system for registering the service
   // clients_ and stop_ before tcp_server_: the accept handler uses them, and can fire as soon as tcp_server_ is built.
-  std::deque<std::weak_ptr<network::TCP>> clients_{};  ///< Active client connections
+  std::deque<Connection> clients_{};  ///< Accepted connections
   /// Stopped by ~Server(). The receive handlers hold a token from it, since asio can't recall a queued handler. The
   /// accept handler needs none: tcp_server_ drops it once destroyed.
   std::stop_source stop_;
