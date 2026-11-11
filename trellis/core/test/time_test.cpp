@@ -73,6 +73,40 @@ TEST(TrellisTimeAPI, Milliseconds) {
   ASSERT_TRUE(dt == 500);
 }
 
+TEST(TrellisTimeAPI, MeasureClockOffsetTakesTheSampleWithTheNarrowestWindow) {
+  // B runs 500ns ahead of A. The first and last samples are preempted for 10us, so only the middle one gives 500ns.
+  const std::vector<std::chrono::nanoseconds> a_reads{0ns, 10000ns, 10100ns, 20100ns};
+  const std::vector<std::chrono::nanoseconds> b_reads{500ns, 10550ns, 10600ns};
+  size_t a_index = 0;
+  size_t b_index = 0;
+  const auto offset = MeasureClockOffset([&] { return a_reads.at(a_index++); }, [&] { return b_reads.at(b_index++); },
+                                         /*samples=*/3);
+  EXPECT_EQ(offset, 500ns);
+  EXPECT_EQ(a_index, 4u);
+  EXPECT_EQ(b_index, 3u);
+}
+
+TEST(TrellisTimeAPI, SystemTimeOffsetHoldsBetweenRefreshes) {
+  // A refresh needs 100ms since the last one, so 20ms of calls see at most one. The bound grows with the elapsed time
+  // because a loaded machine can stretch the sleeps past a refresh period.
+  const auto start = std::chrono::steady_clock::now();
+  std::vector<TimePoint::duration> offsets;
+  for (int i = 0; i < 21; ++i) {
+    offsets.push_back(TimePointToSystemTimeOffset());
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+  int changes = 0;
+  for (size_t i = 1; i < offsets.size(); ++i) {
+    if (offsets[i] != offsets[i - 1]) ++changes;
+  }
+  EXPECT_LE(changes, elapsed / std::chrono::milliseconds{100} + 1);
+
+  const auto naive =
+      std::chrono::system_clock::now().time_since_epoch() - std::chrono::steady_clock::now().time_since_epoch();
+  EXPECT_NEAR(offsets.back().count(), naive.count(), std::chrono::nanoseconds{std::chrono::milliseconds{1}}.count());
+}
+
 TEST(TrellisTimeAPI, SetSimTimeWhileDisabled) {
   TimePoint timepoint{std::chrono::milliseconds(1500)};
   ASSERT_THROW(SetSimulatedTime(timepoint), std::runtime_error);

@@ -157,18 +157,31 @@ TimePoint::duration TimePointToSystemTimeOffset() {
   if (sim_clock_enabled_.load(std::memory_order_relaxed)) {
     return cached_sim_offset_;
   }
-  return std::chrono::system_clock::now().time_since_epoch() - Now().time_since_epoch();
+  // The kernel slews both clocks together, so the offset moves only when the system clock is stepped, a leap second is
+  // inserted, or the machine resumes from suspend.
+  constexpr auto kRefreshPeriod = std::chrono::milliseconds{100};
+  const auto measure = [] {
+    return MeasureClockOffset([] { return std::chrono::steady_clock::now().time_since_epoch(); },
+                              [] { return std::chrono::system_clock::now().time_since_epoch(); });
+  };
+  static std::atomic<TimePoint::duration> offset{measure()};
+  static std::atomic<TimePoint> next_refresh{std::chrono::steady_clock::now() + kRefreshPeriod};
+
+  const auto now = std::chrono::steady_clock::now();
+  auto due = next_refresh.load();
+  if (now < due || !next_refresh.compare_exchange_strong(due, now + kRefreshPeriod)) {
+    return offset.load();
+  }
+  const auto measured = measure();
+  offset.store(measured);
+  return measured;
 }
 
 SystemTimePoint TimePointToSystemTime(const TimePoint& time) {
-  // Add a duration in trellis clock domain (steady clock) to current system clock to get the equivalent time in system
-  // clock domain.
   return SystemTimePoint{(time + TimePointToSystemTimeOffset()).time_since_epoch()};
 }
 
 TimePoint TimePointFromSystemTime(const SystemTimePoint& time) {
-  // Add a duration in system clock domain to current trellis clock to get the equivalent time in trellis clock domain
-  // (steady clock).
   return TimePoint{(time - TimePointToSystemTimeOffset()).time_since_epoch()};
 }
 

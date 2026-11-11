@@ -27,7 +27,7 @@ namespace time {
 
 /**
  * now Get the current time
- * @return A time point with millisecond resolution representing the current time
+ * @return The steady clock's current time, or the simulated time when the simulated clock is enabled
  */
 TimePoint Now();
 
@@ -183,7 +183,41 @@ void IncrementSimulatedTime(const std::chrono::milliseconds& duration);
 TimePoint TimePointFromTimestampedMessage(const trellis::core::TimestampedMessage& msg);
 
 /**
+ * @brief MeasureClockOffset measures clock B minus clock A, the way linuxptp's phc2sys does.
+ *
+ * The reads alternate A, B, A, B, ..., A, so each B read has an A read just before and just after it. Clock A's value
+ * at the moment B was read lies between those two A reads, so each sample takes B minus their midpoint. The sample with
+ * the narrowest window wins, so a preemption between reads is discarded instead of landing in the offset.
+ *
+ * @param read_a Returns clock A's reading as a duration since its epoch.
+ * @param read_b Returns clock B's reading as a duration since its epoch.
+ * @param samples The number of B reads to take. A is read one more time than B.
+ * @return std::chrono::nanoseconds Clock B minus clock A.
+ */
+template <typename ReadA, typename ReadB>
+std::chrono::nanoseconds MeasureClockOffset(ReadA&& read_a, ReadB&& read_b, unsigned samples = 5) {
+  auto best_window = std::chrono::nanoseconds::max();
+  auto best_offset = std::chrono::nanoseconds{};
+  std::chrono::nanoseconds before = read_a();
+  for (unsigned i = 0; i < samples; ++i) {
+    const std::chrono::nanoseconds b = read_b();
+    const std::chrono::nanoseconds after = read_a();
+    const auto window = after - before;
+    if (window < best_window) {
+      best_window = window;
+      best_offset = b - (before + window / 2);
+    }
+    before = after;
+  }
+  return best_offset;
+}
+
+/**
  * @brief TimePointToSystemTimeOffset is the duration offset of system time minus trellis time (steady clock).
+ *
+ * Cached. The first call more than 100ms after the last measurement measures again, so after a step of the system
+ * clock, calls can return the old offset for about 100ms. Under the simulated clock, returns the offset stored when the
+ * simulated time was last set.
  *
  * @return TimePoint::duration The duration offset.
  */
@@ -198,7 +232,7 @@ TimePoint::duration TimePointToSystemTimeOffset();
 SystemTimePoint TimePointToSystemTime(const TimePoint& time);
 
 /**
- * @brief TimePointToSystemTime get the TimePoint associated with a given SystemTimePoint.
+ * @brief TimePointFromSystemTime get the TimePoint associated with a given SystemTimePoint.
  *
  * @param time The input SystemTimePoint.
  * @return TimePoint The corresponding TimePoint.
