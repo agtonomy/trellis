@@ -12,9 +12,17 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
   build-essential \
   shellcheck \
   golang \
-  && rm -rf /var/lib/apt/lists/*
+  gcc-12 \
+  g++-12 \
+  && rm -rf /var/lib/apt/lists/* \
+  && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
+    --slave /usr/bin/g++ g++ /usr/bin/g++-12
 
-ARG BAZELISK_VERSION=1.27.0
+# Bazel's C++ toolchain autoconfiguration only re-runs when its declared environment variables change, so naming the
+# compiler here makes it regenerate (rather than reuse a stale cache) when the image's compiler changes.
+ENV CC=gcc-12
+
+ARG BAZELISK_VERSION=1.30.0
 
 # Install bazelisk for target architecture
 RUN curl -sSL \

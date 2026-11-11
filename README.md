@@ -104,9 +104,6 @@ a service, and hosting a service.
 #### With Docker
 You can use the provided Docker image, which has all the build/runtime dependencies
 ```bash
-# Build the image (only needs to be done once)
-./docker/build.sh
-
 # Run the examples in the docker environment
 ./docker/shell.sh bazel run //trellis/examples/publisher
 ./docker/shell.sh bazel run //trellis/examples/subscriber

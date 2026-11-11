@@ -21,17 +21,21 @@ set -e
 
 export DOCKER_BUILDKIT
 
-bazel_version="$(cat "$(cd "$SCRIPT_DIR"; git rev-parse --show-toplevel 2>/dev/null)"/.bazelversion)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/env.sh" # Provides $IMAGE_NAME and $IMAGE_VERSION
+
+bazel_version="$(cat "$SCRIPT_DIR/../.bazelversion")"
 
 ARCHITECTURE="$(uname -m)"
-DOCKER_IMAGE_NAME="trellis-docker"
 
 case $ARCHITECTURE in
-    x86_64) DOCKER_IMAGE_NAME+=":amd64" ;;
-    arm64|aarch64) DOCKER_IMAGE_NAME+=":arm64" ;;
+    x86_64) arch=amd64 ;;
+    arm64|aarch64) arch=arm64 ;;
     *) echo "Failed to build. Unexpected architecture: $ARCHITECTURE"; exit 1 ;;
 esac
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$SCRIPT_DIR"
 docker buildx build --build-arg BAZEL_VERSION="$bazel_version" \
-    -t "$DOCKER_IMAGE_NAME" --load .
+    -t "$IMAGE_NAME:${arch}_$IMAGE_VERSION" --load .

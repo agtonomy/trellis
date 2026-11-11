@@ -7,13 +7,18 @@ system without any consideration for system dependencies. Because we're not quit
 there, this Dockerfile serves to define the system dependencies needed at build time.
 
 # First Usage
-At the time of writing, we're not using an image repository, so you must build
-the image locally.
+At the time of writing, we're not using an image repository, so the image is built locally.
+`./shell.sh` builds the image automatically if the version for the current checkout (`IMAGE_VERSION` in `env.sh`) is
+not already present, so switching between branches that use different image versions just works.
 
-Building the image:
+Building the image manually:
 ```bash
 ./build.sh
 ```
+
+# Changing the image
+Bump `IMAGE_VERSION` in `env.sh` whenever the `Dockerfile` (or anything it copies in) changes, so other checkouts keep
+using the image they were written against. Images are tagged `trellis-docker:<arch>_<version>`.
 
 # Building
 ```bash
