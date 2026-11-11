@@ -212,6 +212,35 @@ TEST(InProcessBusBackpressure, AMessagePublishedFromACallbackIsDeliveredNext) {
   bus->Unsubscribe("/dummy/republish_topic", handle);
 }
 
+// Each topic's route drains its own queue. A message that arrives while its topic's drain runs waits for the next drain
+// of that topic, which is posted after the current one finishes, so a message published later on another topic, whose
+// drain was posted in the meantime, reaches the loop first. Shared memory doesn't keep order between topics either.
+TEST(InProcessBusOrder, AMessageArrivingDuringItsTopicsDrainCanBeOvertakenByAnotherTopic) {
+  const auto bus = InProcessBus::Instance();
+  trellis::core::EventLoop loop;
+  std::vector<std::pair<char, uint64_t>> received;  // topic, sequence
+  const auto handle_b = bus->Subscribe("/dummy/order_topic_b", loop,
+                                       [&received](const shm::ShmFile::SMemFileHeader& header, BorrowedPayload) {
+                                         received.emplace_back('b', header.sequence);
+                                       });
+  const auto handle_a = bus->Subscribe("/dummy/order_topic_a", loop,
+                                       [&received, &bus](const shm::ShmFile::SMemFileHeader& header, BorrowedPayload) {
+                                         received.emplace_back('a', header.sequence);
+                                         if (header.sequence == 1) {
+                                           bus->Publish("/dummy/order_topic_a", {Header(1, 2), Payload()},
+                                                        /* depth = */ 3);
+                                           bus->Publish("/dummy/order_topic_b", {Header(2, 1), Payload()},
+                                                        /* depth = */ 3);
+                                         }
+                                       });
+  bus->Publish("/dummy/order_topic_a", {Header(1, 1), Payload()}, /* depth = */ 3);
+  (*loop).poll();
+  // Published a1, a2, b1.
+  EXPECT_EQ(received, (std::vector<std::pair<char, uint64_t>>{{'a', 1}, {'b', 1}, {'a', 2}}));
+  bus->Unsubscribe("/dummy/order_topic_a", handle_a);
+  bus->Unsubscribe("/dummy/order_topic_b", handle_b);
+}
+
 // Each subscriber has its own queue, so one whose loop isn't running holds back nobody else on the topic.
 TEST(InProcessBusBackpressure, ASubscriberThatIsBehindDoesNotHoldBackAnother) {
   const auto bus = InProcessBus::Instance();

@@ -46,7 +46,12 @@ namespace trellis::core::ipc {
  * usual delivery path.
  *
  * @note Delivery is posted onto the subscriber's loop, never called inline, matching the shm path's async wake. This
- * keeps handling order deterministic and avoids re-entering a callback from inside Send.
+ * avoids re-entering a callback from inside Send.
+ *
+ * @note A subscriber gets each writer's messages on a topic in the order they were published. Between topics there is
+ * no order, as with shared memory, where each topic has its own reader: each subscription drains its own queue, so a
+ * message that arrives while its topic's drain runs waits for that topic's next drain, and a message published later
+ * on another topic can reach the loop first.
  *
  * @note Each subscriber holds at most `depth` undelivered messages per writer, as many as that writer's shared memory
  * slots, and a new one pushes out the oldest. So a slow subscriber, or one whose loop isn't running, gets recent data

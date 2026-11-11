@@ -193,6 +193,9 @@ class PublisherImpl {
    * on the converter and on the send statistics. This holds on either transport: the in-process transport delivers on
    * the subscriber's loop, so a send never runs a subscriber callback on the sending thread.
    *
+   * @note A subscriber receives this publisher's messages in the order they were sent, but not in order with messages
+   * sent on other topics, on either transport.
+   *
    * @param msg The message to send.
    * @param now The timestamp to associate with the message.
    * @return The timestamp used.
