@@ -10,5 +10,10 @@ test --test_output=errors
 # lock file instead of failing when dependencies change.
 common:ci --lockfile_mode=error
 
+# Silence deprecation warnings from protobuf/abseil APIs, including warnings triggered from our own code via
+# their headers:
+build --copt=-Wno-deprecated-declarations
+build --host_copt=-Wno-deprecated-declarations
+
 # User-specific .bazelrc
 try-import user.bazelrc
