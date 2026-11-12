@@ -36,6 +36,18 @@ void AddUpdate(trellis::core::HealthHistory& status, trellis::core::HealthState 
   *status.add_history() = update;
 }
 
+// Adds an update stamped with the simulated clock's current time, without moving the clock.
+void AddUpdateWithoutAdvancing(trellis::core::HealthHistory& status, trellis::core::HealthState state,
+                               trellis::core::Health::Code code, const std::string& description) {
+  trellis::core::time::EnableSimulatedClock();
+  trellis::core::HealthStatus update;
+  *update.mutable_timestamp() = trellis::core::time::TimePointToTimestamp(trellis::core::time::Now());
+  update.set_health_state(state);
+  update.set_status_code(code);
+  update.set_status_description(description);
+  *status.add_history() = update;
+}
+
 }  // namespace
 
 using namespace trellis::core;
@@ -239,4 +251,74 @@ TEST(TrellisHealthMonitor, TimeoutTriggersCallback) {
   // Update with a health lost state by triggering the expired callback
   watchdog_expired_cb(trellis::core::time::Now());
   ASSERT_EQ(callback_count, 2);
+}
+
+// A simulated clock can hold still while a node changes health twice, as it does when a sim steps its clock by whole
+// frames. The second change has the same timestamp as the first and must still reach the callback, or the monitor
+// keeps the stale state for as long as the node stays healthy.
+TEST(TrellisHealthMonitor, AChangeAtTheSameTimeAsThePreviousUpdateTriggersACallback) {
+  std::vector<trellis::core::HealthMonitor::Event> events;
+  trellis::core::Config config;
+  trellis::core::EventLoop loop;
+  trellis::core::HealthMonitor monitor{
+      loop, config, [](unsigned, trellis::core::TimerImpl::Callback) { return nullptr; },
+      [](const std::string&, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback) { return nullptr; },
+      [&events](const std::string&, trellis::core::HealthMonitor::Event event, const trellis::core::time::TimePoint&) {
+        events.push_back(event);
+      }};
+
+  trellis::core::HealthHistory status;
+  status.set_name("odometry");
+  AddUpdateWithoutAdvancing(status, trellis::core::HealthState::HEALTH_STATE_RECOVERABLE, 1, "Missing RawImu.");
+  monitor.NewUpdate(status);
+  ASSERT_EQ(events.size(), 1);
+  EXPECT_EQ(events.back(), trellis::core::HealthMonitor::Event::kNodeTransitionToUnhealthy);
+
+  // Recovered within the same simulated instant.
+  AddUpdateWithoutAdvancing(status, trellis::core::HealthState::HEALTH_STATE_NORMAL, 0, "");
+  monitor.NewUpdate(status);
+  ASSERT_EQ(events.size(), 2);
+  EXPECT_EQ(events.back(), trellis::core::HealthMonitor::Event::kNodeTransitionToHealthy);
+  EXPECT_EQ(monitor.GetLastHealthUpdate("odometry").health_state(), trellis::core::HealthState::HEALTH_STATE_NORMAL);
+  EXPECT_TRUE(monitor.IsAllHealthy());
+
+  // The node's periodic report repeats the same newest update: nothing new, so no callback.
+  monitor.NewUpdate(status);
+  EXPECT_EQ(events.size(), 2);
+
+  // Same state and time with another code or description is a change too.
+  AddUpdateWithoutAdvancing(status, trellis::core::HealthState::HEALTH_STATE_NORMAL, 7, "");
+  monitor.NewUpdate(status);
+  EXPECT_EQ(events.size(), 3);
+  AddUpdateWithoutAdvancing(status, trellis::core::HealthState::HEALTH_STATE_NORMAL, 7, "recalibrated");
+  monitor.NewUpdate(status);
+  EXPECT_EQ(events.size(), 4);
+}
+
+// The watchdog marks a silent node LOST at the monitor's current time. On a frozen simulated clock the node's next
+// report can carry that same time, and its recovery must still reach the callback.
+TEST(TrellisHealthMonitor, ARecoveryAtTheSameTimeAsAWatchdogTripTriggersACallback) {
+  std::vector<trellis::core::HealthMonitor::Event> events;
+  trellis::core::Config config;
+  trellis::core::EventLoop loop;
+  trellis::core::HealthMonitor monitor{
+      loop, config, [](unsigned, trellis::core::TimerImpl::Callback) { return nullptr; },
+      [](const std::string&, trellis::core::SubscriberImpl<trellis::core::HealthHistory>::Callback) { return nullptr; },
+      [&events](const std::string&, trellis::core::HealthMonitor::Event event, const trellis::core::time::TimePoint&) {
+        events.push_back(event);
+      }};
+
+  trellis::core::HealthHistory status;
+  status.set_name("odometry");
+  AddUpdateWithoutAdvancing(status, trellis::core::HealthState::HEALTH_STATE_NORMAL, 0, "");
+  monitor.NewUpdate(status);
+  monitor.WatchdogExpired("odometry", trellis::core::time::Now());
+  ASSERT_EQ(events.size(), 2);
+  EXPECT_EQ(events.back(), trellis::core::HealthMonitor::Event::kNodeHealthUpdateLost);
+
+  // The node reports again at the time the watchdog tripped.
+  monitor.NewUpdate(status);
+  ASSERT_EQ(events.size(), 3);
+  EXPECT_EQ(events.back(), trellis::core::HealthMonitor::Event::kNodeTransitionToHealthy);
+  EXPECT_EQ(monitor.GetLastHealthUpdate("odometry").health_state(), trellis::core::HealthState::HEALTH_STATE_NORMAL);
 }

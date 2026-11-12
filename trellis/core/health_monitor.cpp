@@ -65,8 +65,13 @@ void HealthMonitor::NewUpdate(const trellis::core::HealthHistory& status) {
     // This isn't our first time encountering this node, so we already have cached info. Let's use the cache to see if
     // our new message contains new information
     const trellis::core::HealthStatus most_recent_update_from_cache = GetMostRecentNodeHealthFromCache(name);
+    // The timestamp alone isn't enough: a node can post two updates before its clock advances, and the second would
+    // then never be dispatched. Compare the content too, but only when the times tie.
     const bool message_contains_new_info =
-        (most_recent_update_from_message.timestamp() != most_recent_update_from_cache.timestamp());
+        (most_recent_update_from_message.timestamp() != most_recent_update_from_cache.timestamp()) ||
+        (most_recent_update_from_message.health_state() != most_recent_update_from_cache.health_state()) ||
+        (most_recent_update_from_message.status_code() != most_recent_update_from_cache.status_code()) ||
+        (most_recent_update_from_message.status_description() != most_recent_update_from_cache.status_description());
 
     dispatch_event = message_contains_new_info;
   }
