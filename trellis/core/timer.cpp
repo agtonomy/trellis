@@ -259,7 +259,12 @@ void PeriodicTimerImpl::OnFired(const time::TimePoint& fire_time, const time::Ti
 PeriodicTimerImpl::SchedLatencyStats PeriodicTimerImpl::GetAndResetSchedLatencyStats() {
   // Either this thread is the one firing the timer, or nothing is firing it. Anything else races the accumulators below
   // against OnFired, and the numbers it would return are unusable anyway.
-  if (!loop_.Stopped() && !(*loop_).get_executor().running_in_this_thread()) {
+  // Both checks are needed. Stopped() alone is true while a stopped loop may still be inside this timer's OnFired().
+  // !IsBeingRun() alone is true between two run calls, such as Node::Run()'s RunFor() calls, and the next one may start
+  // firing the timer while this reads. A loop that has never run reports itself stopped, so collecting from it is
+  // allowed, as before.
+  const bool loop_idle = loop_.Stopped() && !loop_.IsBeingRun();
+  if (!loop_idle && !(*loop_).get_executor().running_in_this_thread()) {
     throw std::runtime_error("Attempt to collect timer scheduling latency from a thread not running the timer's loop");
   }
   SchedLatencyStats stats{

@@ -117,11 +117,11 @@ class AsyncSender {
   /**
    * @brief Hands the timer to the loop to be stopped and destroyed there.
    *
-   * A timer must be stopped and destroyed on its loop's thread, or while the loop is not running (see TimerImpl). The
-   * owning Outbox is often destroyed on another thread.
+   * A timer must be stopped and destroyed on its loop's thread, or once the loop is done running handlers (see
+   * TimerImpl and EventLoop::HasStoppedRunning()). The owning Outbox is often destroyed on another thread.
    */
   ~AsyncSender() {
-    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+    if ((*loop_).get_executor().running_in_this_thread() || loop_.HasStoppedRunning()) {
       return;
     }
     // Until this runs, the timer may still fire; its callback finds the state gone and publishes nothing.

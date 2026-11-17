@@ -64,10 +64,12 @@ namespace trellis::core::ipc::proto::rpc {
  * ~Server() drops the handlers that have not started and waits for the running one. The running handler keeps the
  * service implementation alive and the handler thread keeps the loop, but nothing else: a service must own whatever
  * its handlers use. The handler hands the service to the loop with its reply, so a last owner releases it on the
- * loop's thread, or in place once the loop is stopped, as the service's members (a Client, say) require. Stopping does
- * not wait for the loop's current callback, which may still be using what the service owns. A reply the loop never
- * runs (it stops after the handler checks, or is never run again) keeps the service until the loop is destroyed, and
- * for good if the service holds the loop.
+ * loop's thread, as the service's members (a Client, say) require, or in place once the loop is done running callbacks
+ * (see EventLoop::HasStoppedRunning()). A loop that has been stopped but is still inside a callback is not done, since
+ * stopping does not wait for that callback, which may still be using what the service owns, so the reply is posted. A
+ * reply the loop never runs (the loop was stopped but still inside a callback when the handler checked, it stops after
+ * the check, or it is never run again) keeps the service until the loop is destroyed, and for good if the service
+ * holds the loop.
  *
  * Replies go out on the event loop, so a reply still owed when the loop stops is lost. Shutdown must destroy the
  * Server, not merely stop the loop. ~Server() closes the caller sockets, and nothing else tells a caller in another
@@ -295,10 +297,9 @@ class Server {
     // The frame's length is already checked, so the stream stays in step: a bad body still gets its failed reply.
     const bool parsed = req.ParseFromArray(data, len);
 
-    // After parsing the request, we perform the remaining work on the background thread. The loop's io_context outlives
-    // this, since the handler thread holds the loop.
-    asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop_context = &*loop_, client,
-                                replies, parsed, req = std::move(req), canceled = std::move(canceled)]() {
+    // After parsing the request, we perform the remaining work on the background thread
+    asio::post(*handler_loop_, [service = std::weak_ptr<PROTO_SERVICE_T>{prototype_}, loop = loop_, client, replies,
+                                parsed, req = std::move(req), canceled = std::move(canceled)]() {
       // Owned while this runs, so a Server destroyed meanwhile does not take the service with it.
       auto prototype = service.lock();
       if (!prototype) {
@@ -359,9 +360,10 @@ class Server {
       const uint32_t size = frame.size() - sizeof(uint32_t);
       std::memcpy(frame.data(), &size, sizeof(size));
 
-      // The service goes to the loop with the reply, so that if this is its last owner, it is released on the loop's
-      // thread. A stopped loop runs nothing more, and releasing it here is then allowed.
-      if (loop_context->stopped()) {
+      // The service and the client go to the loop with the reply, so that if this is their last owner, they are
+      // released on the loop's thread. Once the loop is done running handlers, releasing them here is allowed (see
+      // EventLoop::HasStoppedRunning()).
+      if (loop.HasStoppedRunning()) {
         return;
       }
 

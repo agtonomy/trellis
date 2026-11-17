@@ -73,6 +73,7 @@ class EventLoop {
    * @brief Proxy for asio::io_context::run()
    */
   void Run() {
+    const RunScope scope{*runners_};
     state_->store(State::kRunning);
     io_context_->run();
 
@@ -86,6 +87,7 @@ class EventLoop {
    * @brief Proxy for asio::io_context::run_one()
    */
   void RunOne() {
+    const RunScope scope{*runners_};
     state_->store(State::kRunning);
     io_context_->run_one();
 
@@ -100,6 +102,7 @@ class EventLoop {
    */
   template <typename Rep, typename Period>
   std::size_t RunFor(const std::chrono::duration<Rep, Period>& rel_time) {
+    const RunScope scope{*runners_};
     state_->store(State::kRunning);
     const auto retval = io_context_->run_for(std::forward<const std::chrono::duration<Rep, Period>>(rel_time));
 
@@ -114,6 +117,7 @@ class EventLoop {
    * @brief Proxy for asio::io_context::poll_one()
    */
   asio::io_context::count_type PollOne() {
+    const RunScope scope{*runners_};
     state_->store(State::kRunning);
     return io_context_->poll_one();
   }
@@ -135,6 +139,39 @@ class EventLoop {
    * @return true if the event loop is in the stopped state, false otherwise
    */
   bool Stopped() const { return state_->load() == State::kStopped; }
+
+  /**
+   * @brief Check whether a thread is inside Run(), RunOne(), RunFor() or PollOne(), and so may be running a handler
+   *
+   * Unlike Stopped(), this stays true after Stop() until the run call returns: stopping does not interrupt the handler
+   * that is running. When this is false, no handler is running right now, but a thread may start running the loop at
+   * any moment. To decide whether what belongs to the loop's thread may be stopped or destroyed on another thread, use
+   * HasStoppedRunning() instead.
+   *
+   * @return true if a thread is running the loop
+   */
+  bool IsBeingRun() const { return runners_->load(std::memory_order_acquire) > 0; }
+
+  /**
+   * @brief Check whether the loop is done running handlers for good: it has been stopped, and every run call has
+   * returned
+   *
+   * When this is true, no handler is running and none will run again, so what belongs to the loop's thread, such as its
+   * timers, may be stopped or destroyed on any thread. When it is false, that has to be posted to the loop instead:
+   * - Stopped() alone is not enough. It turns true as soon as Stop() is called, while the loop's thread may still be
+   *   inside a handler, such as a timer's, since stopping does not interrupt the handler that is running.
+   * - A loop that has not been stopped may start running at any moment, even one that has never run.
+   *
+   * Posting is no answer once this is true. Work posted to a loop that never runs again is destroyed only with the
+   * io_context, and work that owns an EventLoop keeps that io_context alive, so neither is ever destroyed.
+   *
+   * @return true if the loop has been stopped and no thread is running it
+   */
+  bool HasStoppedRunning() const {
+    // stopped() first: once it is true, a run call that starts returns without running anything. So a run call that
+    // could still run a handler began before that, and IsBeingRun() counts it until it returns.
+    return io_context_->stopped() && !IsBeingRun();
+  }
 
   /**
    * @brief Return a reference to the underlying io_context
@@ -187,6 +224,21 @@ class EventLoop {
   const void* GetOwner() const { return owner_; }
 
  private:
+  /// Counts a thread into one of the run methods for as long as it is inside
+  class RunScope {
+   public:
+    explicit RunScope(std::atomic<int>& runners) : runners_{runners} {
+      runners_.fetch_add(1, std::memory_order_acq_rel);
+    }
+    // Release: a thread that then reads zero sees everything the handlers run here did
+    ~RunScope() { runners_.fetch_sub(1, std::memory_order_release); }
+    RunScope(const RunScope&) = delete;
+    RunScope& operator=(const RunScope&) = delete;
+
+   private:
+    std::atomic<int>& runners_;
+  };
+
   /**
    * @brief Construct a handle to another loop's io_context, registry and policy under a different owner tag
    *
@@ -195,6 +247,7 @@ class EventLoop {
    */
   EventLoop(const EventLoop& other, const void* owner)
       : state_{other.state_},
+        runners_{other.runners_},
         io_context_{other.io_context_},
         work_guard_{asio::make_work_guard(*other.io_context_)},
         registry_{other.registry_},
@@ -202,6 +255,7 @@ class EventLoop {
         owner_{owner} {}
 
   std::shared_ptr<std::atomic<State>> state_ = std::make_shared<std::atomic<State>>(State::kStopped);
+  std::shared_ptr<std::atomic<int>> runners_ = std::make_shared<std::atomic<int>>(0);  ///< Threads in a run method
   IOContextPointer io_context_ = std::make_shared<IOContext>();
   asio::executor_work_guard<typename IOContext::executor_type> work_guard_{asio::make_work_guard(*io_context_)};
   // All three are set once at construction and never mutated, so plain copying is correct. Const costs nothing here:

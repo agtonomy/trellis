@@ -25,6 +25,7 @@
 #include <optional>
 #include <stdexcept>
 #include <thread>
+#include <vector>
 
 TEST(TrellisEventLoop, DefaultConstruct) { ASSERT_NO_THROW(trellis::core::EventLoop{}); }
 
@@ -150,6 +151,70 @@ class RunningLoop {
 };
 
 }  // namespace
+
+// Stop() marks a loop stopped at once, while the handler that called it is still running. An object torn down off the
+// loop's thread used to take Stopped() as leave to touch what that handler may be using.
+TEST(TrellisEventLoop, IsBeingRunUntilTheRunCallReturnsEvenOnceStopped) {
+  trellis::core::EventLoop loop;
+  const trellis::core::EventLoop copy = loop;
+  EXPECT_FALSE(copy.IsBeingRun());
+  EXPECT_FALSE(copy.HasStoppedRunning());
+
+  std::promise<void> inside;
+  std::promise<void> release;
+  auto released = release.get_future();
+  asio::post(*loop, [&loop, &inside, &released]() {
+    loop.Stop();
+    inside.set_value();
+    released.wait();
+  });
+  std::thread runner([&loop]() { loop.Run(); });
+  inside.get_future().wait();
+  EXPECT_TRUE(copy.Stopped());
+  EXPECT_TRUE(copy.IsBeingRun()) << "the loop is stopped, but its handler is still running";
+  EXPECT_FALSE(copy.HasStoppedRunning()) << "the loop is stopped, but its handler is still running";
+
+  release.set_value();
+  runner.join();
+  EXPECT_FALSE(copy.IsBeingRun());
+  EXPECT_TRUE(copy.HasStoppedRunning());
+}
+
+// A loop that has never run may start running at any moment, so what belongs to its thread can't be touched elsewhere
+// until it has been stopped
+TEST(TrellisEventLoop, HasStoppedRunningOnlyOnceStopped) {
+  trellis::core::EventLoop loop;
+  EXPECT_TRUE(loop.Stopped()) << "a loop that has never run reports itself stopped";
+  EXPECT_FALSE(loop.HasStoppedRunning());
+
+  loop.Stop();
+  EXPECT_TRUE(loop.HasStoppedRunning());
+
+  bool ran = false;
+  asio::post(*loop, [&ran]() { ran = true; });
+  loop.Run();
+  EXPECT_FALSE(ran) << "a stopped loop runs nothing, which is what lets HasStoppedRunning() stay true";
+  EXPECT_TRUE(loop.HasStoppedRunning());
+}
+
+TEST(TrellisEventLoop, IsBeingRunInsideEveryRunMethod) {
+  trellis::core::EventLoop loop;
+  std::vector<bool> seen;
+  const auto post_check = [&loop, &seen]() {
+    asio::post(*loop, [&loop, &seen]() { seen.push_back(loop.IsBeingRun()); });
+  };
+  post_check();
+  loop.RunOne();
+  post_check();
+  loop.PollOne();
+  post_check();
+  loop.RunFor(std::chrono::milliseconds{10});
+  post_check();
+  asio::post(*loop, [&loop]() { loop.Stop(); });
+  loop.Run();
+  EXPECT_EQ(seen, (std::vector<bool>{true, true, true, true}));
+  EXPECT_FALSE(loop.IsBeingRun());
+}
 
 TEST(TrellisRunOnEventLoop, RunsTheWorkOnTheLoopThread) {
   const auto running = RunningLoop{};

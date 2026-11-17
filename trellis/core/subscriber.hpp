@@ -163,18 +163,22 @@ class SubscriberImpl : public SubscriberBase,
   /**
    * @brief Stops the subscriber, then hands its timers and shared memory readers to the loop to be destroyed there.
    *
-   * Timers and readers must be stopped and destroyed on the loop's thread, or while the loop is not running (see
-   * TimerImpl). The last reference to a subscriber is often dropped on another thread.
+   * Timers and readers must be stopped and destroyed on the loop's thread, or once the loop is done running handlers
+   * (see TimerImpl and EventLoop::HasStoppedRunning()). The last reference to a subscriber is often dropped on another
+   * thread.
    */
   ~SubscriberImpl() {
     Stop();
-    // On the loop's thread, or with the loop stopped, the members can simply be destroyed with the rest.
-    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+    // On the loop's thread, or once the loop is done running handlers, the members can simply be destroyed with the
+    // rest (see EventLoop::HasStoppedRunning()).
+    if ((*loop_).get_executor().running_in_this_thread() || loop_.HasStoppedRunning()) {
       return;
     }
     // Nothing on the loop can still be using these. Every path into ReceiveData() and UpdateStatistics() locks a
     // weak_ptr to this subscriber first, and the discovery callback was removed by Stop(). If the loop never runs
-    // again, asio destroys this handler, and what it owns, when the io_context is destroyed.
+    // again, as when it was stopped while still inside a handler, this handler is destroyed only with the io_context.
+    // The timers it owns hold the loop, and with it that io_context, so then neither is ever destroyed (see
+    // EventLoop::HasStoppedRunning()).
     asio::post(*loop_, [statistics_timer = std::move(statistics_timer_), watchdog_timer = std::move(watchdog_timer_),
                         readers = std::move(readers_)]() {});
   }
@@ -216,8 +220,9 @@ class SubscriberImpl : public SubscriberBase,
         reader->Stop();
       }
     };
-    // Timers and readers belong to the loop's thread, or to any thread while the loop is not running (see TimerImpl).
-    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+    // Timers and readers belong to the loop's thread, or to any thread once the loop is done running handlers (see
+    // TimerImpl and EventLoop::HasStoppedRunning()).
+    if ((*loop_).get_executor().running_in_this_thread() || loop_.HasStoppedRunning()) {
       stop_on_loop();
     } else {
       asio::post(*loop_, std::move(stop_on_loop));

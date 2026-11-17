@@ -129,10 +129,10 @@ WriterImpl<MessageType, OutputMessageType, Converter>::WriterImpl(
 template <typename MessageType, typename OutputMessageType, typename Converter>
 WriterImpl<MessageType, OutputMessageType, Converter>::~WriterImpl() {
   if (flush_timer_) {
-    // A timer must be stopped and destroyed on its loop's thread, or while the loop is not running (see TimerImpl), and
-    // a writer is often destroyed on another thread. Until the loop gets to it the timer may still fire, and then skips
-    // the file that is closed below.
-    if ((*loop_).get_executor().running_in_this_thread() || (*loop_).stopped()) {
+    // A timer must be stopped and destroyed on its loop's thread, or once the loop is done running handlers (see
+    // TimerImpl and EventLoop::HasStoppedRunning()), and a writer is often destroyed on another thread. Until the loop
+    // gets to it the timer may still fire, and then skips the file that is closed below.
+    if ((*loop_).get_executor().running_in_this_thread() || loop_.HasStoppedRunning()) {
       flush_timer_->Stop();
     } else {
       asio::post(*loop_, [timer = std::move(flush_timer_)]() { timer->Stop(); });
