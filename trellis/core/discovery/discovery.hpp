@@ -86,6 +86,14 @@ class Discovery {
   };
 
   /**
+   * @brief A discovery sample paired with how long ago it was last heard
+   */
+  struct AgedSample {
+    std::chrono::milliseconds age;  ///< Time since the sample's most recent broadcast was received
+    Sample sample;                  ///< The discovery sample
+  };
+
+  /**
    * @brief Structure to store statistics about a pub/sub connection
    */
   struct PubSubStats {
@@ -286,10 +294,10 @@ class Discovery {
   /**
    * @brief Resolve the descriptor bytes for a received topic sample.
    *
-   * Prefers an inline `desc` if present (defensive fallback for a stray still-inlining binary or
-   * a future cross-host path), otherwise resolves `desc_hash` against the descriptor store. On a
-   * hash that fails to resolve, logs a warning and returns empty — the same observable outcome as a
-   * sample carrying no schema, which retries on the next broadcast.
+   * Prefers an inline `desc` if present (fallback for a sender whose descriptor store couldn't hold the
+   * descriptor, this binary included, or a future cross-host path), otherwise resolves `desc_hash` against
+   * the descriptor store. On a hash that fails to resolve, logs a warning and returns empty — the same
+   * observable outcome as a sample carrying no schema, which retries on the next broadcast.
    *
    * @param sample A received publisher/subscriber discovery sample.
    * @return The serialized FileDescriptorSet bytes, or empty string if unavailable.
@@ -351,6 +359,24 @@ class Discovery {
    * @return A vector of the known discovery samples, this process's own included
    */
   std::vector<Sample> GetProcessSamples() const;
+
+  /**
+   * @brief Get the current set of known process metadata samples, each paired with how
+   *        long ago its most recent broadcast was received
+   *
+   * A process that exits cleanly announces its departure, but one that dies without
+   * unregistering (a crash, a kill, or a lost datagram) stays in the map for up to the
+   * sample timeout. The bare sample is identical either way; the age is the only thing
+   * that distinguishes a node still broadcasting from one that has gone quiet.
+   * Introspection tools that present liveness need it.
+   *
+   * The age is measured on discovery's own steady clock, so it stays meaningful while
+   * time::Now() reports simulated time. Callers get a duration rather than a time point
+   * because the two clocks' readings are not comparable.
+   *
+   * @return A vector of known process samples, each with the time since it was last heard
+   */
+  std::vector<AgedSample> GetProcessSamplesWithAge() const;
 
   /**
    * @brief Update runtime statistics for a specific publisher/subscriber

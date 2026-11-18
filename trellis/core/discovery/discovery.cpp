@@ -647,6 +647,16 @@ std::vector<Sample> Discovery::GetProcessSamples() const {
   return samples;
 }
 
+std::vector<Discovery::AgedSample> Discovery::GetProcessSamplesWithAge() const {
+  // The stamps are DiscoveryNow() readings, so the age must be taken against the same clock.
+  const auto now = DiscoveryNow();
+  const auto aged =
+      process_samples_ | std::views::values | std::views::transform([now](const TimestampedSample& entry) {
+        return AgedSample{std::chrono::duration_cast<std::chrono::milliseconds>(now - entry.stamp), entry.sample};
+      });
+  return {aged.begin(), aged.end()};
+}
+
 void Discovery::UpdatePubSubStats(PubSubStats stats, RegistrationHandle handle) {
   std::lock_guard lock(registered_samples_mutex_);
   auto it = registered_samples_.find(handle);

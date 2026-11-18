@@ -175,6 +175,30 @@ TEST(DiscoveryTests, IniitalConditions) {
   }
 }
 
+// Introspection tools need to tell a node that is still broadcasting from one that has
+// gone quiet but has not yet aged out of the map, and the bare sample cannot say which.
+TEST(DiscoveryTests, ProcessSamplesCarryHowLongAgoTheyWereLastHeard) {
+  auto ev = trellis::core::EventLoop();
+  Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
+
+  // Discovery ages samples on the steady clock, not time::Now(), so bound it with the same.
+  const auto before = std::chrono::steady_clock::now();
+  ev.RunFor(std::chrono::milliseconds(200));
+  const auto elapsed = std::chrono::steady_clock::now() - before;
+
+  const auto aged = discovery.GetProcessSamplesWithAge();
+  ASSERT_EQ(aged.size(), 1u);
+  EXPECT_EQ(aged[0].sample.process().uname(), "test_node");
+  EXPECT_GE(aged[0].age, std::chrono::milliseconds(0));
+  EXPECT_LE(aged[0].age, elapsed);
+
+  // The two accessors walk the same map independently, so this is what would catch them
+  // drifting apart.
+  const auto plain = discovery.GetProcessSamples();
+  ASSERT_EQ(plain.size(), aged.size());
+  EXPECT_EQ(plain[0].id(), aged[0].sample.id());
+}
+
 TEST(DiscoveryTests, RegisterPublisher) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(TestConfig())));
@@ -248,9 +272,9 @@ TEST(DiscoveryTests, LoopbackDiscoversPublisherRegisteredAfterCallback) {
   EXPECT_EQ(receive_count, 1u);
 }
 
-// Unregistered before its loopback delivery ran: the delivery used to register it anyway, and it stayed until its
-// sample timed out. Nor do callbacks hear the unregistration queued after it, since the sample it withdraws was never
-// stored. The one still registered shows the delivery ran.
+// Unregistered before its loopback delivery ran: the delivery must not register it, or it would stay until its sample
+// timed out. Nor do callbacks hear the unregistration queued after it, since the sample it withdraws was never stored.
+// The one still registered shows the delivery ran.
 TEST(DiscoveryTests, LoopbackDropsADeliveryForASampleUnregisteredBeforeItRan) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
@@ -269,8 +293,8 @@ TEST(DiscoveryTests, LoopbackDropsADeliveryForASampleUnregisteredBeforeItRan) {
   EXPECT_TRUE(HasTopic(discovery.GetPubSamples(), "/dummy/kept/" + padding));
 }
 
-// Adding a callback replays what has been received to that callback alone. It used to rebroadcast every sample to
-// every callback, so the first of M callbacks heard each of N publishers M times, and the total grew as N * M^2.
+// Adding a callback replays what has been received to that callback alone. Rebroadcasting every sample to every
+// callback would make the first of M callbacks hear each of N publishers M times, and the total grow as N * M^2.
 TEST(DiscoveryTests, LoopbackReplaysReceivedSamplesOnlyToTheNewCallback) {
   auto ev = trellis::core::EventLoop();
   Discovery discovery("test_node", ev, trellis::core::Config(YAML::Load(LoopbackNoHeartbeatConfig())));
@@ -668,7 +692,7 @@ TEST(DiscoveryTests, ResolveDescriptorViaHashAcrossPeers) {
                                [](const auto& sample) { return sample.topic().tname() == "/ref/topic"; });
   ASSERT_NE(it, samples.end());
 
-  // The descriptor travels as a reference only; the inline byte field is never populated.
+  // While the store accepts the descriptor, it travels as a reference only and the inline byte field is unused.
   EXPECT_TRUE(it->topic().tdatatype().desc().empty());
   EXPECT_FALSE(it->topic().tdatatype().desc_hash().empty());
 
