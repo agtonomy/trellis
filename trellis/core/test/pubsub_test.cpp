@@ -28,9 +28,12 @@
 #include <future>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -38,6 +41,7 @@
 #include "trellis/core/discovery/descriptor_store.hpp"
 #include "trellis/core/discovery/utils.hpp"
 #include "trellis/core/ipc/in_process_bus.hpp"
+#include "trellis/core/ipc/shm/shm_file.hpp"
 #include "trellis/core/ipc/shm/shm_read_write_lock.hpp"
 #include "trellis/core/test/test.hpp"
 #include "trellis/core/test/test.pb.h"
@@ -823,9 +827,9 @@ TEST(PublisherBufferSize, CreateThrowsWhenInitialBufferSizeExceedsMax) {
   EXPECT_THROW(node.CreatePublisher<test::Test>("test_initial_exceeds_max_topic"), std::invalid_argument);
 }
 
-TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
-  // Comfortably past the 10 KiB default initial_buffer_size so the slot has to grow
-  const std::string payload(64 * 1024, 'z');
+TEST_F(TrellisFixture, SendBytesDeliversAPayloadLargerThanTheInitialBufferInProcess) {
+  // Past the 10 KiB default initial_buffer_size, which sizes only shared memory slots
+  const auto payload = std::make_shared<const std::string>(64 * 1024, 'z');
   std::atomic<size_t> received_len{0};
 
   auto pub = GetNode().CreatePublisher<test::Test>("test_sb_topic");
@@ -838,9 +842,52 @@ TEST_F(TrellisFixture, SendBytesGrowsBuffer) {
   WaitForDiscovery();
   ASSERT_FALSE(GetNode().GetEventLoop().Stopped());
 
-  pub->SendBytes(payload.data(), payload.size());
+  pub->SendBytes(payload);
 
-  ASSERT_TRUE(WaitUntil([&]() { return received_len == payload.size(); })) << "received " << received_len << " bytes";
+  ASSERT_TRUE(WaitUntil([&]() { return received_len == payload->size(); })) << "received " << received_len << " bytes";
+}
+
+TEST_F(TrellisFixture, SendBytesLendsAContainersBytesToAnInProcessSubscriber) {
+  const auto bytes = std::make_shared<const std::vector<uint8_t>>(std::vector<uint8_t>{1, 2, 3, 4});
+  std::optional<ipc::BorrowedPayload> received;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_sb_container_topic");
+  auto sub = GetNode().CreateRawSubscriber(
+      "test_sb_container_topic", [&received](const time::TimePoint&, const time::TimePoint&,
+                                             ipc::BorrowedPayload payload) { received = std::move(payload); });
+
+  GetNode().RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  pub->SendBytes(bytes);
+  GetNode().RunUntilIdle();
+
+  ASSERT_TRUE(received.has_value());
+  EXPECT_EQ(received->data(), bytes->data()) << "the subscriber was handed a copy instead of the container's bytes";
+  EXPECT_EQ(received->size(), bytes->size());
+}
+
+TEST_F(TrellisFixture, SendBytesRejectsNullData) {
+  auto pub = GetNode().CreatePublisher<test::Test>("test_sb_null_topic");
+  EXPECT_THROW(pub->SendBytes(std::shared_ptr<const std::string>{}), std::invalid_argument);
+}
+
+TEST_F(TrellisFixture, SendBytesSendsAnEmptyContainer) {
+  std::optional<size_t> received_size;
+
+  auto pub = GetNode().CreatePublisher<test::Test>("test_sb_empty_topic");
+  auto sub = GetNode().CreateRawSubscriber(
+      "test_sb_empty_topic", [&received_size](const time::TimePoint&, const time::TimePoint&,
+                                              ipc::BorrowedPayload payload) { received_size = payload.size(); });
+
+  GetNode().RunUntilIdle();
+  ASSERT_TRUE(sub->IsInProcess());
+
+  pub->SendBytes(std::make_shared<const std::vector<uint8_t>>());
+  GetNode().RunUntilIdle();
+
+  ASSERT_TRUE(received_size.has_value()) << "an empty message was not delivered";
+  EXPECT_EQ(*received_size, 0u);
 }
 
 TEST_F(TrellisFixture, SendAlternatesLargeAndSmallMessages) {
@@ -1076,6 +1123,60 @@ std::string RandomPortDiscoveryConfig() {
                      port);
 }
 
+/// @brief Registers a subscriber sample reporting a pid that is not ours, which is what makes a publisher on `topic`
+/// treat it as remote and write to shared memory for it.
+///
+/// Nothing ever reads the slot on that subscriber's behalf, and nothing needs to: ShmWriter::AddReader only opens a
+/// notification socket, and the writer never waits on one.
+void RegisterRemoteSubscriber(trellis::core::Node& node, const std::string& topic) {
+  trellis::core::discovery::DescriptorStore store{""};
+  trellis::core::discovery::Sample remote_subscriber = trellis::core::discovery::utils::CreateProtoPubSubSample(
+      store, topic, /* message_desc = */ "", "trellis.core.test.Test", /* publisher = */ false,
+      /* memory_file_prefix = */ "", /* buffer_count = */ 0u);
+  ASSERT_EQ(remote_subscriber.topic().pid(), ::getpid());
+  remote_subscriber.mutable_topic()->set_pid(::getpid() + 1);
+  node.GetDiscovery()->Register(std::move(remote_subscriber));
+}
+
+/// @brief The newest message in the shared memory slots of the node named `node_name`, which must hold one publisher.
+///
+/// Reads the slots the way a subscriber in another process would, so it sees exactly what the publisher committed.
+///
+/// @return The message bytes, empty if no slot holds a message.
+std::string NewestSharedMemoryMessage(const std::string& node_name) {
+  const std::string slot_prefix = fmt::format("trellis_{}_{}_", node_name, ::getpid());
+  uint64_t newest_sequence = 0;
+  std::string newest;
+  for (const auto& entry : std::filesystem::directory_iterator("/dev/shm")) {
+    const std::string name = entry.path().filename().string();
+    if (!name.starts_with(slot_prefix) || name.ends_with(ipc::shm::ShmReadWriteLock::kLockSuffix)) {
+      continue;
+    }
+    ipc::shm::ShmFile file{name, /* owner = */ false, 0, Config{}};
+    ipc::shm::ShmReadWriteLock lock{ipc::shm::ShmReadWriteLock::GenerateLockName(name), /* owner = */ false, Config{}};
+    if (!lock.TryLockRead()) {
+      ADD_FAILURE() << "failed to take the read lock of " << name;
+      continue;
+    }
+    const ipc::shm::ShmReadWriteLock::UnlockGuard guard{lock};
+    const ipc::shm::ShmFile::BorrowInfo info = file.Borrow();
+    if (info.header.sequence > newest_sequence) {
+      newest_sequence = info.header.sequence;
+      newest.assign(reinterpret_cast<const char*>(info.payload.data()), info.payload.size());
+    }
+  }
+  return newest;
+}
+
+/// @brief `size` bytes that differ from their neighbors, so a copy from the wrong offset or of the wrong length shows.
+std::string PatternedBytes(size_t size) {
+  std::string bytes(size, '\0');
+  for (size_t i = 0; i < size; ++i) {
+    bytes[i] = static_cast<char>(i % 251);
+  }
+  return bytes;
+}
+
 }  // namespace
 
 // Discovery is left on its default UDP path here, so the only thing steering the subscriber onto the bus is the
@@ -1294,16 +1395,8 @@ TEST(InProcessTransport, SendReachesAnInProcessSubscriberWhileARemoteOneIsRegist
   // still alive to serve any handler already in flight.
   const ScopedNodeRunner runner{node};
 
-  // A subscriber sample reporting a pid that is not ours, which is what makes the publisher treat it as remote and
-  // keep a shared memory reader alongside its bus route. Nothing ever reads that slot, and nothing needs to:
-  // ShmWriter::AddReader only opens a notification socket, and the writer never waits on one.
-  trellis::core::discovery::DescriptorStore store{""};
-  trellis::core::discovery::Sample remote_subscriber = trellis::core::discovery::utils::CreateProtoPubSubSample(
-      store, "test_mixed_transport_topic", /* message_desc = */ "", "trellis.core.test.Test",
-      /* publisher = */ false, /* memory_file_prefix = */ "", /* buffer_count = */ 0u);
-  ASSERT_EQ(remote_subscriber.topic().pid(), ::getpid());
-  remote_subscriber.mutable_topic()->set_pid(::getpid() + 1);
-  node.GetDiscovery()->Register(std::move(remote_subscriber));
+  // The publisher keeps a shared memory reader for this subscriber alongside its bus route.
+  ASSERT_NO_FATAL_FAILURE(RegisterRemoteSubscriber(node, "test_mixed_transport_topic"));
 
   // Polled rather than slept, so the test proceeds the moment both transports are in play.
   const auto deadline = std::chrono::steady_clock::now() + kDiscoveryConvergeTimeout;
@@ -1327,6 +1420,45 @@ TEST(InProcessTransport, SendReachesAnInProcessSubscriberWhileARemoteOneIsRegist
         << "delivered " << receive_count << " times";
   }
   EXPECT_EQ(received_msg, "mixed transport");
+}
+
+// The in-process SendBytes tests never fill a slot, so these read one back.
+TEST(SendBytesSharedMemory, CopiesTheBytesIntoTheSlot) {
+  // Short by necessity: the node name goes into a Unix socket path, capped at 108 bytes.
+  trellis::core::Node node("sb_shm", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_sb_shm_topic");
+
+  // Past the 10 KiB default initial_buffer_size, so the slot also has to grow. With no subscriber in this process the
+  // bytes are copied straight into it.
+  const auto bytes = std::make_shared<const std::string>(PatternedBytes(64 * 1024));
+  pub->SendBytes(bytes);
+
+  EXPECT_TRUE(NewestSharedMemoryMessage("sb_shm") == *bytes) << "the slot does not hold the bytes that were sent";
+}
+
+// With a subscriber on each transport the bus carries the caller's bytes and the slot gets a copy of them.
+TEST(SendBytesSharedMemory, CopiesTheBytesIntoTheSlotWhileAnInProcessSubscriberBorrowsThem) {
+  trellis::core::Node node("sb_mixed", trellis::core::Config(YAML::Load(RandomPortDiscoveryConfig())));
+  const Publisher<test::Test> pub = node.CreatePublisher<test::Test>("test_sb_mixed_topic");
+  const auto sub = node.CreateRawSubscriber(
+      "test_sb_mixed_topic", [](const time::TimePoint&, const time::TimePoint&, ipc::BorrowedPayload) {});
+
+  // Declared after the publisher and subscriber so it is destroyed before them.
+  const ScopedNodeRunner runner{node};
+  ASSERT_NO_FATAL_FAILURE(RegisterRemoteSubscriber(node, "test_sb_mixed_topic"));
+
+  const auto deadline = std::chrono::steady_clock::now() + kDiscoveryConvergeTimeout;
+  while ((!sub->IsInProcess() || !pub->HasRemoteSubscribers()) && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(sub->IsInProcess()) << "the same-process subscriber did not take the bus";
+  ASSERT_TRUE(pub->HasRemoteSubscribers()) << "the publisher never saw the subscriber from another process";
+
+  const auto bytes = std::make_shared<const std::string>(PatternedBytes(64 * 1024));
+  pub->SendBytes(bytes);
+
+  // The slot is written before SendBytes returns, so there is nothing to wait for.
+  EXPECT_TRUE(NewestSharedMemoryMessage("sb_mixed") == *bytes) << "the slot does not hold the bytes that were sent";
 }
 
 namespace {
@@ -1367,6 +1499,15 @@ struct SignedSizeSerializer {
 static_assert(trellis::core::constraints::_IsSerializer<PayloadSerializer>);
 static_assert(trellis::core::constraints::_IsSerializer<test::Test>);
 static_assert(!trellis::core::constraints::_IsSerializer<SignedSizeSerializer>);
+
+template <typename Owner>
+constexpr bool kSendBytesAcceptsOwner =
+    requires(PublisherImpl<test::Test>& pub, std::shared_ptr<const Owner> owner) { pub.SendBytes(owner); };
+
+static_assert(kSendBytesAcceptsOwner<std::string>);
+static_assert(kSendBytesAcceptsOwner<std::vector<uint8_t>>);
+static_assert(!kSendBytesAcceptsOwner<std::string_view>);
+static_assert(!kSendBytesAcceptsOwner<std::span<const uint8_t>>);
 
 }  // namespace
 

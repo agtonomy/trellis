@@ -28,12 +28,12 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <utility>
-#include <vector>
 
 #include "trellis/core/constraints.hpp"
 #include "trellis/core/converters.hpp"
@@ -212,30 +212,54 @@ class PublisherImpl {
   }
 
   /**
-   * @brief Send raw bytes directly without protobuf serialization.
+   * @brief Send every byte of a container, such as a `std::string` or `std::vector<uint8_t>`, without protobuf
+   * serialization.
+   *
+   * A transport that can carry the bytes as they are shares ownership of `owner` instead of copying it, and a
+   * subscriber may hold it past its callback, so `owner` must not change after this call. A transport that cannot
+   * copies the bytes. A view such as `std::string_view` or `std::span` is rejected, since sharing the view would not
+   * keep the bytes it points at alive.
+   *
+   * The last holder releases `owner`, which can be on any subscriber's thread after the caller and this publisher are
+   * gone. Whatever frees the bytes must be thread-safe and must not depend on anything that can be destroyed before
+   * every subscriber has released them.
    *
    * @note Intended use case is for log replay, where the publishers don't need to know the message type and rely on
    * subscribers to properly deserialize the data.
    *
    * @note Carries the same one-sender-at-a-time constraint as `Send`.
    *
-   * @param data Pointer to the raw bytes
-   * @param size Size of the data in bytes
+   * @param owner The container whose bytes to send.
    * @param now The timestamp to associate with the message
    * @return The timestamp used
+   * @throws std::invalid_argument if `owner` is null.
    */
-  trellis::core::time::TimePoint SendBytes(const void* data, size_t size, const trellis::core::time::TimePoint& now) {
-    return SendInternal(now, size, [data, size](std::span<uint8_t> buffer) {
-      std::memcpy(buffer.data(), data, size);
-      return true;
-    });
+  template <constraints::_IsByteContainer Owner>
+  trellis::core::time::TimePoint SendBytes(std::shared_ptr<const Owner> owner,
+                                           const trellis::core::time::TimePoint& now) {
+    if (owner == nullptr) {
+      throw std::invalid_argument(fmt::format("PublisherImpl::SendBytes got no data for topic {}", topic_));
+    }
+    const auto* bytes = reinterpret_cast<const uint8_t*>(std::ranges::data(*owner));
+    const size_t size = std::ranges::size(*owner);
+    return SendInternal(
+        now, size,
+        [bytes, size](std::span<uint8_t> buffer) {
+          // An empty std::vector's data() is null, and memcpy from null is undefined even for 0 bytes.
+          if (size > 0) {
+            std::memcpy(buffer.data(), bytes, size);
+          }
+          return true;
+        },
+        std::shared_ptr<const uint8_t>{std::move(owner), bytes});
   }
 
   /**
-   * @brief Send raw bytes directly using current time.
+   * @brief Send every byte of a container using current time.
    */
-  trellis::core::time::TimePoint SendBytes(const void* data, size_t size) {
-    return SendBytes(data, size, trellis::core::time::Now());
+  template <constraints::_IsByteContainer Owner>
+  trellis::core::time::TimePoint SendBytes(std::shared_ptr<const Owner> owner) {
+    return SendBytes(std::move(owner), trellis::core::time::Now());
   }
 
   /**
@@ -248,7 +272,8 @@ class PublisherImpl {
    *
    * The serializer is held to the protobuf contract. `SerializeToArray` is handed exactly `ByteSizeLong()` bytes and
    * must fill every one: subscribers parse all of them, and a shared memory slot still holds an earlier message, so a
-   * short write publishes stale bytes. Returning false, or throwing, fails the send.
+   * short write publishes stale bytes, or uninitialized heap memory to a subscriber in this process. Returning false,
+   * or throwing, fails the send.
    *
    * @note `SerializeToArray` runs under this publisher's lock, so a slow one stalls the event loop when a discovery
    * sample for this topic arrives. It must not call this publisher or create or destroy publishers or subscribers,
@@ -313,18 +338,21 @@ class PublisherImpl {
    * Routes one message to the transports that currently hold a subscriber. One in this process is reached over the
    * in-process transport, one outside it through shared memory, and both can hold at once.
    *
-   * Serialized exactly once either way. With no in-process subscriber the message goes straight into the shared
-   * memory slot; otherwise it goes into a heap payload for the in-process transport, and a slot that needs the same
-   * bytes copies them from there.
+   * Serialized at most once either way. With no in-process subscriber the message goes straight into the shared
+   * memory slot; otherwise the in-process transport carries `held`, or a heap payload when there is none, and a slot
+   * that needs the same bytes copies them from there.
    *
    * @param now The timestamp to associate with the message.
    * @param required_size Exact number of bytes `write_fn` will write.
    * @param write_fn Serializes the message into the buffer it is given. Returns false if it could not, which is
    * fatal to the send.
+   * @param held The `required_size` bytes `write_fn` writes, when the caller already holds them and will not change
+   * them. A transport that can carry them as they are takes a reference instead of calling `write_fn`. Null when the
+   * message has to be serialized.
    * @return The timestamp used.
    */
   trellis::core::time::TimePoint SendInternal(const trellis::core::time::TimePoint& now, const size_t required_size,
-                                              WriteFunc write_fn) {
+                                              WriteFunc write_fn, std::shared_ptr<const uint8_t> held = nullptr) {
     // Checked before any transport is chosen: an oversized message is an error the caller must see whether or not
     // anyone is currently subscribed. max_buffer_size_ is const, so this needs no lock.
     if (required_size > max_buffer_size_) {
@@ -351,13 +379,16 @@ class PublisherImpl {
       const bool to_shared_memory = writer_.has_value() && (!to_in_process || !remote_subscriber_ids_.empty());
 
       if (to_in_process) {
-        // Serialized once. A slot that needs the same bytes copies them below, which costs far less than a second
-        // serialization pass.
-        inproc_message = SerializeForInProcess(now, required_size, write_fn);
+        // Serialized at most once. A slot that needs the same bytes copies them below, which costs far less than a
+        // second serialization pass.
+        if (held == nullptr) {
+          held = SerializeToHeap(required_size, write_fn);
+        }
+        inproc_message = MakeInProcessMessage(now, required_size, std::move(held));
         if (to_shared_memory) {
-          const std::vector<uint8_t>& payload = *inproc_message->payload;
-          WriteToSharedMemory(now, payload.size(), [&payload](std::span<uint8_t> buffer) {
-            std::memcpy(buffer.data(), payload.data(), payload.size());
+          const uint8_t* payload = inproc_message->payload.get();
+          WriteToSharedMemory(now, required_size, [payload, required_size](std::span<uint8_t> buffer) {
+            std::memcpy(buffer.data(), payload, required_size);
             return true;
           });
         }
@@ -376,25 +407,38 @@ class PublisherImpl {
   }
 
   /**
-   * @brief Serialize the message into a heap payload and synthesize the header the in-process transport delivers
-   * with it.
+   * @brief Serialize the message into a new heap payload.
+   *
+   * @param required_size Exact number of bytes `write_fn` will write.
+   * @param write_fn Serializes the message into the buffer it is given.
+   * @return The payload.
+   * @throws std::runtime_error if `write_fn` returns false.
+   */
+  std::shared_ptr<const uint8_t> SerializeToHeap(const size_t required_size, const WriteFunc& write_fn) const {
+    // Left uninitialized: write_fn must write every byte, and zeroing a multi-megabyte image first is measurable.
+    // TODO: Use std::make_shared_for_overwrite, which makes one allocation instead of two.
+    std::shared_ptr<uint8_t[]> buffer{new uint8_t[required_size]};
+    if (!write_fn(std::span<uint8_t>{buffer.get(), required_size})) {
+      throw std::runtime_error(
+          fmt::format("PublisherImpl::Send failed to serialize {} bytes for topic {}", required_size, topic_));
+    }
+    return std::shared_ptr<const uint8_t>{buffer, buffer.get()};
+  }
+
+  /**
+   * @brief Pair a serialized payload with the header the in-process transport delivers with it.
    *
    * @note The caller must hold `mutex_`, which covers the sequence counter.
    *
    * @param now The send time, recorded in the header so a sim clock follower steps identically.
-   * @param required_size Exact number of bytes `write_fn` will write.
-   * @param write_fn Serializes the message into the buffer it is given.
+   * @param size Size of `payload` in bytes.
+   * @param payload The serialized message.
    * @return The payload and its header.
    */
-  ipc::InProcessBus::Message SerializeForInProcess(const trellis::core::time::TimePoint& now,
-                                                   const size_t required_size, const WriteFunc& write_fn) {
-    auto payload = std::make_shared<std::vector<uint8_t>>(required_size);
-    if (!write_fn(std::span<uint8_t>{*payload})) {
-      throw std::runtime_error(
-          fmt::format("PublisherImpl::Send failed to serialize {} bytes for topic {}", required_size, topic_));
-    }
+  ipc::InProcessBus::Message MakeInProcessMessage(const trellis::core::time::TimePoint& now, const size_t size,
+                                                  std::shared_ptr<const uint8_t> payload) {
     ipc::shm::ShmFile::SMemFileHeader header{};
-    header.data_size = required_size;
+    header.data_size = size;
     header.sequence = ++inproc_sequence_;
     header.clock = time::TimePointToNanoseconds(now);
     header.writer_id = inproc_writer_id_;

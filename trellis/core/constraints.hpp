@@ -22,6 +22,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <ranges>
 
 namespace trellis::core::constraints {
 
@@ -37,6 +38,12 @@ template <typename T>
 concept _IsSerializable = _IsSerializer<T> && requires(T t, const void* read_data, int size) {
   { t.ParseFromArray(read_data, size) } -> std::same_as<bool>;
 };
+
+// A container that owns contiguous 1-byte elements, such as `std::string` or `std::vector<uint8_t>`. A view such as
+// `std::string_view` or `std::span` does not qualify, since holding it does not keep the bytes it points at alive.
+template <typename T>
+concept _IsByteContainer = std::ranges::contiguous_range<const T> && (!std::ranges::borrowed_range<const T>) &&
+                           (sizeof(std::ranges::range_value_t<T>) == 1);
 
 template <typename FuncT, typename SourceT, typename DestT>
 concept _IsConverter = std::convertible_to<std::decay_t<std::invoke_result_t<FuncT, SourceT>>, DestT>;

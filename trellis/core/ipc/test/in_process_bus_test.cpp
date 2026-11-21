@@ -103,7 +103,7 @@ shm::ShmFile::SMemFileHeader Header(uint64_t writer_id, uint64_t sequence) {
   return header;
 }
 
-std::shared_ptr<const std::vector<uint8_t>> Payload() { return std::make_shared<const std::vector<uint8_t>>(1, 0); }
+std::shared_ptr<const uint8_t> Payload() { return std::make_shared<const uint8_t>(0); }
 
 // A loop that isn't running used to collect one handler per message and get the whole backlog late. It now gets the
 // newest `depth` per writer, from one drain: the most a shared memory reader could still find.
@@ -273,7 +273,7 @@ TEST(InProcessBusBackpressure, ASubscriberThatIsBehindDoesNotHoldBackAnother) {
 TEST(InProcessBusBackpressure, ADrainLeftOnALoopThatNeverRunsAgainIsFreedWithTheLoop) {
   const auto bus = InProcessBus::Instance();
   const auto payload = Payload();
-  const std::weak_ptr<const std::vector<uint8_t>> observed = payload;
+  const std::weak_ptr<const uint8_t> observed = payload;
   {
     trellis::core::EventLoop loop;
     const auto handle = bus->Subscribe("/dummy/abandoned_topic", loop, NoopReceiver());
@@ -288,7 +288,7 @@ TEST(InProcessBusBackpressure, ADrainLeftOnALoopThatNeverRunsAgainIsFreedWithThe
 TEST(InProcessBusBackpressure, ARouteKeepsItsLoopAliveUntilUnsubscribed) {
   const auto bus = InProcessBus::Instance();
   const auto payload = Payload();
-  const std::weak_ptr<const std::vector<uint8_t>> observed = payload;
+  const std::weak_ptr<const uint8_t> observed = payload;
   const auto handle = bus->Subscribe("/dummy/released_loop_topic", trellis::core::EventLoop{}, NoopReceiver());
   bus->Publish("/dummy/released_loop_topic", {Header(1, 1), payload}, /* depth = */ 3);
   EXPECT_EQ(observed.use_count(), 2) << "the queued drain holds the payload";

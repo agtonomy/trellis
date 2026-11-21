@@ -123,8 +123,8 @@ void InProcessBus::Drain(const std::shared_ptr<Subscription>& subscription) {
   try {
     // A borrow is move-only, so each delivery builds its own.
     for (; next != batch.end(); ++next) {
-      subscription->fn(next->header, BorrowedPayload::Immutable({next->payload, next->payload->data()},
-                                                                next->payload->size(), next->header.sequence));
+      subscription->fn(next->header,
+                       BorrowedPayload::Immutable(next->payload, next->header.data_size, next->header.sequence));
     }
   } catch (...) {
     // Those behind the one that threw go back ahead of anything newer, for the next drain, as their handlers stayed

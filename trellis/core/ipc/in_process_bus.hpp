@@ -28,7 +28,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <vector>
 
 #include "trellis/core/event_loop.hpp"
 #include "trellis/core/ipc/borrowed_payload.hpp"
@@ -72,8 +71,9 @@ class InProcessBus {
   /// @brief A serialized message and the header delivered alongside it.
   struct Message {
     shm::ShmFile::SMemFileHeader header;  ///< Its writer_id and sequence identify the message.
-    /// Kept alive until every delivery completes and every borrow is released, or until every subscriber drops it.
-    std::shared_ptr<const std::vector<uint8_t>> payload;
+    /// `header.data_size` bytes. Kept alive until every delivery completes and every borrow is released, or until every
+    /// subscriber drops it.
+    std::shared_ptr<const uint8_t> payload;
   };
 
   /// The subscription handle that is used for bookkeeping active subscriptions.

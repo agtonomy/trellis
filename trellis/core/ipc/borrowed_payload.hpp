@@ -80,10 +80,11 @@ class BorrowedPayload {
   /**
    * @brief Constructs a borrow of bytes that are never rewritten, such as an InProcessBus payload.
    *
-   * The borrow is valid for as long as it is held.
+   * The borrow is valid for as long as it is held. In-process bytes may belong to the sender (see
+   * PublisherImpl::SendBytes), and keeping them unchanged is the sender's job: a borrow cannot detect a change.
    *
-   * @param data Pointer to the payload bytes, sharing ownership of whatever keeps them alive. Build it with the
-   * shared_ptr aliasing constructor from the owning handle, such as the InProcessBus payload buffer.
+   * @param data Pointer to the payload bytes, sharing ownership of whatever keeps them alive, such as an InProcessBus
+   * payload. When the bytes live inside another object, build it with the shared_ptr aliasing constructor.
    * @param size Length of the payload in bytes.
    * @param sequence The transport sequence number of this payload.
    */

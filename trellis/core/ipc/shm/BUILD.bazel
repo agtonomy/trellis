@@ -33,6 +33,7 @@ cc_library(
     visibility = [
         "//trellis/core/ipc:__pkg__",
         "//trellis/core/ipc/shm/test:__pkg__",
+        "//trellis/core/test:__pkg__",
     ],
     deps = [
         ":mapping",

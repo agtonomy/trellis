@@ -101,6 +101,7 @@ cc_test(
         "//trellis/core/discovery:descriptor_store",
         "//trellis/core/discovery:utils",
         "//trellis/core/ipc:in_process_bus",
+        "//trellis/core/ipc/shm:shm_file",
         "//trellis/core/ipc/shm:shm_read_write_lock",
     ],
 )
