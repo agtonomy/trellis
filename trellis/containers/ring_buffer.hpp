@@ -19,7 +19,9 @@
 #define TRELLIS_CONTAINERS_RING_BUFFER_HPP_
 
 #include <array>
+#include <compare>
 #include <cstddef>
+#include <iterator>
 namespace trellis::containers {
 
 /**
@@ -66,40 +68,51 @@ class RingBuffer {
     ConstIterator(const T* data, size_t index) : data_{data}, index_{index} {}
 
     // Pointer like operators.
-    reference operator*() const { return data_[index_]; }
-    pointer operator->() const { return &data_[index_]; }
-    reference operator[](const difference_type offset) const { return data_[Offset(offset)]; }
+    reference operator*() const { return data_[index_ % kArraySize]; }
+    pointer operator->() const { return &data_[index_ % kArraySize]; }
+    reference operator[](const difference_type offset) const { return data_[(index_ + offset) % kArraySize]; }
 
     // Increment / Decrement
     ConstIterator& operator++() {
-      IncrementAndWrap(index_);
+      ++index_;
       return *this;
     }
 
+    ConstIterator operator++(int) {
+      ConstIterator temp = *this;
+      ++index_;
+      return temp;
+    }
+
     ConstIterator& operator--() {
-      if (index_ == 0) index_ = kArraySize;
       --index_;
       return *this;
     }
 
+    ConstIterator operator--(int) {
+      ConstIterator temp = *this;
+      --index_;
+      return temp;
+    }
+
     // Arithmetic
     ConstIterator& operator+=(const difference_type offset) {
-      index_ = Offset(offset);
+      index_ += offset;
       return *this;
     }
 
-    ConstIterator operator+(const difference_type offset) const { return {data_, Offset(offset)}; }
+    ConstIterator operator+(const difference_type offset) const { return {data_, index_ + offset}; }
 
     friend ConstIterator operator+(const difference_type offset, const ConstIterator& right) {
-      return {right.data_, right.Offset(offset)};
+      return {right.data_, right.index_ + offset};
     }
 
     ConstIterator& operator-=(const difference_type offset) {
-      index_ = Offset(-offset);
+      index_ -= offset;
       return *this;
     }
 
-    ConstIterator operator-(const difference_type offset) const { return {data_, Offset(-offset)}; }
+    ConstIterator operator-(const difference_type offset) const { return {data_, index_ - offset}; }
 
     difference_type operator-(const ConstIterator& right) const {
       return static_cast<difference_type>(index_) - static_cast<difference_type>(right.index_);
@@ -109,19 +122,16 @@ class RingBuffer {
     // Comparison operators
     friend bool operator==(const ConstIterator&, const ConstIterator&) = default;
     friend bool operator!=(const ConstIterator&, const ConstIterator&) = default;
-
-    size_t Offset(const difference_type offset) const {
-      auto mod = (static_cast<difference_type>(index_) + offset) % static_cast<difference_type>(kArraySize);
-      if (mod < 0) mod += kArraySize;
-      return mod;
+    friend auto operator<=>(const ConstIterator& left, const ConstIterator& right) {
+      return left.index_ <=> right.index_;
     }
 
     const T* data_ = nullptr;
-    size_t index_ = 0;
+    size_t index_ = 0;  // Not wrapped, so that end() - begin() == size(). Wrapped only when accessing data_.
   };
 
   ConstIterator begin() const { return {data_.data(), begin_}; }
-  ConstIterator end() const { return {data_.data(), end_}; }
+  ConstIterator end() const { return {data_.data(), begin_ + size_}; }
 
  private:
   static constexpr size_t kArraySize = capacity + 1;
