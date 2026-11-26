@@ -2,6 +2,10 @@
 
 #include <gmock/gmock.h>
 
+#include <algorithm>
+#include <iterator>
+#include <vector>
+
 namespace trellis::containers {
 
 namespace {
@@ -14,6 +18,8 @@ using testing::SizeIs;
 
 // unique_ptr is a good test element because it has move but not copy semantics.
 using TestBuffer = RingBuffer<std::unique_ptr<int>, 3>;
+
+static_assert(std::random_access_iterator<TestBuffer::ConstIterator>);
 
 }  // namespace
 
@@ -76,6 +82,35 @@ TEST(RingBuffer, IndexOperator) {
   EXPECT_EQ(const_ring[0], 1);
   EXPECT_EQ(const_ring[1], 2);
   EXPECT_EQ(const_ring[2], 3);
+}
+
+TEST(RingBuffer, IteratorDistanceAfterWrap) {
+  auto ring = RingBuffer<int, 3>{};
+  for (int i = 0; i < 8; ++i) {
+    ring.push_back(i);
+    ASSERT_THAT(ring.end() - ring.begin(), Eq(static_cast<std::ptrdiff_t>(ring.size())));
+    ASSERT_THAT(std::distance(ring.begin(), ring.end()), Eq(static_cast<std::ptrdiff_t>(ring.size())));
+  }
+  ring.pop_front();
+  ASSERT_THAT(ring.end() - ring.begin(), Eq(2));
+  ASSERT_THAT(ring.begin() - ring.end(), Eq(-2));
+}
+
+TEST(RingBuffer, IteratorArithmeticAfterWrap) {
+  auto ring = RingBuffer<int, 3>{};
+  for (int i = 0; i < 5; ++i) ring.push_back(i);
+  ASSERT_THAT(ring.begin() + 3, Eq(ring.end()));
+  ASSERT_THAT(*(ring.end() - 1), Eq(4));
+  ASSERT_THAT(ring.begin()[2], Eq(4));
+  ASSERT_TRUE(ring.begin() < ring.end());
+  ASSERT_TRUE(ring.end() - 1 > ring.begin());
+}
+
+TEST(RingBuffer, ConstructVectorAfterWrap) {
+  auto ring = RingBuffer<int, 3>{};
+  for (int i = 0; i < 5; ++i) ring.push_back(i);
+  ASSERT_THAT(std::vector<int>(ring.begin(), ring.end()), ElementsAre(2, 3, 4));
+  ASSERT_TRUE(std::ranges::equal(ring, std::vector<int>{2, 3, 4}));
 }
 
 }  // namespace trellis::containers
